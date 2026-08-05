@@ -14,6 +14,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
@@ -50,6 +51,7 @@ import {
 } from './dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtIdentityGuard } from './guards/jwt-identity.guard';
+import { loginRequestExamples, loginResponseExamples } from './swagger/login.examples';
 
 const validationErrorExample = {
   statusCode: 400,
@@ -57,27 +59,6 @@ const validationErrorExample = {
   errors: [{ field: 'email', messages: ['email must be an email'] }],
   timestamp: '2026-08-05T08:00:00.000Z',
   path: '/api/auth/customers/register',
-};
-
-const loginSuccessExample = {
-  success: true,
-  data: {
-    user: {
-      id: 12,
-      firstName: 'Sarah',
-      lastName: 'Ahmed',
-      email: 'sarah@example.com',
-      role: 'customer',
-      accountStatus: 'active',
-      isVerified: true,
-    },
-    tokens: {
-      accessToken: 'jwt-access-token',
-      refreshToken: 'opaque-refresh-token',
-      tokenType: 'Bearer',
-    },
-  },
-  message: 'Login successful.',
 };
 
 @ApiTags('01 Auth')
@@ -219,7 +200,20 @@ export class AuthController {
     description:
       'Authenticates local credentials, enforces email/account state, optionally validates the intended portal role, records the device session, and returns rotating tokens.',
   })
-  @ApiOkResponse({ schema: { example: loginSuccessExample } })
+  @ApiBody({
+    type: LoginDto,
+    description:
+      'Use expectedRole to assert the intended portal. An admin portal login accepts both admin and super_admin accounts; explicit super_admin requires the super_admin value.',
+    examples: loginRequestExamples,
+  })
+  @ApiOkResponse({
+    description: 'Role-specific user projection and rotating access/refresh token pair.',
+    content: {
+      'application/json': {
+        examples: loginResponseExamples,
+      },
+    },
+  })
   @ApiForbiddenResponse({
     description: 'Email unverified, account suspended/deactivated, or portal role mismatch.',
   })

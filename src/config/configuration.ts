@@ -27,24 +27,18 @@ export default () => {
       ),
       trustProxy: asBoolean(process.env.TRUST_PROXY, false),
     },
-   database: {
-  url: process.env.DATABASE_URL,
-
-  logging: asBoolean(
-    process.env.DB_LOGGING,
-    false,
-  ),
-
-  transactionMaxWaitMs: asPositiveInteger(
-    process.env.DB_TRANSACTION_MAX_WAIT_MS,
-    15_000,
-  ),
-
-  transactionTimeoutMs: asPositiveInteger(
-    process.env.DB_TRANSACTION_TIMEOUT_MS,
-    30_000,
-  ),
-},
+    database: {
+      url: process.env.DATABASE_URL,
+      logging: asBoolean(process.env.DB_LOGGING, false),
+      transactionMaxWaitMs: asPositiveInteger(
+        process.env.DB_TRANSACTION_MAX_WAIT_MS,
+        15_000,
+      ),
+      transactionTimeoutMs: asPositiveInteger(
+        process.env.DB_TRANSACTION_TIMEOUT_MS,
+        30_000,
+      ),
+    },
     auth: {
       jwtSecret: process.env.JWT_SECRET,
       adminJwtSecret: process.env.JWT_SECRET_ADMIN,
@@ -58,6 +52,16 @@ export default () => {
       passwordResetOtpExpiresInMinutes: asPositiveInteger(
         process.env.PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES,
         15,
+      ),
+    },
+    cloudinary: {
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      apiSecret: process.env.CLOUDINARY_API_SECRET,
+      folder: process.env.CLOUDINARY_FOLDER ?? 'latache',
+      maxFileSizeBytes: asPositiveInteger(
+        process.env.CLOUDINARY_MAX_FILE_SIZE_BYTES,
+        10 * 1024 * 1024,
       ),
     },
     mail: {

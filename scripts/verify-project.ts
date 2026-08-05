@@ -37,6 +37,9 @@ for (const path of [
   'src/modules/auth/services/auth-password.service.ts',
   'src/modules/auth/services/auth-token.service.ts',
   'src/modules/auth/auth.swagger.spec.ts',
+  'src/modules/uploads/uploads.module.ts',
+  'src/modules/uploads/uploads.controller.ts',
+  'src/modules/uploads/uploads.service.ts',
   'docs/auth-module.md',
 ]) {
   requireFile(path);
@@ -47,8 +50,8 @@ const packageJson = JSON.parse(read('package.json')) as {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
-if (packageJson.version !== '3.2.0') {
-  failures.push(`Expected package version 3.2.0, received ${packageJson.version ?? '<missing>'}`);
+if (packageJson.version !== '3.3.2') {
+  failures.push(`Expected package version 3.3.2, received ${packageJson.version ?? '<missing>'}`);
 }
 const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
 for (const dependency of [
@@ -62,7 +65,7 @@ for (const dependency of [
 ]) {
   if (dependency in dependencies) failures.push(`Forbidden dependency remains: ${dependency}`);
 }
-for (const dependency of ['@prisma/client', '@prisma/adapter-pg', 'prisma', 'nodemailer']) {
+for (const dependency of ['@prisma/client', '@prisma/adapter-pg', 'prisma', 'nodemailer', 'cloudinary']) {
   if (!(dependency in dependencies)) failures.push(`Required dependency is missing: ${dependency}`);
 }
 
@@ -148,10 +151,25 @@ for (const provider of [
   'AdminAuthGuard',
   'RolesGuard',
   'PermissionsGuard',
+  'AuthSessionsRepository',
   'UsersModule',
 ]) {
   if (!authModule.includes(provider)) {
     failures.push(`AuthModule provider/export graph is missing ${provider}`);
+  }
+}
+
+const authExportsBlock = authModule.match(/exports:\s*\[([\s\S]*?)\]/)?.[1] ?? '';
+for (const provider of [
+  'JwtIdentityGuard',
+  'JwtAuthGuard',
+  'AdminAuthGuard',
+  'AuthSessionsRepository',
+  'JwtModule',
+  'UsersModule',
+]) {
+  if (!authExportsBlock.includes(provider)) {
+    failures.push(`AuthModule exports are missing ${provider}`);
   }
 }
 
@@ -177,6 +195,7 @@ const controllers: Record<string, string> = {
   services: 'src/modules/services/services.controller.ts',
   taskers: 'src/modules/taskers/taskers.controller.ts',
   bookings: 'src/modules/bookings/bookings.controller.ts',
+  uploads: 'src/modules/uploads/uploads.controller.ts',
 };
 const canonicalContracts: Array<[
   keyof typeof controllers,
@@ -210,6 +229,10 @@ const canonicalContracts: Array<[
   ['bookings', 'Get', 'upcoming'],
   ['bookings', 'Get', 'completed'],
   ['bookings', 'Get', 'next'],
+  ['uploads', 'Post', 'registration'],
+  ['uploads', 'Post', 'single'],
+  ['uploads', 'Post', 'multiple'],
+  ['uploads', 'Delete', ''],
 ];
 
 if (!read('src/main.ts').includes("app.setGlobalPrefix('api')")) {
@@ -223,12 +246,11 @@ for (const [prefix, path] of Object.entries(controllers)) {
 }
 for (const [prefix, method, route] of canonicalContracts) {
   const controllerPath = controllers[prefix];
-
-if (!controllerPath) {
-  throw new Error(`Controller mapping not found for route prefix: ${prefix}`);
-}
-
-const controller = read(controllerPath);
+  if (!controllerPath) {
+    failures.push(`Controller mapping not found for route prefix: ${prefix}`);
+    continue;
+  }
+  const controller = read(controllerPath);
   const decorator = route ? `@${method}('${route}')` : `@${method}()`;
   if (!controller.includes(decorator)) {
     failures.push(`${method.toUpperCase()} /api/${prefix}/${route} is missing`);
@@ -260,6 +282,26 @@ for (const marker of [
   "@ApiBearerAuth('bearer')",
 ]) {
   if (!authController.includes(marker)) failures.push(`Auth Swagger marker is missing: ${marker}`);
+}
+
+
+const uploadsController = read('src/modules/uploads/uploads.controller.ts');
+for (const marker of [
+  "@ApiTags('02 Uploads')",
+  "@ApiConsumes('multipart/form-data')",
+  "@Post('registration')",
+  "@Post('single')",
+  "@Post('multiple')",
+  '@Delete()',
+]) {
+  if (!uploadsController.includes(marker)) failures.push(`Uploads marker is missing: ${marker}`);
+}
+const uploadsService = read('src/modules/uploads/uploads.service.ts');
+for (const marker of ['upload_stream', 'uploader.destroy', 'ownerNamespace', 'assertFolderAccess']) {
+  if (!uploadsService.includes(marker)) failures.push(`Cloudinary upload security marker is missing: ${marker}`);
+}
+if (!authController.includes('loginRequestExamples') || !authController.includes('loginResponseExamples')) {
+  failures.push('Role-specific login Swagger examples are missing');
 }
 
 const registrationDto = read('src/modules/auth/dto/common-auth.dto.ts');
@@ -295,5 +337,5 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(
-  `Verified Prisma/Nodemailer architecture, canonical auth-only route surface, six mapped tables, ${canonicalContracts.length} total routes, and removal of every legacy auth alias.`,
+  `Verified Prisma/Nodemailer architecture, canonical auth and Cloudinary upload route surface, six mapped tables, ${canonicalContracts.length} total routes, and removal of every legacy auth alias.`,
 );

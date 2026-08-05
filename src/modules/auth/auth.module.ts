@@ -44,6 +44,7 @@ import { AuthTokenService } from './services/auth-token.service';
     AdminAuthGuard,
     RolesGuard,
     PermissionsGuard,
+    AuthSessionsRepository,
     JwtModule,
     UsersModule,
   ],

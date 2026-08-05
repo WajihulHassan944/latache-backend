@@ -12,6 +12,7 @@ import { HealthModule } from './modules/health/health.module';
 import { ServicesModule } from './modules/services/services.module';
 import { TaskersModule } from './modules/taskers/taskers.module';
 import { UsersModule } from './modules/users/users.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { UsersModule } from './modules/users/users.module';
     ServicesModule,
     TaskersModule,
     BookingsModule,
+    UploadsModule,
     HealthModule,
   ],
   providers: [

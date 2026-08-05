@@ -78,8 +78,9 @@ async function bootstrap(): Promise<void> {
         .setDescription(
           'Production API for Latache customers, taskers, administrators, services, and bookings. Authentication endpoints include role-specific signup, OTP verification, session rotation, password recovery, and RBAC.',
         )
-        .setVersion('3.2.0')
+        .setVersion('3.3.2')
         .addTag('01 Auth', 'Customer, tasker, admin, super-admin, session, and password flows')
+        .addTag('02 Uploads', 'Cloudinary signup, profile, identity, work-image, service-image, and booking-attachment uploads')
         .addTag('services', 'Service catalogue')
         .addTag('taskers', 'Tasker discovery, availability and onboarding')
         .addTag('bookings', 'Customer bookings')

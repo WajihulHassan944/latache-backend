@@ -1,59 +1,25 @@
 {
-  "generatedAtUtc": "2026-08-05T09:35:11.243042+00:00",
-  "project": "Latache Backend - Auth Revamp",
-  "version": "3.2.0",
-  "scope": "Authentication module only; non-auth domain behavior retained",
-  "referenceInputs": {
-    "giftAppBackend": "new-giftApp-backend-main (1)(3).zip",
-    "latacheSignupDesigns": "latache_signups.zip",
-    "signupDesignImagesReviewed": 9
-  },
-  "authRouteSurface": {
-    "canonicalRoutes": 17,
-    "legacyAuthAliasesExposed": 0,
-    "removedLegacyRoutes": [
-      "POST /api/auth/sign-up",
-      "POST /api/auth/refresh-token",
-      "POST /api/auth/verify-otp",
-      "POST /api/auth/resend-otp",
-      "GET /api/auth/verify-pass-token",
-      "POST /api/auth/verify-forgot-password",
-      "GET /api/auth/get-loggedin-user",
-      "GET /api/auth/verify-token",
-      "POST /api/auth/logout-all"
-    ]
-  },
-  "implemented": [
-    "Role-specific customer and seven-step tasker registration contracts from the Latache designs",
-    "Super-admin-only administrator creation with predefined/custom roles and permissions",
-    "Canonical customer, tasker, admin and super_admin roles",
-    "Email OTP verification with expiry and attempt limits",
-    "OTP-only password recovery and authenticated password change",
-    "Opaque database-backed refresh sessions with transactional rotation and reuse detection",
-    "Database-backed access-session validation and role/permission guards",
-    "Profile and active-session management",
-    "Detailed Swagger operations, examples, access requirements and common errors",
-    "Nodemailer TypeScript email templates without standalone HTML files",
-    "Canonical super-admin seed using the requested local credentials"
-  ],
-  "superAdminSeed": {
-    "email": "latache.superadmin@yopmail.com",
-    "password": "Admin@12345",
-    "productionWarning": "Override the password through environment secrets before production seeding."
+  "generatedAtUtc": "2026-08-05T11:32:17.864507+00:00",
+  "project": "Latache Backend - Cloudinary Uploads and Auth Swagger Examples",
+  "version": "3.3.2",
+  "scope": "Fixes NestJS dependency injection for JwtIdentityGuard when used by UploadsModule; no API, database, Prisma migration, or environment contract changes.",
+  "fix": {
+    "error": "UnknownDependenciesException: AuthSessionsRepository unavailable while resolving JwtIdentityGuard in UploadsModule",
+    "rootCause": "Route-scoped guards can be resolved in the importing feature-module context; every non-global dependency needed by the reusable guard must be available through AuthModule exports.",
+    "change": "AuthSessionsRepository is now exported by AuthModule, and regression tests assert the auth/upload module dependency graph."
   },
   "checks": {
-    "typescriptSyntaxTranspilation": "passed across 104 TypeScript files",
-    "staticAuthArchitecture": "passed",
-    "canonicalRouteInventory": "passed",
-    "legacyAuthDecoratorScan": "passed; zero aliases exposed",
-    "prismaSchemaModelAndAuthFieldScan": "passed",
-    "standaloneHtmlAndStaleTemplateAssetScan": "passed; zero files/references",
-    "postedNeonCredentialLeakScan": "passed; not embedded",
-    "dependencyAwareNestBuild": "not executable in packaging container because the configured npm mirror does not contain NestJS packages; run npm run verify locally"
+    "typescriptSyntaxTranspilation": "passed across 115 TypeScript files",
+    "relativeImportResolution": "passed; generated Prisma client excluded because prisma generate creates it",
+    "staticProjectVerification": "passed; 31 total route contracts and zero legacy auth aliases",
+    "guardDependencyExportGraph": "passed for JwtService, ConfigService, UsersService, AuthSessionsRepository, JwtModule, and UsersModule",
+    "dependencyAwareNestBuild": "not executable in packaging container because its configured npm mirror returned 404 for @eslint/js and @nestjs/cli; local npm installation already demonstrated by the user",
+    "databaseMigrationRequired": false,
+    "environmentChangeRequired": false
   },
   "inventory": {
-    "projectFiles": 133,
-    "typescriptFiles": 104,
+    "projectFiles": 147,
+    "typescriptFiles": 115,
     "prismaModels": 6,
     "prismaMigrations": 3
   }

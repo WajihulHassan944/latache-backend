@@ -9,6 +9,9 @@ const valid = () => ({
   SMTP_HOST: 'localhost',
   SMTP_PORT: '1025',
   SMTP_FROM: 'Latache <no-reply@latache.local>',
+  CLOUDINARY_CLOUD_NAME: 'latache-development',
+  CLOUDINARY_API_KEY: '1234567890',
+  CLOUDINARY_API_SECRET: 'development-cloudinary-secret',
 });
 
 describe('validateEnvironment', () => {

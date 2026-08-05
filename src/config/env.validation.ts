@@ -93,6 +93,30 @@ export const validateEnvironment = (environment: Environment): Environment => {
     120,
   );
   validateInteger(errors, 'SMTP_PORT', environment.SMTP_PORT, 587, 1, 65_535);
+  validateInteger(
+    errors,
+    'DB_TRANSACTION_MAX_WAIT_MS',
+    environment.DB_TRANSACTION_MAX_WAIT_MS,
+    15_000,
+    1_000,
+    120_000,
+  );
+  validateInteger(
+    errors,
+    'DB_TRANSACTION_TIMEOUT_MS',
+    environment.DB_TRANSACTION_TIMEOUT_MS,
+    30_000,
+    5_000,
+    120_000,
+  );
+  validateInteger(
+    errors,
+    'CLOUDINARY_MAX_FILE_SIZE_BYTES',
+    environment.CLOUDINARY_MAX_FILE_SIZE_BYTES,
+    10 * 1024 * 1024,
+    1024,
+    100 * 1024 * 1024,
+  );
   validateDuration(errors, 'JWT_EXPIRES_IN', environment.JWT_EXPIRES_IN, '15m');
 
   if (!BODY_LIMIT_PATTERN.test(environment.REQUEST_BODY_LIMIT ?? '1mb')) {
@@ -106,6 +130,9 @@ export const validateEnvironment = (environment: Environment): Environment => {
       'JWT_SECRET_ADMIN',
       'SMTP_HOST',
       'SMTP_FROM',
+      'CLOUDINARY_CLOUD_NAME',
+      'CLOUDINARY_API_KEY',
+      'CLOUDINARY_API_SECRET',
     ] as const;
     for (const key of required) {
       if (!present(environment[key])) errors.push(`${key} is required`);
@@ -117,6 +144,14 @@ export const validateEnvironment = (environment: Environment): Environment => {
     !isPostgresUrl(environment.DATABASE_URL as string)
   ) {
     errors.push('DATABASE_URL must be a valid PostgreSQL URL');
+  }
+
+
+  if (
+    present(environment.CLOUDINARY_FOLDER) &&
+    !/^[a-zA-Z0-9/_-]+$/.test(environment.CLOUDINARY_FOLDER as string)
+  ) {
+    errors.push('CLOUDINARY_FOLDER may contain only letters, numbers, slash, underscore, and hyphen');
   }
 
   const smtpUserPresent = present(environment.SMTP_USER);

@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
 import { AuthController } from './auth.controller';
+import { loginRequestExamples, loginResponseExamples } from './swagger/login.examples';
 
 const canonicalRoutes = [
   ['registerCustomer', RequestMethod.POST, 'customers/register'],
@@ -45,6 +46,22 @@ describe('Auth Swagger and route surface', () => {
     expect(handler).toBeDefined();
     expect(Reflect.getMetadata(PATH_METADATA, handler)).toBe(path);
     expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBe(method);
+  });
+
+
+  it('documents request and response examples for every account role', () => {
+    expect(Object.keys(loginRequestExamples)).toEqual([
+      'customer',
+      'tasker',
+      'admin',
+      'superAdmin',
+    ]);
+    expect(Object.keys(loginResponseExamples)).toEqual([
+      'customer',
+      'tasker',
+      'admin',
+      'superAdmin',
+    ]);
   });
 
   it('does not expose any removed legacy path', () => {

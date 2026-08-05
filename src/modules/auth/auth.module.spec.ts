@@ -7,6 +7,7 @@ import { AuthModule } from './auth.module';
 import { AdminAuthGuard } from './guards/admin-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtIdentityGuard } from './guards/jwt-identity.guard';
+import { AuthSessionsRepository } from './repositories/auth-sessions.repository';
 import { AuthRegistrationService } from './services/auth-registration.service';
 import { AuthTokenService } from './services/auth-token.service';
 
@@ -21,6 +22,7 @@ describe('AuthModule dependency graph', () => {
         AdminAuthGuard,
         RolesGuard,
         PermissionsGuard,
+        AuthSessionsRepository,
       ]),
     );
   });
