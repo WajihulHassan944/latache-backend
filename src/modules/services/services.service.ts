@@ -29,7 +29,7 @@ export class ServicesService {
         }
       : {};
 
-    const [totalItems, rows] = await this.prisma.$transaction([
+    const [totalItems, rows] = await Promise.all([
       this.prisma.service.count({ where }),
       this.prisma.service.findMany({
         where,

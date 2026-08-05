@@ -50,6 +50,37 @@ SMTP_FROM=Latache <no-reply@latache.local>
 
 Use `SMTP_SECURE=true` for implicit TLS on port 465. Use `SMTP_SECURE=false` for port 587 so Nodemailer can upgrade with STARTTLS when the server supports it.
 
+## Neon PostgreSQL
+
+Use the Neon connection string only in your local `.env` or deployment secret store. Never commit it. A direct Neon connection works as:
+
+```env
+DATABASE_URL=postgresql://neondb_owner:YOUR_PASSWORD@YOUR_NEON_HOST/neondb?sslmode=require
+```
+
+When Neon gives you both pooled and direct URLs, use the pooled URL at runtime and the direct URL for Prisma migrations:
+
+```env
+DATABASE_URL=postgresql://USER:PASSWORD@YOUR_POOLER_HOST/neondb?sslmode=require
+DIRECT_URL=postgresql://USER:PASSWORD@YOUR_DIRECT_HOST/neondb?sslmode=require
+```
+
+`prisma.config.ts` prefers `DIRECT_URL` for CLI migrations and falls back to `DATABASE_URL`. The NestJS runtime continues to use `DATABASE_URL`.
+
+## Gmail/Nodemailer example
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=your-account@gmail.com
+SMTP_PASSWORD=your-google-app-password
+SMTP_FROM=Latache <your-account@gmail.com>
+SMTP_VERIFY_ON_BOOTSTRAP=true
+```
+
+Use a Google App Password, not your normal account password. Keep it only in `.env` or your host's secret manager.
+
 ## Existing Sequelize-managed Latache database
 
 Do not run `prisma migrate reset`. First take and verify a backup. Compare the existing schema with `prisma/migrations/20260805000000_baseline/migration.sql`, then baseline it:
@@ -91,7 +122,8 @@ docker compose --env-file .env run --rm api npm run prisma:seed
 ## Production
 
 ```bash
-npm ci
+npm install
+# After the first install, commit package-lock.json and use npm ci in CI/production.
 npm run prisma:generate
 npm run build
 npm run prisma:migrate:deploy
@@ -126,7 +158,7 @@ The e2e concurrency test requires a dedicated migrated PostgreSQL test database 
 
 - `AuthModule`: OTP, access/refresh tokens, logout, and secure password reset
 - `UsersModule`: Prisma-based user persistence
-- `MailModule`: pooled Nodemailer SMTP transport and escaped HTML templates
+- `MailModule`: standard typed Nodemailer SMTP transport and escaped HTML templates
 - `ServicesModule`: paginated catalogue and administrator-only creation
 - `TaskersModule`: onboarding, pricing, availability, profiles, and geospatial search
 - `BookingsModule`: locked slot claims and viewer-relative booking lists

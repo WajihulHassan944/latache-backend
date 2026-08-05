@@ -1,4 +1,4 @@
-import type { SentMessageInfo, Transporter } from 'nodemailer';
+import type { Transporter, TransportOptions } from 'nodemailer';
 
 export interface MailTransporter {
   sendMail(options: {
@@ -7,9 +7,11 @@ export interface MailTransporter {
     subject: string;
     html: string;
     text: string;
-  }): Promise<SentMessageInfo>;
+  }): Promise<unknown>;
   verify(): Promise<boolean>;
   close(): void;
 }
 
-export const asMailTransporter = (transporter: Transporter): MailTransporter => transporter;
+export const asMailTransporter = <T, D extends TransportOptions>(
+  transporter: Transporter<T, D>,
+): MailTransporter => transporter as unknown as MailTransporter;

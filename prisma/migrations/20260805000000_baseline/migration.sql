@@ -54,8 +54,8 @@ CREATE TABLE "Services" (
   "description" VARCHAR(255),
   "slug" VARCHAR(255),
   "icon" VARCHAR(255),
-  "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "createdAt" TIMESTAMPTZ(6) NOT NULL,
+  "updatedAt" TIMESTAMPTZ(6) NOT NULL,
   CONSTRAINT "Services_pkey" PRIMARY KEY ("id")
 );
 
@@ -124,12 +124,6 @@ CREATE UNIQUE INDEX "RefreshTokens_tokenHash_key" ON "RefreshTokens"("tokenHash"
 CREATE UNIQUE INDEX "user_services_user_id_service_id_unique" ON "UserServices"("userId", "serviceId");
 CREATE UNIQUE INDEX "Bookings_availabilityId_key" ON "Bookings"("availabilityId");
 CREATE INDEX "user_availabilities_user_id_date" ON "UserAvailabilities"("userId", "date");
-CREATE INDEX "refresh_tokens_user_revoked_idx" ON "RefreshTokens"("userId", "revokedAt");
-CREATE INDEX "user_services_service_rate_idx" ON "UserServices"("serviceId", "hourlyRate");
-CREATE INDEX "user_availabilities_open_slot_idx" ON "UserAvailabilities"("userId", "date", "isBooked");
-CREATE INDEX "bookings_customer_date_idx" ON "Bookings"("customerId", "bookingDate");
-CREATE INDEX "bookings_tasker_date_idx" ON "Bookings"("taskerId", "bookingDate");
-CREATE INDEX "users_role_onboarding_idx" ON "Users"("role", "onboardingStatus");
 
 ALTER TABLE "RefreshTokens" ADD CONSTRAINT "RefreshTokens_userId_fkey"
   FOREIGN KEY ("userId") REFERENCES "Users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -53,9 +53,6 @@ export default () => {
       user: process.env.SMTP_USER,
       password: process.env.SMTP_PASSWORD,
       from: process.env.SMTP_FROM,
-      pool: asBoolean(process.env.SMTP_POOL, true),
-      maxConnections: asPositiveInteger(process.env.SMTP_MAX_CONNECTIONS, 5),
-      maxMessages: asPositiveInteger(process.env.SMTP_MAX_MESSAGES, 100),
       tlsRejectUnauthorized: asBoolean(
         process.env.SMTP_TLS_REJECT_UNAUTHORIZED,
         true,

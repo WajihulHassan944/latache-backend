@@ -68,8 +68,8 @@ model Service {
   description String?       @db.VarChar(255)
   slug        String?       @db.VarChar(255)
   icon        String?       @db.VarChar(255)
-  createdAt   DateTime      @default(now()) @db.Timestamptz(6)
-  updatedAt   DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt   DateTime      @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(6)
 
   userServices UserService[]
   bookings     Booking[]

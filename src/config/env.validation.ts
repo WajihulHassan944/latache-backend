@@ -85,22 +85,6 @@ export const validateEnvironment = (environment: Environment): Environment => {
     60,
   );
   validateInteger(errors, 'SMTP_PORT', environment.SMTP_PORT, 587, 1, 65_535);
-  validateInteger(
-    errors,
-    'SMTP_MAX_CONNECTIONS',
-    environment.SMTP_MAX_CONNECTIONS,
-    5,
-    1,
-    100,
-  );
-  validateInteger(
-    errors,
-    'SMTP_MAX_MESSAGES',
-    environment.SMTP_MAX_MESSAGES,
-    100,
-    1,
-    100_000,
-  );
   validateDuration(errors, 'JWT_EXPIRES_IN', environment.JWT_EXPIRES_IN, '15m');
   validateDuration(
     errors,

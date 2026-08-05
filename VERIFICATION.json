@@ -1,0 +1,34 @@
+{
+  "generatedAtUtc": "2026-08-05T07:07:31.363849+00:00",
+  "project": "Latache Backend - NestJS + TypeScript + Prisma + Nodemailer",
+  "version": "3.0.1",
+  "fixes": [
+    "Replaced the dynamic pooled Nodemailer transport with a standard SMTPTransport.Options transport.",
+    "Removed SMTP pooling configuration that caused TS2769 with @types/nodemailer.",
+    "Added optional DIRECT_URL support for Prisma migrations on Neon.",
+    "Added sanitized Neon and Gmail SMTP configuration examples."
+  ],
+  "checks": {
+    "staticArchitecture": "passed",
+    "typescriptSyntax": "pending local dependency-aware build",
+    "nodemailerTransportTyping": "patched against SMTPTransport.Options overload",
+    "jsonParsing": "passed",
+    "secretScan": "passed",
+    "archiveExtraction": "pending packaging"
+  },
+  "inventory": {
+    "projectFilesBeforeThisReport": 107,
+    "typescriptFiles": 77,
+    "prismaModelsDetected": 6,
+    "prismaMigrations": [
+      "20260805000000_baseline",
+      "20260805001000_add_query_indexes"
+    ],
+    "preservedLegacyApiRoutes": 22,
+    "additionalHealthRoutes": 1
+  },
+  "environmentLimitations": [
+    "The container npm proxy does not contain the project dependency versions, so npm install and the full Nest build could not be executed here.",
+    "The user already confirmed Prisma 7.9.1 generation and schema validation locally; rerun npm run build after replacing the project."
+  ]
+}

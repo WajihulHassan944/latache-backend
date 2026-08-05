@@ -97,11 +97,14 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     templateName: TemplateName,
     substitutions: Record<string, string>,
   ): string {
-    let html = this.templates.get(templateName);
-    if (!html) {
-      html = readFileSync(join(__dirname, 'templates', templateName), 'utf8');
+    const cachedTemplate = this.templates.get(templateName);
+    const html =
+      cachedTemplate ?? readFileSync(join(__dirname, 'templates', templateName), 'utf8');
+
+    if (!cachedTemplate) {
       this.templates.set(templateName, html);
     }
+
     return Object.entries(substitutions).reduce(
       (rendered, [key, value]) => rendered.replaceAll(`{{${key}}}`, escapeHtml(value)),
       html,

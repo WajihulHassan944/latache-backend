@@ -1,6 +1,6 @@
 {
   "name": "latache-backend-nestjs-prisma",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Latache API migrated to NestJS, strict TypeScript, Prisma ORM, PostgreSQL, and Nodemailer",
   "private": true,
   "license": "UNLICENSED",
@@ -64,7 +64,8 @@
     "@types/express": "5.0.3",
     "@types/jest": "29.5.14",
     "@types/node": "22.17.2",
-    "@types/nodemailer": "8.0.0",
+    "@types/nodemailer": "8.0.1",
+    "@types/pg": "8.20.3",
     "@types/supertest": "6.0.3",
     "eslint": "9.32.0",
     "eslint-config-prettier": "10.1.8",

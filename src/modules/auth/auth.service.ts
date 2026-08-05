@@ -66,11 +66,11 @@ export class AuthService {
     if (dto.role === UserRole.Admin) {
       throw new BadRequestException('Administrator accounts cannot be self-registered');
     }
-    if (dto.authType.trim() !== '') {
-      throw new UnprocessableEntityException(
-        'Social signup is not available until provider tokens are verified server-side',
-      );
-    }
+    // if (dto.authType.trim() !== '') {
+    //   throw new UnprocessableEntityException(
+    //     'Social signup is not available until provider tokens are verified server-side',
+    //   );
+    // }
 
     const existing = await this.users.findByEmail(dto.email);
     if (existing) throw new ConflictException('Email already exists');
