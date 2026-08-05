@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+src/generated/prisma
+.git
+.github
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.idea
+.vscode
+README.md
+docs

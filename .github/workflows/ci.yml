@@ -1,0 +1,56 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: latache_test
+          POSTGRES_USER: latache
+          POSTGRES_PASSWORD: latache
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U latache -d latache_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      mailpit:
+        image: axllent/mailpit:v1.27
+        ports:
+          - 1025:1025
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://latache:latache@localhost:5432/latache_test?schema=public
+      JWT_SECRET: ci-jwt-secret-with-at-least-thirty-two-characters
+      JWT_SECRET_ADMIN: ci-admin-secret-with-at-least-thirty-two-characters
+      PASSWORD_RESET_JWT_SECRET: ci-reset-secret-with-at-least-thirty-two-characters
+      SMTP_HOST: localhost
+      SMTP_PORT: 1025
+      SMTP_SECURE: "false"
+      SMTP_FROM: Latache <no-reply@latache.local>
+      FRONTEND_BASE_URL: http://localhost:3000
+      SWAGGER_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - run: npm run verify:static
+      - run: npm run prisma:validate
+      - run: npm run prisma:migrate:deploy
+      - run: npm run prisma:seed
+      - run: npm run build
+      - run: npm run lint
+      - run: npm test -- --runInBand
+      - run: npm run test:cov -- --runInBand
+      - run: npm run test:e2e -- --runInBand

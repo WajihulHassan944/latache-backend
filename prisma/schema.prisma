@@ -1,0 +1,162 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                       Int                @id @default(autoincrement())
+  firstName                String?            @default("") @db.VarChar(255)
+  lastName                 String?            @default("") @db.VarChar(255)
+  email                    String             @unique(map: "Users_email_key") @db.VarChar(255)
+  phoneNumber              String?            @default("") @db.VarChar(255)
+  otp                      Int?
+  otpExpires               DateTime?          @db.Timestamptz(6)
+  password                 String?            @db.VarChar(255)
+  zipCode                  String?            @db.VarChar(255)
+  passwordResetCode        Int?
+  passwordResetCodeExpires DateTime?          @db.Timestamptz(6)
+  profilePicture           String?            @default("") @db.VarChar(255)
+  role                     String             @default("") @db.VarChar(255)
+  bio                      String?            @db.Text
+  isVerified               Boolean            @default(false)
+  isAdmin                  Boolean            @default(false)
+  isProfilePublic          Boolean            @default(false)
+  isDocVerified            Boolean            @default(false)
+  authType                 String?            @default("") @db.VarChar(255)
+  docType                  String?            @default("") @db.VarChar(255)
+  dateOfBirth              String?            @default("") @db.VarChar(255)
+  yearsOfExperience        Int?
+  idType                   String?            @db.VarChar(255)
+  identityDocument         Json?              @db.JsonB
+  serviceAreaLabel         String?            @db.VarChar(255)
+  serviceAreaLat           Decimal?           @db.Decimal(9, 6)
+  serviceAreaLng           Decimal?           @db.Decimal(9, 6)
+  serviceAreaRadiusKm      Decimal?           @db.Decimal(6, 2)
+  serviceAreaCity          String?            @db.VarChar(255)
+  serviceAreaArea          String?            @db.VarChar(255)
+  onboardingStatus         String?            @db.VarChar(255)
+  submittedAt              DateTime?          @db.Timestamptz(6)
+  rating                   Decimal            @default(0) @db.Decimal(2, 1)
+  reviewsCount             Int                @default(0)
+  completedTasks           Int                @default(0)
+  vehicles                 String[]           @default([]) @db.VarChar(255)
+  workImages               String[]           @default([]) @db.VarChar(255)
+  isElite                  Boolean            @default(false)
+  aboutMe                  String?            @db.Text
+  skills                   String[]           @default([]) @db.VarChar(255)
+  createdAt                DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+
+  refreshTokens      RefreshToken[]
+  userServices       UserService[]
+  availability       UserAvailability[]
+  bookingsAsCustomer Booking[]          @relation("CustomerBookings")
+  bookingsAsTasker   Booking[]          @relation("TaskerBookings")
+
+  @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
+  @@map("Users")
+}
+
+model Service {
+  id          Int           @id @default(autoincrement())
+  name        String?       @db.VarChar(255)
+  description String?       @db.VarChar(255)
+  slug        String?       @db.VarChar(255)
+  icon        String?       @db.VarChar(255)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  userServices UserService[]
+  bookings     Booking[]
+
+  @@map("Services")
+}
+
+model RefreshToken {
+  id                  Int       @id @default(autoincrement())
+  userId              Int
+  tokenHash           String    @unique(map: "RefreshTokens_tokenHash_key") @db.VarChar(255)
+  device              String?   @db.VarChar(255)
+  expiresAt           DateTime  @db.Timestamptz(6)
+  revokedAt           DateTime? @db.Timestamptz(6)
+  replacedByTokenHash String?   @db.VarChar(255)
+  createdAt           DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "RefreshTokens_userId_fkey")
+
+  @@index([userId, revokedAt], map: "refresh_tokens_user_revoked_idx")
+  @@map("RefreshTokens")
+}
+
+model UserService {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  serviceId  Int
+  hourlyRate Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "UserServices_userId_fkey")
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "UserServices_serviceId_fkey")
+
+  @@unique([userId, serviceId], map: "user_services_user_id_service_id_unique")
+  @@index([serviceId, hourlyRate], map: "user_services_service_rate_idx")
+  @@map("UserServices")
+}
+
+model UserAvailability {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  date      DateTime @db.Date
+  startTime String   @db.VarChar(255)
+  endTime   String   @db.VarChar(255)
+  isBooked  Boolean  @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "UserAvailabilities_userId_fkey")
+  booking Booking?
+
+  @@index([userId, date], map: "user_availabilities_user_id_date")
+  @@index([userId, date, isBooked], map: "user_availabilities_open_slot_idx")
+  @@map("UserAvailabilities")
+}
+
+model Booking {
+  id               Int      @id @default(autoincrement())
+  customerId       Int
+  taskerId         Int
+  serviceId        Int
+  availabilityId   Int      @unique(map: "Bookings_availabilityId_key")
+  hourlyRate       Decimal  @db.Decimal(10, 2)
+  bookingDate      DateTime @db.Date
+  startTime        String   @db.VarChar(255)
+  endTime          String   @db.VarChar(255)
+  venueAddress     String   @db.VarChar(255)
+  apartmentSuite   String?  @db.VarChar(255)
+  description      String   @db.Text
+  attachments      Json?    @db.JsonB
+  locationLabel    String   @db.VarChar(255)
+  locationLat      Decimal  @db.Decimal(9, 6)
+  locationLng      Decimal  @db.Decimal(9, 6)
+  locationCity     String?  @db.VarChar(255)
+  locationArea     String?  @db.VarChar(255)
+  status           String   @default("pending") @db.VarChar(255)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  customer    User             @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_customerId_fkey")
+  tasker      User             @relation("TaskerBookings", fields: [taskerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_taskerId_fkey")
+  service     Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_serviceId_fkey")
+  availability UserAvailability @relation(fields: [availabilityId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_availabilityId_fkey")
+
+  @@index([customerId, bookingDate], map: "bookings_customer_date_idx")
+  @@index([taskerId, bookingDate], map: "bookings_tasker_date_idx")
+  @@map("Bookings")
+}
