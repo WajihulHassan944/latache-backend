@@ -75,13 +75,25 @@ async function bootstrap(): Promise<void> {
       app,
       new DocumentBuilder()
         .setTitle('Latache API')
-        .setDescription('Latache customer, tasker, service, authentication, and booking API')
-        .setVersion('2.0.0')
-        .addBearerAuth()
+        .setDescription(
+          'Production API for Latache customers, taskers, administrators, services, and bookings. Authentication endpoints include role-specific signup, OTP verification, session rotation, password recovery, and RBAC.',
+        )
+        .setVersion('3.2.0')
+        .addTag('01 Auth', 'Customer, tasker, admin, super-admin, session, and password flows')
+        .addTag('services', 'Service catalogue')
+        .addTag('taskers', 'Tasker discovery, availability and onboarding')
+        .addTag('bookings', 'Customer bookings')
+        .addTag('health', 'Application and database health')
+        .addBearerAuth(
+          { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+          'bearer',
+        )
         .build(),
     );
     SwaggerModule.setup('api/docs', app, document, {
       jsonDocumentUrl: 'api/docs-json',
+      swaggerOptions: { persistAuthorization: true, displayRequestDuration: true },
+      customSiteTitle: 'Latache API Documentation',
     });
   }
 

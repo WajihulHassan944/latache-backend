@@ -29,6 +29,7 @@ describe('Booking slot concurrency (e2e)', () => {
   let availability: UserAvailability;
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   let jwtSecret: string;
+  let sessionId: number;
 
   beforeAll(async () => {
     if (!process.env.DATABASE_URL) {
@@ -60,6 +61,15 @@ describe('Booking slot concurrency (e2e)', () => {
         isVerified: true,
       },
     });
+    const session = await prisma.refreshToken.create({
+      data: {
+        userId: customer.id,
+        tokenHash: `concurrency-${unique}`,
+        lastUsedAt: new Date(),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
+    sessionId = session.id;
     tasker = await prisma.user.create({
       data: {
         email: `tasker-${unique}@example.com`,
@@ -122,6 +132,8 @@ describe('Booking slot concurrency (e2e)', () => {
       isVerified: true,
       isAdmin: false,
       role: UserRole.Customer,
+      permissions: [],
+      sessionId,
     };
     const accessToken = await jwt.signAsync(payload, {
       secret: jwtSecret,

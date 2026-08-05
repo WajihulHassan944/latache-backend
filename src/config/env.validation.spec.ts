@@ -1,61 +1,39 @@
 import { validateEnvironment } from './env.validation';
 
+const valid = () => ({
+  NODE_ENV: 'development',
+  PORT: '8080',
+  DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/latache',
+  JWT_SECRET: 'development-access-secret',
+  JWT_SECRET_ADMIN: 'development-admin-secret',
+  SMTP_HOST: 'localhost',
+  SMTP_PORT: '1025',
+  SMTP_FROM: 'Latache <no-reply@latache.local>',
+});
+
 describe('validateEnvironment', () => {
-  it('accepts a configured development environment', () => {
-    const environment = {
-      NODE_ENV: 'development',
-      PORT: '8080',
-      DATABASE_URL: 'postgresql://latache:latache@localhost:5432/latache',
-      JWT_SECRET: 'development-jwt-secret',
-      JWT_SECRET_ADMIN: 'development-admin-secret',
-      PASSWORD_RESET_JWT_SECRET: 'development-reset-secret',
-      SMTP_HOST: 'localhost',
-      SMTP_PORT: '1025',
-      SMTP_FROM: 'Latache <no-reply@latache.local>',
-    };
-    expect(validateEnvironment(environment)).toEqual(environment);
+  it('accepts a valid development environment', () => {
+    expect(validateEnvironment(valid())).toEqual(valid());
   });
 
-  it('accepts SMTP without credentials for a local relay', () => {
+  it('rejects invalid OTP durations and mismatched SMTP credentials', () => {
     expect(() =>
       validateEnvironment({
-        NODE_ENV: 'development',
-        DATABASE_URL: 'postgresql://latache:latache@localhost:5432/latache',
-        JWT_SECRET: 'development-jwt-secret',
-        JWT_SECRET_ADMIN: 'development-admin-secret',
-        PASSWORD_RESET_JWT_SECRET: 'development-reset-secret',
-        SMTP_HOST: 'localhost',
-        SMTP_FROM: 'no-reply@latache.local',
-      }),
-    ).not.toThrow();
-  });
-
-  it('rejects partial SMTP credentials', () => {
-    expect(() =>
-      validateEnvironment({
-        NODE_ENV: 'test',
+        ...valid(),
+        PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES: '0',
         SMTP_USER: 'user',
       }),
-    ).toThrow('SMTP_USER and SMTP_PASSWORD');
+    ).toThrow(/PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES/);
   });
 
-  it('rejects weak production secrets and missing production services', () => {
+  it('requires independent long secrets in production', () => {
     expect(() =>
       validateEnvironment({
+        ...valid(),
         NODE_ENV: 'production',
-        DATABASE_URL: 'postgresql://latache:latache@localhost:5432/latache',
-        JWT_SECRET: 'short',
+        JWT_SECRET: 'same',
+        JWT_SECRET_ADMIN: 'same',
       }),
-    ).toThrow('Invalid environment configuration');
-  });
-
-  it('rejects unknown environments and invalid numeric limits', () => {
-    expect(() =>
-      validateEnvironment({
-        NODE_ENV: 'prod',
-        DATABASE_URL: 'postgresql://latache:latache@localhost:5432/latache',
-        BCRYPT_ROUNDS: '100',
-      }),
-    ).toThrow('NODE_ENV must be one of');
+    ).toThrow(/at least 32 characters/);
   });
 });

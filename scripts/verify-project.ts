@@ -24,22 +24,33 @@ for (const path of [
   'prisma.config.ts',
   'prisma/schema.prisma',
   'prisma/migrations/20260805000000_baseline/migration.sql',
+  'prisma/migrations/20260805002000_revamp_auth_module/migration.sql',
   'prisma/seed.ts',
   'src/database/prisma.service.ts',
   'src/modules/mail/mail.module.ts',
   'src/modules/mail/mail.service.ts',
+  'src/modules/auth/auth.controller.ts',
+  'src/modules/auth/auth.module.ts',
+  'src/modules/auth/guards/jwt-identity.guard.ts',
+  'src/modules/auth/guards/jwt-auth.guard.ts',
+  'src/modules/auth/services/auth-registration.service.ts',
+  'src/modules/auth/services/auth-password.service.ts',
+  'src/modules/auth/services/auth-token.service.ts',
+  'src/modules/auth/auth.swagger.spec.ts',
+  'docs/auth-module.md',
 ]) {
   requireFile(path);
 }
 
 const packageJson = JSON.parse(read('package.json')) as {
+  version?: string;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
-const allDependencies = {
-  ...packageJson.dependencies,
-  ...packageJson.devDependencies,
-};
+if (packageJson.version !== '3.2.0') {
+  failures.push(`Expected package version 3.2.0, received ${packageJson.version ?? '<missing>'}`);
+}
+const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
 for (const dependency of [
   'sequelize',
   'sequelize-typescript',
@@ -49,15 +60,10 @@ for (const dependency of [
   'typeorm',
   '@nestjs/typeorm',
 ]) {
-  if (dependency in allDependencies) failures.push(`Forbidden dependency remains: ${dependency}`);
+  if (dependency in dependencies) failures.push(`Forbidden dependency remains: ${dependency}`);
 }
-for (const dependency of [
-  '@prisma/client',
-  '@prisma/adapter-pg',
-  'prisma',
-  'nodemailer',
-]) {
-  if (!(dependency in allDependencies)) failures.push(`Required dependency is missing: ${dependency}`);
+for (const dependency of ['@prisma/client', '@prisma/adapter-pg', 'prisma', 'nodemailer']) {
+  if (!(dependency in dependencies)) failures.push(`Required dependency is missing: ${dependency}`);
 }
 
 const sourceFiles = walk('src').filter((path) => path.endsWith('.ts'));
@@ -67,15 +73,37 @@ for (const marker of [
   "from 'sequelize'",
   "from 'sequelize-typescript'",
   "from 'resend'",
+  'PASSWORD_RESET_JWT_SECRET',
+  'PASS_JWT_EXPIRES_IN',
+  'ALLOW_QUERY_TOKEN_COMPATIBILITY',
+  'registerLegacy',
+  'resetWithToken',
+  'verifyPasswordResetToken',
+  'passwordResetLinkTemplate',
 ]) {
-  if (sourceText.includes(marker)) failures.push(`Forbidden source import remains: ${marker}`);
+  if (sourceText.includes(marker)) failures.push(`Forbidden auth/source marker remains: ${marker}`);
 }
 
 const runtimeJavaScript = ['src', 'prisma', 'scripts', 'test']
   .flatMap(walk)
   .filter((path) => path.endsWith('.js') || path.endsWith('.cjs'));
-if (runtimeJavaScript.length) {
+if (runtimeJavaScript.length > 0) {
   failures.push(`JavaScript runtime/source files remain: ${runtimeJavaScript.join(', ')}`);
+}
+
+const htmlFiles = walk('.').filter(
+  (path) =>
+    (path.endsWith('.html') || path.endsWith('.htm')) &&
+    !path.startsWith('node_modules/') &&
+    !path.startsWith('dist/'),
+);
+if (htmlFiles.length > 0) {
+  failures.push(`Standalone HTML files remain: ${htmlFiles.join(', ')}`);
+}
+
+const nestCli = read('nest-cli.json');
+if (nestCli.includes('mail/templates') || nestCli.includes('.html')) {
+  failures.push('Nest CLI still references removed standalone email templates');
 }
 
 const schema = read('prisma/schema.prisma');
@@ -90,11 +118,16 @@ for (const marker of [
   'model Booking {',
   '@@map("Users")',
   '@@map("Bookings")',
+  'accountStatus',
+  'adminRole',
+  'permissions',
+  'phoneCountryCode',
+  'lastLoginAt',
 ]) {
   if (!schema.includes(marker)) failures.push(`Prisma schema marker is missing: ${marker}`);
 }
 
-const migration = read('prisma/migrations/20260805000000_baseline/migration.sql');
+const baseline = read('prisma/migrations/20260805000000_baseline/migration.sql');
 for (const table of [
   'Users',
   'Services',
@@ -103,8 +136,34 @@ for (const table of [
   'UserAvailabilities',
   'Bookings',
 ]) {
-  if (!migration.includes(`CREATE TABLE "${table}"`)) {
+  if (!baseline.includes(`CREATE TABLE "${table}"`)) {
     failures.push(`Baseline migration does not create ${table}`);
+  }
+}
+
+const authModule = read('src/modules/auth/auth.module.ts');
+for (const provider of [
+  'JwtIdentityGuard',
+  'JwtAuthGuard',
+  'AdminAuthGuard',
+  'RolesGuard',
+  'PermissionsGuard',
+  'UsersModule',
+]) {
+  if (!authModule.includes(provider)) {
+    failures.push(`AuthModule provider/export graph is missing ${provider}`);
+  }
+}
+
+const tokenService = read('src/modules/auth/services/auth-token.service.ts');
+if (tokenService.includes('user.isVerified &&')) {
+  failures.push('Pending-verification registration sessions cannot be refreshed');
+}
+
+const identityGuard = read('src/modules/auth/guards/jwt-identity.guard.ts');
+for (const marker of ['extractBearerToken', 'findActiveById', 'sessionId']) {
+  if (!identityGuard.includes(marker)) {
+    failures.push(`Identity guard security marker is missing: ${marker}`);
   }
 }
 
@@ -119,19 +178,28 @@ const controllers: Record<string, string> = {
   taskers: 'src/modules/taskers/taskers.controller.ts',
   bookings: 'src/modules/bookings/bookings.controller.ts',
 };
-const contracts: Array<[string, 'Get' | 'Post', string]> = [
-  ['auth', 'Get', 'get-loggedin-user'],
-  ['auth', 'Post', 'sign-up'],
-  ['auth', 'Post', 'verify-otp'],
-  ['auth', 'Post', 'resend-otp'],
-  ['auth', 'Get', 'verify-token'],
-  ['auth', 'Get', 'verify-pass-token'],
+const canonicalContracts: Array<[
+  keyof typeof controllers,
+  'Get' | 'Post' | 'Patch' | 'Delete',
+  string,
+]> = [
+  ['auth', 'Post', 'customers/register'],
+  ['auth', 'Post', 'taskers/register'],
+  ['auth', 'Post', 'admins/register'],
   ['auth', 'Post', 'login'],
-  ['auth', 'Post', 'refresh-token'],
-  ['auth', 'Post', 'logout'],
-  ['auth', 'Post', 'logout-all'],
+  ['auth', 'Post', 'refresh'],
+  ['auth', 'Post', 'verify-email'],
+  ['auth', 'Post', 'resend-verification-email'],
   ['auth', 'Post', 'forgot-password'],
-  ['auth', 'Post', 'verify-forgot-password'],
+  ['auth', 'Post', 'verify-reset-otp'],
+  ['auth', 'Post', 'reset-password'],
+  ['auth', 'Patch', 'change-password'],
+  ['auth', 'Get', 'me'],
+  ['auth', 'Patch', 'me'],
+  ['auth', 'Get', 'sessions'],
+  ['auth', 'Delete', 'sessions/:id'],
+  ['auth', 'Post', 'logout'],
+  ['auth', 'Post', 'sessions/logout-all'],
   ['services', 'Get', 'get-services'],
   ['services', 'Post', 'add-service'],
   ['taskers', 'Post', 'onboarding'],
@@ -153,18 +221,79 @@ for (const [prefix, path] of Object.entries(controllers)) {
     failures.push(`Controller prefix /${prefix} is missing from ${path}`);
   }
 }
-for (const [prefix, method, route] of contracts) {
-  const controller = read(controllers[prefix] as string);
+for (const [prefix, method, route] of canonicalContracts) {
+  const controllerPath = controllers[prefix];
+
+if (!controllerPath) {
+  throw new Error(`Controller mapping not found for route prefix: ${prefix}`);
+}
+
+const controller = read(controllerPath);
   const decorator = route ? `@${method}('${route}')` : `@${method}()`;
   if (!controller.includes(decorator)) {
     failures.push(`${method.toUpperCase()} /api/${prefix}/${route} is missing`);
   }
 }
 
-if (failures.length) {
+const authController = read('src/modules/auth/auth.controller.ts');
+for (const route of [
+  'sign-up',
+  'refresh-token',
+  'verify-otp',
+  'resend-otp',
+  'verify-pass-token',
+  'verify-forgot-password',
+  'get-loggedin-user',
+  'verify-token',
+  'logout-all',
+]) {
+  const routePattern = new RegExp(`@(Get|Post|Patch|Delete)\\('${route.replace('/', '\\/')}'\\)`);
+  if (routePattern.test(authController)) {
+    failures.push(`Removed legacy auth route remains: /api/auth/${route}`);
+  }
+}
+for (const marker of [
+  "@ApiTags('01 Auth')",
+  '@ApiOperation',
+  '@ApiCreatedResponse',
+  '@ApiOkResponse',
+  "@ApiBearerAuth('bearer')",
+]) {
+  if (!authController.includes(marker)) failures.push(`Auth Swagger marker is missing: ${marker}`);
+}
+
+const registrationDto = read('src/modules/auth/dto/common-auth.dto.ts');
+if (!registrationDto.includes('acceptedTermsAndPrivacyPolicy!: true')) {
+  failures.push('Canonical signup consent field is missing');
+}
+for (const removedDto of [
+  'src/modules/auth/dto/sign-up.dto.ts',
+  'src/modules/auth/dto/optional-refresh-token.dto.ts',
+  'src/modules/auth/dto/resend-otp.dto.ts',
+  'src/modules/auth/dto/reset-password-with-otp.dto.ts',
+  'src/modules/auth/dto/verify-otp.dto.ts',
+]) {
+  if (existsSync(join(root, removedDto))) failures.push(`Removed legacy DTO remains: ${removedDto}`);
+}
+const taskerDto = read('src/modules/auth/dto/register-tasker.dto.ts');
+if (!taskerDto.includes('@ArrayMinSize(3)') || !taskerDto.includes('@ArrayMaxSize(3)')) {
+  failures.push('Tasker registration must require exactly three services');
+}
+
+const seed = read('prisma/seed.ts');
+for (const marker of [
+  'latache.superadmin@yopmail.com',
+  'Admin@12345',
+  'password: passwordHash',
+  'AdminRole.SuperAdmin',
+]) {
+  if (!seed.includes(marker)) failures.push(`Super-admin seed marker is missing: ${marker}`);
+}
+
+if (failures.length > 0) {
   console.error(`Static verification failed:\n- ${failures.join('\n- ')}`);
   process.exit(1);
 }
 console.log(
-  `Verified Prisma/Nodemailer architecture, six tables, TypeScript source policy, and ${contracts.length} legacy routes.`,
+  `Verified Prisma/Nodemailer architecture, canonical auth-only route surface, six mapped tables, ${canonicalContracts.length} total routes, and removal of every legacy auth alias.`,
 );

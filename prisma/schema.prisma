@@ -13,15 +13,27 @@ model User {
   firstName                String?            @default("") @db.VarChar(255)
   lastName                 String?            @default("") @db.VarChar(255)
   email                    String             @unique(map: "Users_email_key") @db.VarChar(255)
+  phoneCountryCode         String?            @default("") @db.VarChar(8)
   phoneNumber              String?            @default("") @db.VarChar(255)
   otp                      Int?
   otpExpires               DateTime?          @db.Timestamptz(6)
+  otpAttempts              Int                @default(0)
   password                 String?            @db.VarChar(255)
   zipCode                  String?            @db.VarChar(255)
   passwordResetCode        Int?
   passwordResetCodeExpires DateTime?          @db.Timestamptz(6)
+  passwordResetAttempts    Int                @default(0)
   profilePicture           String?            @default("") @db.VarChar(255)
   role                     String             @default("") @db.VarChar(255)
+  accountStatus            String             @default("active") @db.VarChar(32)
+  adminRole                String?            @db.VarChar(64)
+  permissions              String[]           @default([]) @db.VarChar(100)
+  mustChangePassword       Boolean            @default(false)
+  lastLoginAt              DateTime?          @db.Timestamptz(6)
+  acceptedTermsAt          DateTime?          @db.Timestamptz(6)
+  acceptedPrivacyAt        DateTime?          @db.Timestamptz(6)
+  createdById              Int?
+  deletedAt                DateTime?          @db.Timestamptz(6)
   bio                      String?            @db.Text
   isVerified               Boolean            @default(false)
   isAdmin                  Boolean            @default(false)
@@ -31,6 +43,7 @@ model User {
   docType                  String?            @default("") @db.VarChar(255)
   dateOfBirth              String?            @default("") @db.VarChar(255)
   yearsOfExperience        Int?
+  hourlyRate               Decimal?           @db.Decimal(10, 2)
   idType                   String?            @db.VarChar(255)
   identityDocument         Json?              @db.JsonB
   serviceAreaLabel         String?            @db.VarChar(255)
@@ -57,8 +70,12 @@ model User {
   availability       UserAvailability[]
   bookingsAsCustomer Booking[]          @relation("CustomerBookings")
   bookingsAsTasker   Booking[]          @relation("TaskerBookings")
+  createdBy          User?              @relation("AdminCreator", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdAdmins      User[]             @relation("AdminCreator")
 
   @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
+  @@index([role, accountStatus], map: "users_role_status_idx")
+  @@index([createdById], map: "users_created_by_idx")
   @@map("Users")
 }
 
@@ -82,6 +99,9 @@ model RefreshToken {
   userId              Int
   tokenHash           String    @unique(map: "RefreshTokens_tokenHash_key") @db.VarChar(255)
   device              String?   @db.VarChar(255)
+  ipAddress           String?   @db.VarChar(64)
+  userAgent           String?   @db.VarChar(512)
+  lastUsedAt          DateTime  @default(now()) @db.Timestamptz(6)
   expiresAt           DateTime  @db.Timestamptz(6)
   revokedAt           DateTime? @db.Timestamptz(6)
   replacedByTokenHash String?   @db.VarChar(255)

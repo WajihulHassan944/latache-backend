@@ -15,36 +15,50 @@ export default () => {
       environment: nodeEnvironment,
       port: asPositiveInteger(process.env.PORT, 8080),
       baseUrl: process.env.APP_BASE_URL ?? 'http://localhost:8080',
-      frontendBaseUrl: process.env.FRONTEND_BASE_URL ?? 'http://localhost:3000',
       timezone: process.env.APP_TIMEZONE ?? 'Africa/Casablanca',
       requestBodyLimit: process.env.REQUEST_BODY_LIMIT ?? '1mb',
       corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
         .split(',')
         .map((origin) => origin.trim())
         .filter(Boolean),
-      swaggerEnabled: asBoolean(process.env.SWAGGER_ENABLED, nodeEnvironment !== 'production'),
-      allowQueryTokenCompatibility: asBoolean(
-        process.env.ALLOW_QUERY_TOKEN_COMPATIBILITY,
-        false,
+      swaggerEnabled: asBoolean(
+        process.env.SWAGGER_ENABLED,
+        nodeEnvironment !== 'production',
       ),
       trustProxy: asBoolean(process.env.TRUST_PROXY, false),
     },
-    database: {
-      url: process.env.DATABASE_URL,
-      logging: asBoolean(process.env.DB_LOGGING, false),
-    },
+   database: {
+  url: process.env.DATABASE_URL,
+
+  logging: asBoolean(
+    process.env.DB_LOGGING,
+    false,
+  ),
+
+  transactionMaxWaitMs: asPositiveInteger(
+    process.env.DB_TRANSACTION_MAX_WAIT_MS,
+    15_000,
+  ),
+
+  transactionTimeoutMs: asPositiveInteger(
+    process.env.DB_TRANSACTION_TIMEOUT_MS,
+    30_000,
+  ),
+},
     auth: {
       jwtSecret: process.env.JWT_SECRET,
       adminJwtSecret: process.env.JWT_SECRET_ADMIN,
       accessTokenExpiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
-      passwordResetSecret: process.env.PASSWORD_RESET_JWT_SECRET,
-      passwordResetExpiresIn: process.env.PASS_JWT_EXPIRES_IN ?? '15m',
       refreshTokenExpiresInDays: asPositiveInteger(
         process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS,
         30,
       ),
       bcryptRounds: asPositiveInteger(process.env.BCRYPT_ROUNDS, 12),
       otpExpiresInMinutes: asPositiveInteger(process.env.OTP_EXPIRES_IN_MINUTES, 5),
+      passwordResetOtpExpiresInMinutes: asPositiveInteger(
+        process.env.PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES,
+        15,
+      ),
     },
     mail: {
       host: process.env.SMTP_HOST,

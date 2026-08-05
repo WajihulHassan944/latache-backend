@@ -4,14 +4,6 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "plugins": [
-      "@nestjs/swagger"
-    ],
-    "assets": [
-      {
-        "include": "modules/mail/templates/**/*",
-        "watchAssets": true
-      }
-    ]
+    "plugins": ["@nestjs/swagger"]
   }
 }

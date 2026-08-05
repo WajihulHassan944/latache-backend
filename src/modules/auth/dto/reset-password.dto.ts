@@ -1,34 +1,18 @@
-import { Transform } from 'class-transformer';
-import { IsEmail, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, Length, Matches } from 'class-validator';
 import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
   PASSWORD_PATTERN,
 } from '../../../common/constants/security.constants';
+import { VerifyResetOtpDto } from './verify-reset-otp.dto';
 
-export class ResetPasswordDto {
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
-  )
-  @IsEmail()
-  @MaxLength(254)
-  email!: string;
-
+export class ResetPasswordDto extends VerifyResetOtpDto {
+  @ApiProperty({ example: 'NewPassword@123' })
   @IsString()
   @Length(MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH)
   @Matches(PASSWORD_PATTERN, {
-    message: 'password must contain a letter, a number, and a special character',
+    message: 'newPassword must contain a letter, a number, and a special character',
   })
-  password!: string;
-
-  @IsString()
-  @Length(MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH)
-  @Matches(PASSWORD_PATTERN, {
-    message: 'conPassword must contain a letter, a number, and a special character',
-  })
-  conPassword!: string;
-
-  @IsString()
-  @Length(1, 4096)
-  token!: string;
+  newPassword!: string;
 }

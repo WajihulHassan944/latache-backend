@@ -84,14 +84,16 @@ export const validateEnvironment = (environment: Environment): Environment => {
     1,
     60,
   );
+  validateInteger(
+    errors,
+    'PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES',
+    environment.PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES,
+    15,
+    1,
+    120,
+  );
   validateInteger(errors, 'SMTP_PORT', environment.SMTP_PORT, 587, 1, 65_535);
   validateDuration(errors, 'JWT_EXPIRES_IN', environment.JWT_EXPIRES_IN, '15m');
-  validateDuration(
-    errors,
-    'PASS_JWT_EXPIRES_IN',
-    environment.PASS_JWT_EXPIRES_IN,
-    '15m',
-  );
 
   if (!BODY_LIMIT_PATTERN.test(environment.REQUEST_BODY_LIMIT ?? '1mb')) {
     errors.push('REQUEST_BODY_LIMIT must use a value such as 512kb or 1mb');
@@ -102,7 +104,6 @@ export const validateEnvironment = (environment: Environment): Environment => {
       'DATABASE_URL',
       'JWT_SECRET',
       'JWT_SECRET_ADMIN',
-      'PASSWORD_RESET_JWT_SECRET',
       'SMTP_HOST',
       'SMTP_FROM',
     ] as const;
@@ -111,7 +112,10 @@ export const validateEnvironment = (environment: Environment): Environment => {
     }
   }
 
-  if (present(environment.DATABASE_URL) && !isPostgresUrl(environment.DATABASE_URL as string)) {
+  if (
+    present(environment.DATABASE_URL) &&
+    !isPostgresUrl(environment.DATABASE_URL as string)
+  ) {
     errors.push('DATABASE_URL must be a valid PostgreSQL URL');
   }
 
@@ -120,15 +124,15 @@ export const validateEnvironment = (environment: Environment): Environment => {
   if (smtpUserPresent !== smtpPasswordPresent) {
     errors.push('SMTP_USER and SMTP_PASSWORD must either both be set or both be empty');
   }
-  if (present(environment.SMTP_FROM) && !EMAIL_FROM_PATTERN.test(environment.SMTP_FROM as string)) {
+  if (
+    present(environment.SMTP_FROM) &&
+    !EMAIL_FROM_PATTERN.test(environment.SMTP_FROM as string)
+  ) {
     errors.push('SMTP_FROM must be an email address or a Name <email> mailbox');
   }
 
-  for (const key of ['APP_BASE_URL', 'FRONTEND_BASE_URL'] as const) {
-    const value = environment[key];
-    if (present(value) && !isHttpUrl(value as string)) {
-      errors.push(`${key} must be a valid http(s) URL`);
-    }
+  if (present(environment.APP_BASE_URL) && !isHttpUrl(environment.APP_BASE_URL as string)) {
+    errors.push('APP_BASE_URL must be a valid http(s) URL');
   }
 
   if (present(environment.CORS_ORIGINS)) {
@@ -141,22 +145,15 @@ export const validateEnvironment = (environment: Environment): Environment => {
   }
 
   if (isProductionLike(nodeEnvironment)) {
-    const secretKeys = [
-      'JWT_SECRET',
-      'JWT_SECRET_ADMIN',
-      'PASSWORD_RESET_JWT_SECRET',
-    ] as const;
+    const secretKeys = ['JWT_SECRET', 'JWT_SECRET_ADMIN'] as const;
     for (const key of secretKeys) {
       const value = environment[key];
       if (!value || value.length < 32) {
         errors.push(`${key} must contain at least 32 characters`);
       }
     }
-    const secrets = secretKeys
-      .map((key) => environment[key])
-      .filter((value): value is string => Boolean(value));
-    if (new Set(secrets).size !== secrets.length) {
-      errors.push('JWT and password-reset secrets must be different values');
+    if (environment.JWT_SECRET === environment.JWT_SECRET_ADMIN) {
+      errors.push('JWT_SECRET and JWT_SECRET_ADMIN must be different values');
     }
 
     const insecureMarkers = [
@@ -172,9 +169,6 @@ export const validateEnvironment = (environment: Environment): Environment => {
       }
     }
 
-    if (!present(environment.FRONTEND_BASE_URL)) {
-      errors.push('FRONTEND_BASE_URL is required in staging and production');
-    }
     if ((environment.SMTP_FROM ?? '').toLowerCase().includes('@example.com')) {
       errors.push('SMTP_FROM must use a non-example sender domain');
     }

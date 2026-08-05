@@ -1,5 +1,11 @@
 export enum UserRole {
+  SuperAdmin = 'super_admin',
+  Admin = 'admin',
   Customer = 'customer',
   Tasker = 'tasker',
-  Admin = 'admin',
 }
+
+export const ADMINISTRATIVE_ROLES: readonly UserRole[] = [
+  UserRole.SuperAdmin,
+  UserRole.Admin,
+];

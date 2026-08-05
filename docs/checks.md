@@ -1,20 +1,23 @@
-# Verification
+# Verification checks
 
-The repository provides these checks:
+`npm run verify:static` validates:
+
+- Prisma, PostgreSQL and Nodemailer dependency policy.
+- Six mapped domain tables and required auth-expansion migration.
+- TypeScript-only runtime/source policy.
+- Absence of standalone HTML templates.
+- Canonical auth controller routes and explicit absence of every removed alias.
+- Role-specific signup DTOs, exactly three tasker services, active-session bearer checks and super-admin seed defaults.
+- Global `/api` prefix and the unaffected services, taskers and bookings route surface.
+
+Dependency-aware checks:
 
 ```bash
-npm run verify:static
 npm run prisma:validate
 npm run build
 npm run lint
 npm test -- --runInBand
-npm run test:cov -- --runInBand
 npm run test:e2e -- --runInBand
-npm audit --omit=dev
 ```
 
-`verify:static` validates the Prisma/Nodemailer dependency policy, six-table schema baseline, TypeScript source policy, required files, global `/api` prefix, four controller prefixes, and all 22 legacy routes.
-
-The booking e2e suite uses a real PostgreSQL database and requires exactly one success and one conflict when two requests target one availability slot.
-
-The packaging process also verifies ZIP CRC, extracts the archive into a clean directory, compares every extracted file hash to the source tree, and rejects empty or excluded artifacts such as `.env`, `node_modules`, `dist`, generated clients, coverage, and Git metadata.
+The booking concurrency e2e suite needs a dedicated migrated PostgreSQL test database.

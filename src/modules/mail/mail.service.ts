@@ -7,18 +7,17 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { escapeHtml } from '../../common/utils/html.util';
 import { MAIL_TRANSPORTER } from './mail.constants';
 import type { MailTransporter } from './mail.types';
-
-type TemplateName = 'verification.html' | 'password-reset.html';
+import {
+  adminWelcomeTemplate,
+  passwordResetOtpTemplate,
+  verificationEmailTemplate,
+} from './email-templates';
 
 @Injectable()
 export class MailService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MailService.name);
-  private readonly templates = new Map<TemplateName, string>();
 
   constructor(
     @Inject(MAIL_TRANSPORTER) private readonly transporter: MailTransporter,
@@ -51,73 +50,45 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     await this.send({
       to: params.to,
       subject: 'Verify your Latache email',
-      html: this.renderVerificationTemplate(params),
+      html: verificationEmailTemplate({ ...params, expiryMinutes }),
       text: `Your Latache verification code is ${params.otp}. It expires in ${expiryMinutes} minutes.`,
     });
   }
 
-  async sendPasswordResetEmail(params: {
+  async sendPasswordResetOtp(params: {
     to: string;
     name: string;
-    resetUrl: string;
+    otp: number;
   }): Promise<void> {
+    const expiryMinutes = this.config.get<number>(
+      'auth.passwordResetOtpExpiresInMinutes',
+      15,
+    );
     await this.send({
       to: params.to,
       subject: 'Reset your Latache password',
-      html: this.renderPasswordResetTemplate(params),
-      text: `Reset your Latache password using this link: ${params.resetUrl}`,
+      html: passwordResetOtpTemplate({ ...params, expiryMinutes }),
+      text: `Your Latache password reset code is ${params.otp}. It expires in ${expiryMinutes} minutes.`,
     });
   }
 
-  renderVerificationTemplate(params: {
+  async sendAdminWelcomeEmail(params: {
+    to: string;
     name: string;
-    otp: number;
-    device?: string;
-  }): string {
-    return this.renderTemplate('verification.html', {
-      name: params.name || 'there',
-      device: params.device || 'your device',
-      otp: String(params.otp),
-      expiryMinutes: String(this.config.get<number>('auth.otpExpiresInMinutes', 5)),
+    temporaryPassword: string;
+    adminRole: string;
+  }): Promise<void> {
+    await this.send({
+      to: params.to,
+      subject: 'Your Latache administrator account',
+      html: adminWelcomeTemplate({
+        name: params.name,
+        email: params.to,
+        temporaryPassword: params.temporaryPassword,
+        adminRole: params.adminRole,
+      }),
+      text: `Your Latache administrator account is ready. Email: ${params.to}. Temporary password: ${params.temporaryPassword}. Change it after login.`,
     });
-  }
-
-  renderPasswordResetTemplate(params: {
-    name: string;
-    resetUrl: string;
-  }): string {
-    return this.renderTemplate('password-reset.html', {
-      name: params.name || 'there',
-      resetUrl: params.resetUrl,
-      expiryMinutes: String(this.passwordResetExpiryMinutes()),
-    });
-  }
-
-  private renderTemplate(
-    templateName: TemplateName,
-    substitutions: Record<string, string>,
-  ): string {
-    const cachedTemplate = this.templates.get(templateName);
-    const html =
-      cachedTemplate ?? readFileSync(join(__dirname, 'templates', templateName), 'utf8');
-
-    if (!cachedTemplate) {
-      this.templates.set(templateName, html);
-    }
-
-    return Object.entries(substitutions).reduce(
-      (rendered, [key, value]) => rendered.replaceAll(`{{${key}}}`, escapeHtml(value)),
-      html,
-    );
-  }
-
-  private passwordResetExpiryMinutes(): number {
-    const raw = this.config.get<string>('auth.passwordResetExpiresIn', '15m');
-    const match = /^(\d+)([smhd])$/.exec(raw);
-    if (!match) return 15;
-    const amount = Number(match[1]);
-    const multiplier: Record<string, number> = { s: 1 / 60, m: 1, h: 60, d: 1_440 };
-    return Math.max(1, Math.ceil(amount * (multiplier[match[2] ?? 'm'] ?? 1)));
   }
 
   private async send(params: {

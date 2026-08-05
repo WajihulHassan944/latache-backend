@@ -8,7 +8,7 @@ NestJS 11 runs on the Express adapter with strict TypeScript. Prisma 7 owns data
 
 - `AuthModule`: local signup, OTP verification, login, access tokens, rotating refresh sessions, logout, and password reset.
 - `UsersModule`: centralized Prisma user lookup and mutation behavior.
-- `MailModule`: pooled Nodemailer SMTP transport, connection verification, plaintext alternatives, and escaped HTML templates.
+- `MailModule`: typed Nodemailer SMTP transport, connection verification, plaintext alternatives, and escaped HTML templates.
 - `ServicesModule`: service pagination/search and administrator-only creation.
 - `TaskersModule`: onboarding, per-service pricing, availability, geospatial discovery, and profiles.
 - `BookingsModule`: transactional slot reservation and booking queries.

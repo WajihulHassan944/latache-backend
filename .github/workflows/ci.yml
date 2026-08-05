@@ -30,13 +30,12 @@ jobs:
       DATABASE_URL: postgresql://latache:latache@localhost:5432/latache_test?schema=public
       JWT_SECRET: ci-jwt-secret-with-at-least-thirty-two-characters
       JWT_SECRET_ADMIN: ci-admin-secret-with-at-least-thirty-two-characters
-      PASSWORD_RESET_JWT_SECRET: ci-reset-secret-with-at-least-thirty-two-characters
       SMTP_HOST: localhost
       SMTP_PORT: 1025
       SMTP_SECURE: "false"
       SMTP_FROM: Latache <no-reply@latache.local>
-      FRONTEND_BASE_URL: http://localhost:3000
       SWAGGER_ENABLED: "true"
+      PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES: "15"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
