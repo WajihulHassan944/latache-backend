@@ -13,6 +13,18 @@ import { ServicesModule } from './modules/services/services.module';
 import { TaskersModule } from './modules/taskers/taskers.module';
 import { UsersModule } from './modules/users/users.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { RbacModule } from './modules/rbac/rbac.module';
+import { TaskerDashboardModule } from './modules/tasker-dashboard/tasker-dashboard.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { ConversationsModule } from './modules/conversations/conversations.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { FavoritesModule } from './modules/favorites/favorites.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module';
+import { EliteProgramModule } from './modules/elite-program/elite-program.module';
+import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
+import { AdminFinanceModule } from './modules/admin-finance/admin-finance.module';
 
 @Module({
   imports: [
@@ -37,6 +49,18 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     TaskersModule,
     BookingsModule,
     UploadsModule,
+    RbacModule,
+    TaskerDashboardModule,
+    DashboardModule,
+    AdminDashboardModule,
+    EliteProgramModule,
+    PlatformSettingsModule,
+    AdminFinanceModule,
+    NotificationsModule,
+    ConversationsModule,
+    ReviewsModule,
+    PaymentsModule,
+    FavoritesModule,
     HealthModule,
   ],
   providers: [

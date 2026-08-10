@@ -16,6 +16,9 @@ import { parseTimeToMinutes, rangesOverlap } from '../../common/utils/time.util'
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import { ListTaskersQueryDto } from './dto/list-taskers-query.dto';
+import { PublicTaskerReviewsQueryDto } from './dto/public-tasker-reviews-query.dto';
+import { ReviewsService } from '../reviews/reviews.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import {
   AvailabilitySlotDto,
   SubmitOnboardingDto,
@@ -27,6 +30,8 @@ export class TaskersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly repository: TaskersRepository,
+    private readonly reviews: ReviewsService,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   async submitOnboarding(userId: number, dto: SubmitOnboardingDto) {
@@ -174,7 +179,22 @@ export class TaskersService {
 
   async list(query: ListTaskersQueryDto) {
     try {
-      return await this.repository.list(query);
+      const effectiveQuery = { ...query };
+      if (query.lat !== undefined && query.lng !== undefined) {
+        const policy = await this.platformSettings.serviceRadiusPolicy();
+        if (policy.enforcementEnabled !== false) {
+          const maximum = Number(policy.maximumRadiusKm ?? 500);
+          const minimum = Number(policy.minimumRadiusKm ?? 0.1);
+          const fallback = Number(policy.defaultRadiusKm ?? 20);
+          if (query.radius !== undefined && (query.radius < minimum || query.radius > maximum)) {
+            throw new BadRequestException(
+              `radius must be between ${minimum} and ${maximum} km`,
+            );
+          }
+          effectiveQuery.radius = query.radius ?? fallback;
+        }
+      }
+      return await this.repository.list(effectiveQuery);
     } catch (error) {
       if (error instanceof Error && error.message === 'LAT_LNG_PAIR_REQUIRED') {
         throw new BadRequestException('lat and lng must be provided together');
@@ -192,6 +212,20 @@ export class TaskersService {
     const tasker = await this.repository.getById(id, serviceSlug);
     if (!tasker) throw new NotFoundException('Tasker not found');
     return tasker;
+  }
+
+  async getPublicReviews(id: number, query: PublicTaskerReviewsQueryDto) {
+    const tasker = await this.prisma.user.findFirst({
+      where: { id, role: UserRole.Tasker, deletedAt: null, accountStatus: 'active' },
+      select: { id: true },
+    });
+    if (!tasker) throw new NotFoundException('Tasker not found');
+    return this.reviews.list(id, {
+      view: 'received',
+      rating: query.rating,
+      page: query.page,
+      limit: query.limit,
+    });
   }
 
   async getAvailability(id: number) {

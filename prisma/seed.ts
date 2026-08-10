@@ -2,7 +2,10 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { hash } from 'bcryptjs';
 import { PrismaClient } from '../src/generated/prisma/client';
-import { DEFAULT_ADMIN_PERMISSIONS } from '../src/modules/auth/constants/admin-permissions';
+import {
+  DEFAULT_ADMIN_PERMISSIONS,
+  SYSTEM_RBAC_ROLES,
+} from '../src/modules/rbac/constants/permission-catalog';
 import { AccountStatus } from '../src/common/enums/account-status.enum';
 import { AdminRole } from '../src/common/enums/admin-role.enum';
 import { UserRole } from '../src/common/enums/user-role.enum';
@@ -42,12 +45,56 @@ const seedServices = async (): Promise<void> => {
   }
 };
 
-const seedSuperAdmin = async (): Promise<void> => {
+const seedRbacRoles = async (): Promise<Map<string, string>> => {
+  const roleIds = new Map<string, string>();
+
+  for (const definition of SYSTEM_RBAC_ROLES) {
+    const role = await prisma.rbacRole.upsert({
+      where: { code: definition.code },
+      create: {
+        code: definition.code,
+        name: definition.name,
+        description: definition.description,
+        permissions: [...definition.permissions],
+        isSystem: true,
+        isActive: true,
+      },
+      update: {
+        name: definition.name,
+        description: definition.description,
+        ...(definition.code === AdminRole.SuperAdmin
+          ? { permissions: [...definition.permissions] }
+          : {}),
+        isSystem: true,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    roleIds.set(role.code, role.id);
+
+    await prisma.user.updateMany({
+      where: {
+        adminRole: role.code,
+        rbacRoleId: null,
+      },
+      data: { rbacRoleId: role.id },
+    });
+  }
+
+  return roleIds;
+};
+
+const seedSuperAdmin = async (roleIds: Map<string, string>): Promise<void> => {
   const email = (process.env.SUPERADMIN_EMAIL ?? 'latache.superadmin@yopmail.com')
     .trim()
     .toLowerCase();
   const password = process.env.SUPERADMIN_PASSWORD ?? 'Admin@12345';
   const passwordHash = await hash(password, Number(process.env.BCRYPT_ROUNDS ?? 12));
+  const superAdminRoleId = roleIds.get(AdminRole.SuperAdmin);
+  const customAdminRoleId = roleIds.get(AdminRole.CustomAdmin);
+  if (!superAdminRoleId || !customAdminRoleId) {
+    throw new Error('RBAC system roles were not seeded correctly');
+  }
   const existing = await prisma.user.findFirst({
     where: { email: { equals: email, mode: 'insensitive' } },
   });
@@ -60,6 +107,8 @@ const seedSuperAdmin = async (): Promise<void> => {
     accountStatus: AccountStatus.Active,
     adminRole: AdminRole.SuperAdmin,
     permissions: DEFAULT_ADMIN_PERMISSIONS[AdminRole.SuperAdmin],
+    rbacRoleId: superAdminRoleId,
+    inheritsRolePermissions: true,
     isVerified: true,
     isAdmin: true,
     authType: 'local',
@@ -94,6 +143,8 @@ const seedSuperAdmin = async (): Promise<void> => {
       role: UserRole.Admin,
       adminRole: AdminRole.CustomAdmin,
       permissions: [],
+      rbacRoleId: customAdminRoleId,
+      inheritsRolePermissions: true,
       accountStatus: AccountStatus.Suspended,
       isAdmin: true,
     },
@@ -104,7 +155,8 @@ const seedSuperAdmin = async (): Promise<void> => {
 
 async function main(): Promise<void> {
   await seedServices();
-  await seedSuperAdmin();
+  const roleIds = await seedRbacRoles();
+  await seedSuperAdmin(roleIds);
 }
 
 void main()

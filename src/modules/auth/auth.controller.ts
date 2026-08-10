@@ -28,9 +28,8 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../../common/enums/user-role.enum';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { Permissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
 import type { User } from '../../generated/prisma/client';
 import { AuthService } from './auth.service';
@@ -49,6 +48,7 @@ import {
   VerifyEmailDto,
   VerifyResetOtpDto,
 } from './dto';
+import { AdminAuthGuard } from './guards/admin-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtIdentityGuard } from './guards/jwt-identity.guard';
 import { loginRequestExamples, loginResponseExamples } from './swagger/login.examples';
@@ -154,12 +154,40 @@ export class AuthController {
 
   @Post('admins/register')
   @ApiBearerAuth('bearer')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SuperAdmin)
+  @UseGuards(AdminAuthGuard, PermissionsGuard)
+  @Permissions('admins.create')
   @ApiOperation({
     summary: 'Create a platform administrator',
     description:
-      'Super-admin-only endpoint. Creates a verified administrator, derives the permission set from the selected admin role, and emails the temporary credentials. Another super administrator cannot be created through the API.',
+      'Requires admins.create. Super admin may assign any non-super-admin role; delegated admins may only create administrators whose effective permissions are a subset of their own, preventing privilege escalation. Temporary credentials are emailed.',
+  })
+  @ApiBody({
+    type: CreateAdminDto,
+    description:
+      'Fetch valid role codes and permission sets from GET /api/rbac/roles and GET /api/rbac/permissions. Omit permissions to inherit the role; provide a subset for least-privilege access.',
+    examples: {
+      inheritedFinanceRole: {
+        summary: 'Finance admin inheriting role permissions',
+        value: {
+          firstName: 'Priya',
+          lastName: 'Nair',
+          email: 'priya@latache.com',
+          password: 'Temporary@12345',
+          adminRole: 'finance_admin',
+        },
+      },
+      restrictedFinanceRole: {
+        summary: 'Finance admin with a permission subset',
+        value: {
+          firstName: 'Omar',
+          lastName: 'Khan',
+          email: 'omar@latache.com',
+          password: 'Temporary@12345',
+          adminRole: 'finance_admin',
+          permissions: ['finance.read', 'reports.read'],
+        },
+      },
+    },
   })
   @ApiCreatedResponse({
     schema: {
@@ -185,7 +213,7 @@ export class AuthController {
     },
   })
   @ApiUnauthorizedResponse({ description: 'Bearer token or active session is missing/invalid.' })
-  @ApiForbiddenResponse({ description: 'Only the canonical super administrator may create admins.' })
+  @ApiForbiddenResponse({ description: 'Missing admins.create or attempted privilege escalation.' })
   @ApiConflictResponse({ description: 'An account with the email already exists.' })
   @ApiServiceUnavailableResponse({ description: 'Temporary credentials could not be emailed.' })
   createAdmin(@CurrentUser() actor: User, @Body() dto: CreateAdminDto) {

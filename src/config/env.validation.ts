@@ -10,6 +10,8 @@ const SUPPORTED_ENVIRONMENTS = new Set([
 const DURATION_PATTERN = /^\d+[smhd]$/;
 const BODY_LIMIT_PATTERN = /^\d+(?:b|kb|mb|gb)$/i;
 const EMAIL_FROM_PATTERN = /^(?:[^<>]+\s*)?<[^<>\s]+@[^<>\s]+>$|^[^\s@]+@[^\s@]+$/;
+const PAYOUT_EXECUTION_MODES = new Set(['disabled', 'manual']);
+const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 
 const present = (value: string | undefined): boolean => Boolean(value?.trim());
 const isProductionLike = (value: string): boolean =>
@@ -118,6 +120,66 @@ export const validateEnvironment = (environment: Environment): Environment => {
     100 * 1024 * 1024,
   );
   validateDuration(errors, 'JWT_EXPIRES_IN', environment.JWT_EXPIRES_IN, '15m');
+
+  const stripeEnabled = (environment.STRIPE_ENABLED ?? 'false').toLowerCase() === 'true';
+  const paymentsCurrency = (environment.PAYMENTS_CURRENCY ?? 'USD').toUpperCase();
+  if (!CURRENCY_PATTERN.test(paymentsCurrency)) {
+    errors.push('PAYMENTS_CURRENCY must be a three-letter ISO-style currency code');
+  }
+  const platformFeePercent = Number(environment.PAYMENTS_PLATFORM_FEE_PERCENT ?? '0');
+  if (!Number.isFinite(platformFeePercent) || platformFeePercent < 0 || platformFeePercent > 100) {
+    errors.push('PAYMENTS_PLATFORM_FEE_PERCENT must be between 0 and 100');
+  }
+  validateInteger(
+    errors,
+    'BOOKING_MINIMUM_BILLABLE_MINUTES',
+    environment.BOOKING_MINIMUM_BILLABLE_MINUTES,
+    120,
+    1,
+    1440,
+  );
+  const minimumWalletTopup = Number(environment.CUSTOMER_WALLET_MIN_TOPUP ?? '5');
+  if (!Number.isFinite(minimumWalletTopup) || minimumWalletTopup <= 0) {
+    errors.push('CUSTOMER_WALLET_MIN_TOPUP must be a positive number');
+  }
+  if (stripeEnabled) {
+    if (!present(environment.STRIPE_SECRET_KEY)) errors.push('STRIPE_SECRET_KEY is required when STRIPE_ENABLED=true');
+    if (!present(environment.STRIPE_WEBHOOK_SECRET)) errors.push('STRIPE_WEBHOOK_SECRET is required when STRIPE_ENABLED=true');
+    if (present(environment.STRIPE_SECRET_KEY) && !(environment.STRIPE_SECRET_KEY as string).startsWith('sk_')) {
+      errors.push('STRIPE_SECRET_KEY must be a Stripe secret key');
+    }
+    if (present(environment.STRIPE_WEBHOOK_SECRET) && !(environment.STRIPE_WEBHOOK_SECRET as string).startsWith('whsec_')) {
+      errors.push('STRIPE_WEBHOOK_SECRET must be a Stripe webhook signing secret');
+    }
+  }
+
+  const payoutMode = environment.TASKER_PAYOUT_EXECUTION_MODE ?? 'disabled';
+  if (!PAYOUT_EXECUTION_MODES.has(payoutMode)) {
+    errors.push('TASKER_PAYOUT_EXECUTION_MODE must be disabled or manual');
+  }
+  const walletCurrency = (environment.TASKER_WALLET_CURRENCY ?? 'USD').toUpperCase();
+  if (!CURRENCY_PATTERN.test(walletCurrency)) {
+    errors.push('TASKER_WALLET_CURRENCY must be a three-letter ISO-style currency code');
+  }
+  const minimumWithdrawal = Number(environment.TASKER_MIN_WITHDRAWAL_AMOUNT ?? '1');
+  if (!Number.isFinite(minimumWithdrawal) || minimumWithdrawal <= 0) {
+    errors.push('TASKER_MIN_WITHDRAWAL_AMOUNT must be a positive number');
+  }
+  if (present(environment.PAYOUT_DATA_ENCRYPTION_KEY)) {
+    const rawKey = (environment.PAYOUT_DATA_ENCRYPTION_KEY as string).trim();
+    const hexKey = /^[a-fA-F0-9]{64}$/.test(rawKey);
+    let base64Key = false;
+    if (!hexKey) {
+      try {
+        base64Key = Buffer.from(rawKey, 'base64').length === 32;
+      } catch {
+        base64Key = false;
+      }
+    }
+    if (!hexKey && !base64Key) {
+      errors.push('PAYOUT_DATA_ENCRYPTION_KEY must be 64 hex characters or base64-encoded 32 bytes');
+    }
+  }
 
   if (!BODY_LIMIT_PATTERN.test(environment.REQUEST_BODY_LIMIT ?? '1mb')) {
     errors.push('REQUEST_BODY_LIMIT must use a value such as 512kb or 1mb');

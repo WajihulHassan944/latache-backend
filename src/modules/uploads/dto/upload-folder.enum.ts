@@ -6,6 +6,7 @@ export enum UploadFolder {
   TaskerWorkImage = 'tasker-work-images',
   BookingAttachment = 'booking-attachments',
   ServiceImage = 'service-images',
+  EliteBadgeAsset = 'elite-badge-assets',
 }
 
 export enum RegistrationUploadFolder {

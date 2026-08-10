@@ -25,6 +25,7 @@ interface TaskerListRow {
   reviewsCount: number;
   bio: string | null;
   completedTasks: number;
+  yearsOfExperience: number | null;
   vehicles: string[] | null;
   workImages: string[] | null;
   isElite: boolean;
@@ -85,6 +86,8 @@ export class TaskersRepository {
     const representativeConditions: Prisma.Sql[] = [];
     const eligibleConditions: Prisma.Sql[] = [
       Prisma.sql`u."role" = ${UserRole.Tasker}`,
+      Prisma.sql`u."accountStatus" = 'active'`,
+      Prisma.sql`u."deletedAt" IS NULL`,
       Prisma.sql`u."onboardingStatus" IS NOT NULL`,
     ];
 
@@ -140,7 +143,7 @@ export class TaskersRepository {
       eligible AS (
         SELECT
           u."id", u."firstName", u."lastName", u."profilePicture", u."rating",
-          u."reviewsCount", u."bio", u."completedTasks", u."vehicles", u."workImages",
+          u."reviewsCount", u."bio", u."completedTasks", u."yearsOfExperience", u."vehicles", u."workImages",
           u."isElite", u."serviceAreaLat", u."serviceAreaLng", u."serviceAreaRadiusKm",
           u."serviceAreaCity", u."serviceAreaArea", u."submittedAt",
           representative."hourlyRate", representative."serviceSlug"
@@ -183,6 +186,7 @@ export class TaskersRepository {
         pricePerHour: Number(row.hourlyRate),
         bio: row.bio || '',
         completedTasks: row.completedTasks,
+        yearsOfExperience: row.yearsOfExperience,
         vehicles: row.vehicles || [],
         serviceSlug: row.serviceSlug ?? '',
         workImages: row.workImages || [],
@@ -204,7 +208,7 @@ export class TaskersRepository {
 
   async getById(id: number, serviceSlug?: string) {
     const user = await this.prisma.user.findFirst({
-      where: { id, role: UserRole.Tasker },
+      where: { id, role: UserRole.Tasker, accountStatus: 'active', deletedAt: null },
       include: {
         userServices: {
           include: { service: true },
@@ -233,8 +237,16 @@ export class TaskersRepository {
       pricePerHour: Number(primary.hourlyRate),
       bio: user.bio || '',
       completedTasks: user.completedTasks,
+      yearsOfExperience: user.yearsOfExperience,
       vehicles: user.vehicles,
       serviceSlug: primary.service.slug ?? '',
+      services: pricedServices.map((entry) => ({
+        id: entry.service.id.toString(),
+        name: entry.service.name ?? '',
+        slug: entry.service.slug ?? '',
+        icon: entry.service.icon ?? '',
+        hourlyRate: Number(entry.hourlyRate),
+      })),
       workImages: user.workImages,
       isElite: user.isElite,
       location: formatLocation({
@@ -252,7 +264,7 @@ export class TaskersRepository {
 
   async getAvailability(id: number) {
     const user = await this.prisma.user.findFirst({
-      where: { id, role: UserRole.Tasker },
+      where: { id, role: UserRole.Tasker, accountStatus: 'active', deletedAt: null },
       select: { id: true },
     });
     if (!user) return null;

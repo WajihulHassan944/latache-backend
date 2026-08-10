@@ -1,26 +1,61 @@
 {
-  "generatedAtUtc": "2026-08-05T11:32:17.864507+00:00",
-  "project": "Latache Backend - Cloudinary Uploads and Auth Swagger Examples",
-  "version": "3.3.2",
-  "scope": "Fixes NestJS dependency injection for JwtIdentityGuard when used by UploadsModule; no API, database, Prisma migration, or environment contract changes.",
-  "fix": {
-    "error": "UnknownDependenciesException: AuthSessionsRepository unavailable while resolving JwtIdentityGuard in UploadsModule",
-    "rootCause": "Route-scoped guards can be resolved in the importing feature-module context; every non-global dependency needed by the reusable guard must be available through AuthModule exports.",
-    "change": "AuthSessionsRepository is now exported by AuthModule, and regression tests assert the auth/upload module dependency graph."
+  "project": "Latache Backend",
+  "version": "3.10.0",
+  "focus": "Permission-aware Payments & Finance plus unified Platform Settings",
+  "design_screens_reviewed": 19,
+  "validation": {
+    "typescript_syntax_files": 235,
+    "typescript_syntax_errors": 0,
+    "unique_api_routes": 168,
+    "duplicate_api_routes": 0,
+    "static_project_verifier": "passed",
+    "strict_source_smoke_check": "no TS2322/TS2345/TS2769/TS4053-class diagnostics after excluding unresolved third-party/generated types",
+    "credential_scan": "passed (no posted Neon password or live Stripe/SMTP/API key patterns found)",
+    "standalone_html_files": 0,
+    "json_yaml_parse": "passed",
+    "archive_integrity": "passed (ZIP CRC, clean extraction, file-by-file SHA-256 round-trip)"
   },
-  "checks": {
-    "typescriptSyntaxTranspilation": "passed across 115 TypeScript files",
-    "relativeImportResolution": "passed; generated Prisma client excluded because prisma generate creates it",
-    "staticProjectVerification": "passed; 31 total route contracts and zero legacy auth aliases",
-    "guardDependencyExportGraph": "passed for JwtService, ConfigService, UsersService, AuthSessionsRepository, JwtModule, and UsersModule",
-    "dependencyAwareNestBuild": "not executable in packaging container because its configured npm mirror returned 404 for @eslint/js and @nestjs/cli; local npm installation already demonstrated by the user",
-    "databaseMigrationRequired": false,
-    "environmentChangeRequired": false
+  "database": {
+    "new_migration": "20260810173000_add_finance_platform_settings",
+    "new_table": "PlatformSettings",
+    "booking_finance_audit_fields": [
+      "taxAmount",
+      "serviceSurchargeAmount",
+      "commissionRatePercent",
+      "taxRatePercent",
+      "taxInclusive"
+    ],
+    "payout_review_fields": [
+      "reviewedById",
+      "reviewedAt",
+      "adminNote"
+    ],
+    "fake_operational_or_financial_rows_seeded": false
   },
-  "inventory": {
-    "projectFiles": 147,
-    "typescriptFiles": 115,
-    "prismaModels": 6,
-    "prismaMigrations": 3
-  }
+  "api_consolidation": {
+    "finance_read": "GET /api/admin/finance?view=overview|transactions|refunds|payouts|revenue",
+    "payout_mutation": "POST /api/admin/finance/payouts/:id/actions",
+    "refund_mutation": "existing POST /api/admin/disputes/:id/actions",
+    "settings_read": "GET /api/admin/platform-settings?sections=...",
+    "settings_write": "PUT /api/admin/platform-settings",
+    "elite_policy_owner": "existing /api/admin/elite-taskers/program"
+  },
+  "runtime_policy": {
+    "commission": "applied to new booking quotes/final charges and audited on booking",
+    "global_tax": "disabled by default; applied only when explicitly configured",
+    "service_radius": "global min/default/max applied to Tasker discovery",
+    "booking_rules": "advance notice/horizon/duration enforceable when enabled",
+    "unsupported_integrations": "rejected rather than simulated"
+  },
+  "financial_safety": {
+    "stripe_refunds": "remain provider-backed through dispute resolution",
+    "payout_approve": "state review only; no fake transfer",
+    "payout_mark_paid": "requires real external providerReference and consumes reserved pending balance",
+    "escrow": "not fabricated; explicitly unavailable because no escrow ledger exists",
+    "multi_currency_settlement": "cannot be enabled without a real conversion/settlement engine"
+  },
+  "limitations": [
+    "A dependency-aware NestJS/Prisma build could not be executed in this packaging environment because the sandbox npm mirror does not provide the required project packages.",
+    "Run npm install, npm run prisma:generate, npm run prisma:validate, npm run prisma:migrate:deploy, npm run build, and npm run start:dev locally."
+  ]
 }

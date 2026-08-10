@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { json, urlencoded } from 'express';
+import { json, urlencoded, type Request } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
@@ -38,7 +38,17 @@ async function bootstrap(): Promise<void> {
   app.setGlobalPrefix('api');
   app.use(helmet());
   const bodyLimit = config.get<string>('app.requestBodyLimit', '1mb');
-  app.use(json({ limit: bodyLimit }));
+  app.use(
+    json({
+      limit: bodyLimit,
+      verify: (request, _response, buffer) => {
+        const req = request as Request & { rawBody?: Buffer };
+        if (req.originalUrl?.startsWith('/api/payments/webhooks/stripe')) {
+          req.rawBody = Buffer.from(buffer);
+        }
+      },
+    }),
+  );
   app.use(urlencoded({ extended: true, limit: bodyLimit }));
 
   const express = app.getHttpAdapter().getInstance() as {
@@ -76,14 +86,25 @@ async function bootstrap(): Promise<void> {
       new DocumentBuilder()
         .setTitle('Latache API')
         .setDescription(
-          'Production API for Latache customers, taskers, administrators, services, and bookings. Authentication endpoints include role-specific signup, OTP verification, session rotation, password recovery, and RBAC.',
+          'Production API for Latache customers, taskers and administrators. Shared role-aware APIs cover dashboards, bookings, conversations, notifications and reviews; Stripe payment state is webhook-driven and financial APIs never fabricate success.',
         )
-        .setVersion('3.3.2')
+        .setVersion('3.10.0')
         .addTag('01 Auth', 'Customer, tasker, admin, super-admin, session, and password flows')
         .addTag('02 Uploads', 'Cloudinary signup, profile, identity, work-image, service-image, and booking-attachment uploads')
-        .addTag('services', 'Service catalogue')
-        .addTag('taskers', 'Tasker discovery, availability and onboarding')
-        .addTag('bookings', 'Customer bookings')
+        .addTag('03 RBAC - Roles & Permissions', 'Administrator roles, permissions, assignments, and account access')
+        .addTag('04 Dashboard', 'Role-aware customer/tasker dashboard overview')
+        .addTag('05 Bookings & Tasks', 'Unified customer/tasker booking lifecycle, navigation, timer, rescheduling, extensions, and disputes')
+        .addTag('06 Payments', 'Customer Stripe cards, SetupIntents, real wallet ledger, and booking payment state')
+        .addTag('07 Conversations', 'Booking-backed conversations shared by customers and taskers')
+        .addTag('08 Notifications', 'Role-aware persisted notification inbox')
+        .addTag('09 Reviews', 'Booking-backed reviews shared by customers and taskers')
+        .addTag('10 Favorites', 'Customer favorite taskers')
+        .addTag('11 Tasker Profile & Skills', 'Tasker personal/business profile and active skills')
+        .addTag('12 Tasker Wallet & Payouts', 'Ledger-backed tasker wallet, encrypted payout methods, and non-fabricated withdrawals')
+        .addTag('13 Services', 'Service catalogue and optional booking service options')
+        .addTag('14 Tasker Discovery', 'Tasker discovery, availability and onboarding')
+        .addTag('24 Admin - Booking Management', 'Permission-aware booking operations, filtering, reporting, and safe lifecycle actions')
+        .addTag('25 Admin - Dispute Management', 'Investigation, evidence, resolution drafts, refunds, warnings, and audit-backed dispute decisions')
         .addTag('health', 'Application and database health')
         .addBearerAuth(
           { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },

@@ -4,6 +4,8 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { MailModule } from '../mail/mail.module';
 import { UsersModule } from '../users/users.module';
+import { RbacCoreModule } from '../rbac/rbac-core.module';
+import { AdminAuditModule } from '../admin-audit/admin-audit.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AdminAuthGuard } from './guards/admin-auth.guard';
@@ -19,7 +21,7 @@ import { AuthSessionService } from './services/auth-session.service';
 import { AuthTokenService } from './services/auth-token.service';
 
 @Module({
-  imports: [JwtModule.register({}), UsersModule, MailModule],
+  imports: [JwtModule.register({}), UsersModule, MailModule, RbacCoreModule, AdminAuditModule],
   controllers: [AuthController],
   providers: [
     AuthService,

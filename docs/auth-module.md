@@ -1,4 +1,4 @@
-# Latache authentication module 3.2
+# Latache authentication module 3.4
 
 The auth bounded context follows the supplied Gift App reference where it improves separation of concerns, while keeping Latache-specific signup fields and roles. Registration, login/token rotation, OTP/password operations, profile access, and session management are separate services behind a thin controller facade.
 
@@ -9,9 +9,9 @@ The auth bounded context follows the supplied Gift App reference where it improv
 - `customer`: standard Latache customer.
 - `tasker`: service provider applicant.
 
-Supported administrator roles are `finance_admin`, `support_admin`, `content_admin`, `operations_admin`, `analytics_admin`, and `custom_admin`. Predefined roles receive server-owned permissions. `custom_admin` requires one or more validated permissions.
+Administrator roles are stored in the `RbacRoles` table. Seeded system roles include `finance_admin`, `support_admin`, `content_admin`, `operations_admin`, `analytics_admin`, and `custom_admin`; super admins can also create reusable custom roles through `/api/rbac/roles`. The server-owned permission catalogue is exposed through `/api/rbac/permissions`.
 
-`@Roles(...)` and `@Permissions(...)` evaluate the current user loaded from PostgreSQL, not only claims embedded in the JWT.
+`@Roles(...)` and `@Permissions(...)` evaluate the current user loaded from PostgreSQL, not only claims embedded in the JWT. See `docs/rbac.md` for role management, permission inheritance, overrides, and admin access APIs.
 
 ## Customer registration
 
@@ -51,7 +51,7 @@ The user, service rates, availability and session are committed in one Prisma tr
 
 `POST /api/auth/admins/register`
 
-This endpoint requires a verified active `super_admin` bearer session. It creates an active, verified admin with a temporary password and emails the credentials through Nodemailer. Another super administrator cannot be created through the API.
+This endpoint requires `admins.create` (the canonical super admin bypasses permission checks). `adminRole` must be an active RBAC role code. Omitting `permissions` inherits the role; providing permissions creates a validated least-privilege subset. A delegated admin cannot create an administrator with any effective permission the caller does not already hold. It creates an active, verified admin with a temporary password and emails the credentials through Nodemailer. Another super administrator cannot be created through the API.
 
 ## Login and token model
 

@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
+  IsIn,
   IsInt,
   IsNumber,
   Max,
@@ -73,6 +75,40 @@ export class BookTaskerDto {
   @IsString()
   @Length(1, 120)
   serviceSlug!: string;
+
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  serviceOptionId?: number;
+
+  @IsOptional()
+  @IsIn(['stripe', 'wallet'])
+  paymentSource?: 'stripe' | 'wallet';
+
+  @IsOptional()
+  @IsString()
+  @Length(3, 255)
+  stripePaymentMethodId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100000)
+  tipAmount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100000)
+  donationAmount?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  donationDropoffRequested?: boolean;
 
   @ValidateNested()
   @Type(() => BookingLocationDto)

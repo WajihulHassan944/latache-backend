@@ -15,9 +15,10 @@ import { dateOnlyToDate, todayDateOnly } from '../../../common/utils/date.util';
 import { serializeUser, type PublicUser } from '../../../common/utils/user.util';
 import { hasPrismaErrorCode } from '../../../database/prisma-error.util';
 import type { Prisma, User } from '../../../generated/prisma/client';
+import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { MailService } from '../../mail/mail.service';
+import { RbacAccessService } from '../../rbac/services/rbac-access.service';
 import { success, type SuccessEnvelope } from '../auth-response';
-import { ADMIN_PERMISSIONS, permissionsForAdminRole } from '../constants/admin-permissions';
 import type { CreateAdminDto, RegisterCustomerDto, RegisterTaskerDto } from '../dto';
 import { AuthRepository } from '../repositories/auth.repository';
 import { AuthTokenService, type AuthTokens, type SessionMetadata } from './auth-token.service';
@@ -35,6 +36,8 @@ export class AuthRegistrationService {
     private readonly tokens: AuthTokenService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly rbac: RbacAccessService,
+    private readonly audit: AdminAuditService,
   ) {}
 
   async registerCustomer(
@@ -194,29 +197,12 @@ export class AuthRegistrationService {
     actor: User,
     dto: CreateAdminDto,
   ): Promise<SuccessEnvelope<{ user: PublicUser }>> {
-    if (actor.role !== UserRole.SuperAdmin) {
-      throw new ForbiddenException('Only the super administrator can create admins');
-    }
-    if (dto.adminRole === AdminRole.SuperAdmin) {
+    const role = await this.rbac.requireActiveRoleByCode(dto.adminRole);
+    if (role.code === AdminRole.SuperAdmin) {
       throw new BadRequestException('Additional super administrators cannot be created');
     }
-
-    if (
-      dto.adminRole === AdminRole.CustomAdmin &&
-      (!dto.permissions || dto.permissions.length === 0)
-    ) {
-      throw new BadRequestException(
-        'permissions must contain at least one permission for custom_admin',
-      );
-    }
-
-    const permissionCatalog = new Set<string>(ADMIN_PERMISSIONS);
-    const invalidPermissions = (dto.permissions ?? []).filter(
-      (permission) => !permissionCatalog.has(permission),
-    );
-    if (invalidPermissions.length > 0) {
-      throw new BadRequestException(`Unknown permissions: ${invalidPermissions.join(', ')}`);
-    }
+    const effective = this.rbac.resolveEffectivePermissions(role, dto.permissions);
+    this.assertDelegatedAdminCreationAccess(actor, effective.permissions);
 
     try {
       await this.assertEmailAvailable(dto.email);
@@ -229,8 +215,10 @@ export class AuthRegistrationService {
         password: await hash(dto.password, this.bcryptRounds()),
         role: UserRole.Admin,
         accountStatus: AccountStatus.Active,
-        adminRole: dto.adminRole,
-        permissions: permissionsForAdminRole(dto.adminRole, dto.permissions),
+        rbacRoleId: role.id,
+        adminRole: role.code,
+        permissions: effective.permissions,
+        inheritsRolePermissions: effective.inheritsRolePermissions,
         mustChangePassword: true,
         isVerified: true,
         isAdmin: true,
@@ -238,17 +226,45 @@ export class AuthRegistrationService {
         createdById: actor.id,
       });
 
+      await this.audit.record({
+        actorId: actor.id,
+        targetUserId: user.id,
+        action: 'administrator_created',
+        entityType: 'administrator',
+        entityId: user.id,
+        metadata: {
+          adminRole: role.code,
+          permissions: effective.permissions,
+          inheritsRolePermissions: effective.inheritsRolePermissions,
+        },
+      });
+
       await this.mail.sendAdminWelcomeEmail({
         to: user.email,
         name: user.firstName || user.email,
         temporaryPassword: dto.password,
-        adminRole: dto.adminRole,
+        adminRole: role.code,
       });
 
       return success({ user: serializeUser(user) }, 'Administrator account created successfully.');
     } catch (error) {
       this.rethrowUniqueEmail(error);
       throw error;
+    }
+  }
+
+
+  private assertDelegatedAdminCreationAccess(actor: User, targetPermissions: string[]): void {
+    if (actor.role === UserRole.SuperAdmin) return;
+    if (actor.role !== UserRole.Admin || !actor.permissions.includes('admins.create')) {
+      throw new ForbiddenException('Administrator creation permission is required');
+    }
+    const actorPermissions = new Set(actor.permissions);
+    const escalation = targetPermissions.filter((permission) => !actorPermissions.has(permission));
+    if (escalation.length > 0) {
+      throw new ForbiddenException(
+        `Cannot create an administrator with permissions you do not hold: ${escalation.join(', ')}`,
+      );
     }
   }
 

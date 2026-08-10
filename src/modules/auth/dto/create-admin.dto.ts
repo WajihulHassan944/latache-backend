@@ -4,18 +4,12 @@ import {
   ArrayMaxSize,
   IsArray,
   IsEmail,
-  IsIn,
   IsOptional,
   IsString,
   Length,
   Matches,
   MaxLength,
 } from 'class-validator';
-import { AdminRole } from '../../../common/enums/admin-role.enum';
-import {
-  ADMIN_PERMISSIONS,
-  CREATABLE_ADMIN_ROLES,
-} from '../constants/admin-permissions';
 import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
@@ -54,7 +48,10 @@ export class CreateAdminDto {
   @Matches(/^\d{6,24}$/)
   phoneNumber?: string;
 
-  @ApiProperty({ example: 'Temporary@12345', description: 'Temporary password; the admin must change it after login.' })
+  @ApiProperty({
+    example: 'Temporary@12345',
+    description: 'Temporary password; the administrator must change it after login.',
+  })
   @IsString()
   @Length(MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH)
   @Matches(PASSWORD_PATTERN, {
@@ -63,18 +60,22 @@ export class CreateAdminDto {
   password!: string;
 
   @ApiProperty({
-    enum: CREATABLE_ADMIN_ROLES,
-    example: AdminRole.FinanceAdmin,
-    description: 'The canonical super_admin role cannot be created through the API.',
+    example: 'finance_admin',
+    description:
+      'Active role code returned by GET /api/rbac/roles. The canonical super_admin role cannot be assigned through this endpoint.',
   })
-  @IsIn(CREATABLE_ADMIN_ROLES)
-  adminRole!: AdminRole;
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsString()
+  @Matches(/^[a-z][a-z0-9_]{2,63}$/)
+  adminRole!: string;
 
   @ApiPropertyOptional({
     type: [String],
-    enum: ADMIN_PERMISSIONS,
     example: ['finance.read', 'reports.read'],
-    description: 'Required only for custom_admin; ignored for predefined admin roles.',
+    description:
+      'Optional least-privilege subset of the selected role. Omit to inherit the role permission set and future role updates.',
   })
   @IsOptional()
   @IsArray()

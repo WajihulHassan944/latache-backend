@@ -8,6 +8,16 @@ const asPositiveInteger = (value: string | undefined, fallback: number): number 
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const asPositiveNumber = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value ?? '');
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const asNonNegativeNumber = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value ?? '');
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
 export default () => {
   const nodeEnvironment = process.env.NODE_ENV ?? 'local';
   return {
@@ -52,6 +62,24 @@ export default () => {
       passwordResetOtpExpiresInMinutes: asPositiveInteger(
         process.env.PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES,
         15,
+      ),
+    },
+    payments: {
+      stripeEnabled: asBoolean(process.env.STRIPE_ENABLED, false),
+      stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+      currency: (process.env.PAYMENTS_CURRENCY ?? 'USD').trim().toUpperCase(),
+      platformFeePercent: asNonNegativeNumber(process.env.PAYMENTS_PLATFORM_FEE_PERCENT, 0),
+      minimumBillableMinutes: asPositiveInteger(process.env.BOOKING_MINIMUM_BILLABLE_MINUTES, 120),
+      minimumWalletTopup: asPositiveNumber(process.env.CUSTOMER_WALLET_MIN_TOPUP, 5),
+    },
+    taskerPayout: {
+      currency: (process.env.TASKER_WALLET_CURRENCY ?? 'USD').trim().toUpperCase(),
+      executionMode: process.env.TASKER_PAYOUT_EXECUTION_MODE ?? 'disabled',
+      encryptionKey: process.env.PAYOUT_DATA_ENCRYPTION_KEY,
+      minimumWithdrawalAmount: asPositiveNumber(
+        process.env.TASKER_MIN_WITHDRAWAL_AMOUNT,
+        1,
       ),
     },
     cloudinary: {

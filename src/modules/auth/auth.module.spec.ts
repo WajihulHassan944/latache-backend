@@ -3,6 +3,7 @@ import { MODULE_METADATA } from '@nestjs/common/constants';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { UsersModule } from '../users/users.module';
+import { RbacCoreModule } from '../rbac/rbac-core.module';
 import { AuthModule } from './auth.module';
 import { AdminAuthGuard } from './guards/admin-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -25,6 +26,11 @@ describe('AuthModule dependency graph', () => {
         AuthSessionsRepository,
       ]),
     );
+  });
+
+  it('imports the cycle-free RBAC core for administrator registration', () => {
+    const imports = Reflect.getMetadata(MODULE_METADATA.IMPORTS, AuthModule) as unknown[];
+    expect(imports).toContain(RbacCoreModule);
   });
 
   it('registers split auth-domain services', () => {

@@ -1,7 +1,7 @@
 {
   "name": "latache-backend-nestjs-prisma",
-  "version": "3.3.2",
-  "description": "Latache API with NestJS, strict TypeScript, Prisma/PostgreSQL, Nodemailer, canonical role-based authentication, Cloudinary uploads, RBAC, and Swagger",
+  "version": "3.10.0",
+  "description": "Latache API with unified customer/tasker flows, Stripe payments, Prisma/PostgreSQL, RBAC, admin dashboards, Elite Tasker Program, booking/dispute management, finance operations, and platform settings",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
@@ -55,7 +55,8 @@
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
     "tsx": "4.20.3",
-    "cloudinary": "2.10.0"
+    "cloudinary": "2.10.0",
+    "stripe": "22.4.0"
   },
   "devDependencies": {
     "@eslint/js": "9.32.0",

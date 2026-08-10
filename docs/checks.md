@@ -9,6 +9,11 @@
 - Canonical auth controller routes and explicit absence of every removed alias.
 - Role-specific signup DTOs, exactly three tasker services, active-session bearer checks and super-admin seed defaults.
 - Global `/api` prefix and the unaffected services, taskers and bookings route surface.
+- Tasker dashboard route inventory and Tasker-only guards.
+- Additive Tasker dashboard migration/table markers and payout-PIN persistence.
+- No seeded/demo financial values in the Tasker migration or seed.
+- Wallet settlement is internal-only, idempotent, wallet-locked and does not run from task completion.
+- Withdrawal idempotency is scoped per Tasker and manual mode never reports provider success.
 
 Dependency-aware checks:
 

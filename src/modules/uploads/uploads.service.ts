@@ -274,7 +274,7 @@ export class UploadsService {
 
     const allowedByRole: Record<UserRole, readonly UploadFolder[]> = {
       [UserRole.SuperAdmin]: Object.values(UploadFolder),
-      [UserRole.Admin]: [UploadFolder.AdminProfile, UploadFolder.ServiceImage],
+      [UserRole.Admin]: [UploadFolder.AdminProfile, UploadFolder.ServiceImage, UploadFolder.EliteBadgeAsset, UploadFolder.BookingAttachment],
       [UserRole.Customer]: [
         UploadFolder.CustomerProfile,
         UploadFolder.BookingAttachment,

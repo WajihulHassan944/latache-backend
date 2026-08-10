@@ -143,6 +143,7 @@ describe('Booking slot concurrency (e2e)', () => {
     const body = {
       taskerId: tasker.id,
       serviceSlug: service.slug,
+      paymentSource: 'wallet',
       location: {
         label: 'Test venue',
         lat: 33.5731,
@@ -159,11 +160,11 @@ describe('Booking slot concurrency (e2e)', () => {
 
     const responses = await Promise.all([
       request(app.getHttpServer())
-        .post('/api/bookings/book-tasker')
+        .post('/api/bookings')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(body),
       request(app.getHttpServer())
-        .post('/api/bookings/book-tasker')
+        .post('/api/bookings')
         .set('Authorization', `Bearer ${accessToken}`)
         .send(body),
     ]);
