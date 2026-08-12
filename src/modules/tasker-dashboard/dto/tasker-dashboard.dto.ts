@@ -143,7 +143,10 @@ export class UpdateTaskerLocationDto {
   @Max(180)
   lng!: number;
 
-  @ApiPropertyOptional({ example: 12.5, description: 'Device-reported horizontal accuracy in metres.' })
+  @ApiPropertyOptional({
+    example: 12.5,
+    description: 'Device-reported horizontal accuracy in metres.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
@@ -151,7 +154,10 @@ export class UpdateTaskerLocationDto {
   @Max(100_000)
   accuracyM?: number;
 
-  @ApiPropertyOptional({ example: 180, description: 'Device heading in degrees from 0 inclusive to below 360.' })
+  @ApiPropertyOptional({
+    example: 180,
+    description: 'Device heading in degrees from 0 inclusive to below 360.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
@@ -430,6 +436,17 @@ export class CreateReviewDto {
 export class UpdateReviewDto extends CreateReviewDto {}
 
 export class ListWalletTransactionsQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Ledger entry ID returned as nextCursor. Cursor mode is recommended for long wallet histories and takes precedence over page.',
+    example: 'cm5ledger123',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 40)
+  cursor?: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)
@@ -447,7 +464,10 @@ export class ListWalletTransactionsQueryDto {
 }
 
 export class CreatePayoutMethodDto {
-  @ApiProperty({ enum: Object.values(PAYOUT_METHOD_TYPE), example: PAYOUT_METHOD_TYPE.BankTransfer })
+  @ApiProperty({
+    enum: Object.values(PAYOUT_METHOD_TYPE),
+    example: PAYOUT_METHOD_TYPE.BankTransfer,
+  })
   @IsEnum(PAYOUT_METHOD_TYPE)
   type!: (typeof PAYOUT_METHOD_TYPE)[keyof typeof PAYOUT_METHOD_TYPE];
 
@@ -504,15 +524,20 @@ export class CreatePayoutMethodDto {
   paypalEmail?: string;
 }
 
-
 export class ConfigurePayoutPinDto {
-  @ApiProperty({ example: 'CurrentAccountPassword@123', description: 'Current Latache account password used to authorize initial payout-PIN setup.' })
+  @ApiProperty({
+    example: 'CurrentAccountPassword@123',
+    description: 'Current Latache account password used to authorize initial payout-PIN setup.',
+  })
   @IsString()
   @MinLength(8)
   @MaxLength(128)
   password!: string;
 
-  @ApiProperty({ example: '482913', description: 'Six-digit payout PIN. It is hashed and never returned.' })
+  @ApiProperty({
+    example: '482913',
+    description: 'Six-digit payout PIN. It is hashed and never returned.',
+  })
   @Transform(trim)
   @Matches(/^\d{6}$/)
   pin!: string;
@@ -544,7 +569,10 @@ export class RequestWithdrawalDto {
   @Max(10_000_000)
   amount!: number;
 
-  @ApiProperty({ example: '482913', description: 'Six-digit payout PIN required to authorize the reservation.' })
+  @ApiProperty({
+    example: '482913',
+    description: 'Six-digit payout PIN required to authorize the reservation.',
+  })
   @Transform(trim)
   @Matches(/^\d{6}$/)
   pin!: string;

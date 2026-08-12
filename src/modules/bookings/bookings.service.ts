@@ -18,7 +18,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PAYMENT_SOURCE, PAYMENT_STATUS } from '../payments/payments.constants';
 import { PaymentsService } from '../payments/payments.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
+import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
+import { TaskerFinanceService } from '../tasker-finance/tasker-finance.service';
 import type { AddComplaintEvidenceDto, FileComplaintDto } from './dto/file-complaint.dto';
+import type { ListParticipantDisputesQueryDto } from './dto/participant-disputes.dto';
 import { BookingsRepository } from './bookings.repository';
 import {
   BookingQuoteDto,
@@ -41,15 +44,27 @@ const BOOKING_INCLUDE = {
   serviceOption: true,
   customer: {
     select: {
-      id: true, firstName: true, lastName: true, profilePicture: true,
-      phoneCountryCode: true, phoneNumber: true, rating: true,
+      id: true,
+      firstName: true,
+      lastName: true,
+      profilePicture: true,
+      phoneCountryCode: true,
+      phoneNumber: true,
+      rating: true,
     },
   },
   tasker: {
     select: {
-      id: true, firstName: true, lastName: true, profilePicture: true,
-      phoneCountryCode: true, phoneNumber: true, rating: true, reviewsCount: true,
-      completedTasks: true, isElite: true,
+      id: true,
+      firstName: true,
+      lastName: true,
+      profilePicture: true,
+      phoneCountryCode: true,
+      phoneNumber: true,
+      rating: true,
+      reviewsCount: true,
+      completedTasks: true,
+      isElite: true,
     },
   },
   workSession: true,
@@ -58,6 +73,33 @@ const BOOKING_INCLUDE = {
 } as const;
 
 type UnifiedBookingWithRelations = Prisma.BookingGetPayload<{ include: typeof BOOKING_INCLUDE }>;
+
+const PARTICIPANT_DISPUTE_INCLUDE = {
+  booking: {
+    select: {
+      id: true,
+      customerId: true,
+      taskerId: true,
+      status: true,
+      paymentStatus: true,
+      bookingDate: true,
+      startTime: true,
+      endTime: true,
+      service: { select: { id: true, name: true, slug: true, icon: true } },
+    },
+  },
+  evidenceRequests: { orderBy: { createdAt: 'desc' as const } },
+  evidences: { orderBy: { createdAt: 'desc' as const } },
+  resolutions: {
+    where: { status: 'applied' },
+    orderBy: { appliedAt: 'desc' as const },
+    take: 1,
+  },
+} as const;
+
+type ParticipantDisputeRow = Prisma.TaskComplaintGetPayload<{
+  include: typeof PARTICIPANT_DISPUTE_INCLUDE;
+}>;
 
 @Injectable()
 export class BookingsService {
@@ -71,6 +113,8 @@ export class BookingsService {
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
     private readonly platformSettings: PlatformSettingsService,
+    private readonly realtime: RealtimeOutboxService,
+    private readonly taskerFinance: TaskerFinanceService,
   ) {
     this.currency = config.get<string>('payments.currency', 'USD').toUpperCase();
     this.minimumBillableMinutes = config.get<number>('payments.minimumBillableMinutes', 120);
@@ -78,7 +122,13 @@ export class BookingsService {
 
   async quote(dto: BookingQuoteDto) {
     if (!isFutureDate(dto.date)) throw new BadRequestException('date must be after today');
-    const context = await this.loadQuoteContext(dto.taskerId, dto.serviceSlug, dto.serviceOptionId, dto.date, dto.time);
+    const context = await this.loadQuoteContext(
+      dto.taskerId,
+      dto.serviceSlug,
+      dto.serviceOptionId,
+      dto.date,
+      dto.time,
+    );
     return this.quoteView(
       Number(context.taskerService.hourlyRate),
       context.slot.startTime,
@@ -111,9 +161,13 @@ export class BookingsService {
       slotMinutes: Math.max(1, preflightEnd - preflightStart),
     });
     const paymentSource = dto.paymentSource ?? PAYMENT_SOURCE.Stripe;
+    if (paymentSource === PAYMENT_SOURCE.Cash) {
+      await this.taskerFinance.assertCashBookingAllowed(dto.taskerId);
+    }
     let stripePaymentMethodId: string | null = null;
     if (paymentSource === PAYMENT_SOURCE.Stripe) {
-      stripePaymentMethodId = dto.stripePaymentMethodId ?? (await this.payments.defaultPaymentMethod(customerId));
+      stripePaymentMethodId =
+        dto.stripePaymentMethodId ?? (await this.payments.defaultPaymentMethod(customerId));
       if (!stripePaymentMethodId) {
         throw new BadRequestException('Save or select a Stripe payment method before booking');
       }
@@ -129,8 +183,10 @@ export class BookingsService {
         `;
         const customer = await transaction.user.findUnique({ where: { id: customerId } });
         if (!customer) throw new NotFoundException('User not found');
-        if (customer.role !== UserRole.Customer) throw new ForbiddenException('Only customers can create bookings');
-        if (customer.accountStatus !== 'active') throw new ForbiddenException('Customer account is not active');
+        if (customer.role !== UserRole.Customer)
+          throw new ForbiddenException('Only customers can create bookings');
+        if (customer.accountStatus !== 'active')
+          throw new ForbiddenException('Customer account is not active');
 
         const context = await this.loadQuoteContext(
           dto.taskerId,
@@ -192,6 +248,7 @@ export class BookingsService {
           },
           transaction,
         );
+        await this.enqueueBookingUpdate(created.id, 'pending', 'booking_created', transaction);
         return created;
       });
       return this.serialize(booking, customerId);
@@ -216,9 +273,10 @@ export class BookingsService {
       this.prisma.booking.findMany({
         where,
         include: BOOKING_INCLUDE,
-        orderBy: bucket === 'history'
-          ? [{ bookingDate: 'desc' }, { startTime: 'desc' }]
-          : [{ bookingDate: 'asc' }, { startTime: 'asc' }],
+        orderBy:
+          bucket === 'history'
+            ? [{ bookingDate: 'desc' }, { startTime: 'desc' }]
+            : [{ bookingDate: 'asc' }, { startTime: 'asc' }],
         skip: offset,
         take: limit,
       }),
@@ -247,7 +305,9 @@ export class BookingsService {
       where: {
         ...(user.role === UserRole.Customer ? { customerId: user.id } : { taskerId: user.id }),
         status: { in: ACTIVE },
-        bookingDate: { gte: new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())) },
+        bookingDate: {
+          gte: new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())),
+        },
       },
       include: BOOKING_INCLUDE,
       orderBy: [{ bookingDate: 'asc' }, { startTime: 'asc' }],
@@ -277,10 +337,19 @@ export class BookingsService {
         },
         include: BOOKING_INCLUDE,
       });
-      await this.notifications.create(booking.taskerId, {
-        category: 'tasks', type: 'booking_cancelled_by_customer', title: 'Booking cancelled',
-        body: 'The customer cancelled this booking.', entityType: 'booking', entityId: String(bookingId),
-      }, transaction);
+      await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'tasks',
+          type: 'booking_cancelled_by_customer',
+          title: 'Booking cancelled',
+          body: 'The customer cancelled this booking.',
+          entityType: 'booking',
+          entityId: String(bookingId),
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(bookingId, 'cancelled', 'customer_cancelled', transaction);
       return row;
     });
     return this.serialize(updated, customerId);
@@ -295,12 +364,21 @@ export class BookingsService {
       if (!['pending', 'confirmed'].includes(booking.status)) {
         throw new ConflictException('Only pending or confirmed bookings can be rescheduled');
       }
-      const slots = await this.repository.findOpenSlotsForDate(booking.taskerId, dto.date, transaction);
+      const slots = await this.repository.findOpenSlotsForDate(
+        booking.taskerId,
+        dto.date,
+        transaction,
+      );
       const requested = parseTimeToMinutes(dto.time);
       const slot = slots.find((item) => parseTimeToMinutes(item.startTime) === requested);
-      if (!slot || requested === null) throw new ConflictException('Requested date/time is unavailable');
-      if (!(await this.repository.claimSlot(slot.id, transaction))) throw new ConflictException('Requested slot has already been booked');
-      await transaction.userAvailability.updateMany({ where: { id: booking.availabilityId }, data: { isBooked: false } });
+      if (!slot || requested === null)
+        throw new ConflictException('Requested date/time is unavailable');
+      if (!(await this.repository.claimSlot(slot.id, transaction)))
+        throw new ConflictException('Requested slot has already been booked');
+      await transaction.userAvailability.updateMany({
+        where: { id: booking.availabilityId },
+        data: { isBooked: false },
+      });
       const start = parseTimeToMinutes(slot.startTime) ?? 0;
       const end = parseTimeToMinutes(slot.endTime) ?? start;
       const row = await transaction.booking.update({
@@ -317,11 +395,19 @@ export class BookingsService {
         },
         include: BOOKING_INCLUDE,
       });
-      await this.notifications.create(booking.taskerId, {
-        category: 'tasks', type: 'booking_rescheduled', title: 'Booking rescheduled',
-        body: `The customer requested ${dto.date} at ${slot.startTime}. Please confirm the new time.`,
-        entityType: 'booking', entityId: String(bookingId),
-      }, transaction);
+      await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'tasks',
+          type: 'booking_rescheduled',
+          title: 'Booking rescheduled',
+          body: `The customer requested ${dto.date} at ${slot.startTime}. Please confirm the new time.`,
+          entityType: 'booking',
+          entityId: String(bookingId),
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(bookingId, 'pending', 'customer_rescheduled', transaction);
       return row;
     });
     return this.serialize(updated, customerId);
@@ -332,15 +418,29 @@ export class BookingsService {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
       const booking = await transaction.booking.findFirst({ where: { id: bookingId, customerId } });
       if (!booking) throw new NotFoundException('Booking not found');
-      if (booking.status !== 'in_progress') throw new ConflictException('Additional time can be authorized only while the task is in progress');
+      if (booking.status !== 'in_progress')
+        throw new ConflictException(
+          'Additional time can be authorized only while the task is in progress',
+        );
       const updated = await transaction.booking.update({
         where: { id: bookingId },
         data: { extensionMinutes: { increment: dto.minutes } },
       });
-      await this.notifications.create(booking.taskerId, {
-        category: 'tasks', type: 'task_time_extended', title: 'Customer approved additional time',
-        body: `${dto.minutes} additional minutes were approved.`, entityType: 'booking', entityId: String(bookingId),
-      }, transaction);
+      await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'tasks',
+          type: 'task_time_extended',
+          title: 'Customer approved additional time',
+          body: `${dto.minutes} additional minutes were approved.`,
+          entityType: 'booking',
+          entityId: String(bookingId),
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(bookingId, booking.status, 'duration_extended', transaction, {
+        extensionMinutes: updated.extensionMinutes,
+      });
       return updated;
     });
     return {
@@ -395,29 +495,47 @@ export class BookingsService {
         },
         transaction,
       );
+      await this.enqueueBookingUpdate(bookingId, 'completed', 'customer_completed', transaction);
     });
   }
 
   async updateBilling(customerId: number, bookingId: number, dto: UpdateBookingBillingDto) {
-    const booking = await this.prisma.booking.findFirst({ where: { id: bookingId, customerId } });
-    if (!booking) throw new NotFoundException('Booking not found');
-    if (booking.paymentStatus === PAYMENT_STATUS.Paid) throw new ConflictException('A paid booking can no longer change tip or donation');
     if (
       dto.tipAmount === undefined &&
       dto.donationAmount === undefined &&
       dto.donationDropoffRequested === undefined
     ) {
-      throw new BadRequestException('Provide tipAmount, donationAmount, or donationDropoffRequested');
+      throw new BadRequestException(
+        'Provide tipAmount, donationAmount, or donationDropoffRequested',
+      );
     }
-    const updated = await this.prisma.booking.update({
-      where: { id: bookingId },
-      data: {
-        ...(dto.tipAmount !== undefined ? { tipAmount: money(dto.tipAmount).toFixed(2) } : {}),
-        ...(dto.donationAmount !== undefined ? { donationAmount: money(dto.donationAmount).toFixed(2) } : {}),
-        ...(dto.donationDropoffRequested !== undefined
-          ? { donationDropoffRequested: dto.donationDropoffRequested }
-          : {}),
-      },
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findFirst({ where: { id: bookingId, customerId } });
+      if (!booking) throw new NotFoundException('Booking not found');
+      if (
+        [PAYMENT_STATUS.Paid, PAYMENT_STATUS.CashConfirmed].includes(booking.paymentStatus as never)
+      ) {
+        throw new ConflictException('A paid booking can no longer change tip or donation');
+      }
+      const row = await transaction.booking.update({
+        where: { id: bookingId },
+        data: {
+          ...(dto.tipAmount !== undefined ? { tipAmount: money(dto.tipAmount).toFixed(2) } : {}),
+          ...(dto.donationAmount !== undefined
+            ? { donationAmount: money(dto.donationAmount).toFixed(2) }
+            : {}),
+          ...(dto.donationDropoffRequested !== undefined
+            ? { donationDropoffRequested: dto.donationDropoffRequested }
+            : {}),
+        },
+      });
+      await this.enqueueBookingUpdate(bookingId, row.status, 'billing_updated', transaction, {
+        tipAmount: Number(row.tipAmount),
+        donationAmount: Number(row.donationAmount),
+        donationDropoffRequested: row.donationDropoffRequested,
+      });
+      return row;
     });
     return {
       bookingId: String(bookingId),
@@ -444,14 +562,24 @@ export class BookingsService {
         lng: Number(booking.locationLng),
         venueAddress: booking.venueAddress,
       },
-      latestTaskerLocation: booking.latestLocation ? {
-        lat: Number(booking.latestLocation.lat), lng: Number(booking.latestLocation.lng),
-        accuracyM: booking.latestLocation.accuracyM === null ? null : Number(booking.latestLocation.accuracyM),
-        headingDeg: booking.latestLocation.headingDeg === null ? null : Number(booking.latestLocation.headingDeg),
-        capturedAt: booking.latestLocation.capturedAt.toISOString(),
-      } : null,
+      latestTaskerLocation: booking.latestLocation
+        ? {
+            lat: Number(booking.latestLocation.lat),
+            lng: Number(booking.latestLocation.lng),
+            accuracyM:
+              booking.latestLocation.accuracyM === null
+                ? null
+                : Number(booking.latestLocation.accuracyM),
+            headingDeg:
+              booking.latestLocation.headingDeg === null
+                ? null
+                : Number(booking.latestLocation.headingDeg),
+            capturedAt: booking.latestLocation.capturedAt.toISOString(),
+          }
+        : null,
       routeMetrics: null,
-      routeMetricsReason: 'Distance, ETA and route geometry require a real maps/routing provider and are intentionally not fabricated.',
+      routeMetricsReason:
+        'Distance, ETA and route geometry require a real maps/routing provider and are intentionally not fabricated.',
     };
   }
 
@@ -462,15 +590,82 @@ export class BookingsService {
     });
     if (!booking) throw new NotFoundException('Booking not found');
     const session = booking.workSession;
-    if (!session) return { bookingId: String(bookingId), status: 'not_started', elapsedSeconds: 0, startedAt: null, pausedAt: null, stoppedAt: null, notes: '' };
+    if (!session)
+      return {
+        bookingId: String(bookingId),
+        status: 'not_started',
+        elapsedSeconds: 0,
+        startedAt: null,
+        pausedAt: null,
+        stoppedAt: null,
+        notes: '',
+      };
     const endpoint = session.stoppedAt ?? session.pausedAt ?? new Date();
-    const elapsedSeconds = Math.max(0, Math.floor((endpoint.getTime() - session.startedAt.getTime()) / 1000) - session.accumulatedPausedSecs);
+    const elapsedSeconds = Math.max(
+      0,
+      Math.floor((endpoint.getTime() - session.startedAt.getTime()) / 1000) -
+        session.accumulatedPausedSecs,
+    );
     return {
-      bookingId: String(bookingId), status: session.status, elapsedSeconds,
-      startedAt: session.startedAt.toISOString(), pausedAt: session.pausedAt?.toISOString() ?? null,
-      stoppedAt: session.stoppedAt?.toISOString() ?? null, notes: session.notes ?? '',
+      bookingId: String(bookingId),
+      status: session.status,
+      elapsedSeconds,
+      startedAt: session.startedAt.toISOString(),
+      pausedAt: session.pausedAt?.toISOString() ?? null,
+      stoppedAt: session.stoppedAt?.toISOString() ?? null,
+      notes: session.notes ?? '',
       authorizedDurationMinutes: booking.estimatedDurationMinutes + booking.extensionMinutes,
     };
+  }
+
+  async listUserDisputes(user: User, query: ListParticipantDisputesQueryDto) {
+    const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
+    const where: Prisma.TaskComplaintWhereInput = {
+      booking: { OR: [{ customerId: user.id }, { taskerId: user.id }] },
+      ...(query.bookingId ? { bookingId: query.bookingId } : {}),
+      ...(query.status && query.status !== 'all' ? { status: query.status } : {}),
+    };
+    const [rows, totalItems] = await Promise.all([
+      this.prisma.taskComplaint.findMany({
+        where,
+        include: PARTICIPANT_DISPUTE_INCLUDE,
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      this.prisma.taskComplaint.count({ where }),
+    ]);
+    return {
+      page,
+      limit,
+      totalItems,
+      totalPages: Math.ceil(totalItems / limit),
+      items: rows.map((row) => this.participantDisputeView(row, user.id)),
+    };
+  }
+
+  async getUserDispute(user: User, disputeId: string) {
+    const row = await this.prisma.taskComplaint.findFirst({
+      where: {
+        id: disputeId,
+        booking: { OR: [{ customerId: user.id }, { taskerId: user.id }] },
+      },
+      include: PARTICIPANT_DISPUTE_INCLUDE,
+    });
+    if (!row) throw new NotFoundException('Dispute not found');
+    return this.participantDisputeView(row, user.id);
+  }
+
+  async addUserDisputeEvidence(user: User, disputeId: string, dto: AddComplaintEvidenceDto) {
+    const complaint = await this.prisma.taskComplaint.findFirst({
+      where: {
+        id: disputeId,
+        booking: { OR: [{ customerId: user.id }, { taskerId: user.id }] },
+      },
+      select: { bookingId: true },
+    });
+    if (!complaint) throw new NotFoundException('Dispute not found');
+    return this.addComplaintEvidence(user, complaint.bookingId, disputeId, dto);
   }
 
   async listComplaints(user: User, bookingId: number) {
@@ -548,17 +743,25 @@ export class BookingsService {
     });
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.status === 'cancelled') {
-      throw new ConflictException('A complaint cannot be filed for an inaccessible cancelled booking');
+      throw new ConflictException(
+        'A complaint cannot be filed for an inaccessible cancelled booking',
+      );
     }
     const otherId = booking.customerId === userId ? booking.taskerId : booking.customerId;
     const participantRole = booking.customerId === userId ? 'customer' : 'tasker';
-    const priority = dto.category === 'safety'
-      ? 'urgent'
-      : ['missed_appointment', 'overcharged', 'payment'].includes(dto.category)
-        ? 'high'
-        : 'normal';
+    const priority =
+      dto.category === 'safety'
+        ? 'urgent'
+        : ['missed_appointment', 'overcharged', 'payment'].includes(dto.category)
+          ? 'high'
+          : 'normal';
     for (const attachment of dto.attachments ?? []) {
-      this.assertBookingAttachmentOwnership(userId, participantRole, attachment.publicId, attachment.secureUrl);
+      this.assertBookingAttachmentOwnership(
+        userId,
+        participantRole,
+        attachment.publicId,
+        attachment.secureUrl,
+      );
     }
 
     const created = await this.prisma.$transaction(async (transaction) => {
@@ -583,7 +786,10 @@ export class BookingsService {
             uploadedById: userId,
             uploadedByRole: participantRole,
             source: 'initial_complaint',
-            name: attachment.originalFileName?.trim() || attachment.publicId.split('/').filter(Boolean).pop() || 'Complaint attachment',
+            name:
+              attachment.originalFileName?.trim() ||
+              attachment.publicId.split('/').filter(Boolean).pop() ||
+              'Complaint attachment',
             publicId: attachment.publicId,
             secureUrl: attachment.secureUrl,
             resourceType: attachment.resourceType ?? null,
@@ -593,21 +799,42 @@ export class BookingsService {
         });
       }
 
-      if (![PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded, PAYMENT_STATUS.Refunded, PAYMENT_STATUS.Failed].includes(booking.paymentStatus as never)) {
+      if (
+        ![
+          PAYMENT_STATUS.Paid,
+          PAYMENT_STATUS.CashConfirmed,
+          PAYMENT_STATUS.PartiallyRefunded,
+          PAYMENT_STATUS.Refunded,
+          PAYMENT_STATUS.Failed,
+        ].includes(booking.paymentStatus as never)
+      ) {
         await transaction.booking.update({
           where: { id: bookingId },
           data: { paymentStatus: PAYMENT_STATUS.OnHoldDispute },
         });
       }
-      await this.notifications.create(otherId, {
-        category: 'tasks',
-        type: 'booking_dispute_opened',
-        title: 'A booking dispute was opened',
-        body: 'A complaint was submitted for this booking.',
-        entityType: 'booking',
-        entityId: String(bookingId),
-        metadata: { complaintId: complaint.id, priority },
-      }, transaction);
+      await this.payments.blockTaskerFinanceForDispute(
+        bookingId,
+        `Booking dispute ${complaint.id} is active`,
+        transaction,
+      );
+      await this.notifications.create(
+        otherId,
+        {
+          category: 'tasks',
+          type: 'booking_dispute_opened',
+          title: 'A booking dispute was opened',
+          body: 'A dispute was submitted for this booking.',
+          entityType: 'booking',
+          entityId: String(bookingId),
+          metadata: { complaintId: complaint.id, priority },
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(bookingId, booking.status, 'dispute_opened', transaction, {
+        disputeId: complaint.id,
+        priority,
+      });
       return complaint;
     });
     return {
@@ -628,17 +855,23 @@ export class BookingsService {
     complaintId: string,
     dto: AddComplaintEvidenceDto,
   ) {
-    if (!dto.evidence.length) throw new BadRequestException('At least one evidence item is required');
+    if (!dto.evidence.length)
+      throw new BadRequestException('At least one evidence item is required');
 
     const result = await this.prisma.$transaction(async (transaction) => {
       const booking = await transaction.booking.findFirst({
         where: { id: bookingId, OR: [{ customerId: user.id }, { taskerId: user.id }] },
-        select: { id: true, customerId: true, taskerId: true },
+        select: { id: true, customerId: true, taskerId: true, status: true },
       });
       if (!booking) throw new NotFoundException('Booking not found');
       const participantRole = booking.customerId === user.id ? 'customer' : 'tasker';
       for (const evidence of dto.evidence) {
-        this.assertBookingAttachmentOwnership(user.id, participantRole, evidence.publicId, evidence.secureUrl);
+        this.assertBookingAttachmentOwnership(
+          user.id,
+          participantRole,
+          evidence.publicId,
+          evidence.secureUrl,
+        );
       }
 
       await transaction.$queryRaw`
@@ -701,10 +934,11 @@ export class BookingsService {
             : pendingRoles.has('tasker')
               ? 'tasker'
               : null;
-      const responseDueAt = pendingRows
-        .map((request) => request.dueAt)
-        .filter((value): value is Date => value !== null)
-        .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+      const responseDueAt =
+        pendingRows
+          .map((request) => request.dueAt)
+          .filter((value): value is Date => value !== null)
+          .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
 
       await transaction.taskComplaint.update({
         where: { id: complaintId },
@@ -717,16 +951,31 @@ export class BookingsService {
       const pendingRequests = pendingRows.length;
 
       if (complaint.assignedAdminId) {
-        await this.notifications.create(complaint.assignedAdminId, {
-          category: 'tasks',
-          type: 'dispute_evidence_received',
-          title: 'Dispute evidence received',
-          body: `${participantRole === 'customer' ? 'Customer' : 'Tasker'} submitted additional evidence.`,
-          entityType: 'dispute',
-          entityId: complaintId,
-          metadata: { bookingId, evidenceCount: dto.evidence.length },
-        }, transaction);
+        await this.notifications.create(
+          complaint.assignedAdminId,
+          {
+            category: 'tasks',
+            type: 'dispute_evidence_received',
+            title: 'Dispute evidence received',
+            body: `${participantRole === 'customer' ? 'Customer' : 'Tasker'} submitted additional evidence.`,
+            entityType: 'dispute',
+            entityId: complaintId,
+            metadata: { bookingId, evidenceCount: dto.evidence.length },
+          },
+          transaction,
+        );
       }
+      await this.enqueueBookingUpdate(
+        bookingId,
+        booking.status,
+        'dispute_evidence_submitted',
+        transaction,
+        {
+          disputeId: complaintId,
+          submittedByRole: participantRole,
+          submittedCount: dto.evidence.length,
+        },
+      );
       return { participantRole, pendingRequests };
     });
 
@@ -736,7 +985,81 @@ export class BookingsService {
       submittedByRole: result.participantRole,
       submittedCount: dto.evidence.length,
       pendingEvidenceRequests: result.pendingRequests,
-      dispute: (await this.listComplaints(user, bookingId)).find((item) => item.id === complaintId) ?? null,
+      dispute:
+        (await this.listComplaints(user, bookingId)).find((item) => item.id === complaintId) ??
+        null,
+    };
+  }
+
+  private participantDisputeView(row: ParticipantDisputeRow, userId: number) {
+    const participantRole = row.booking.customerId === userId ? 'customer' : 'tasker';
+    const myEvidence = row.evidences.filter((evidence) => evidence.uploadedById === userId);
+    const visibleRequests = row.evidenceRequests.filter(
+      (request) => request.requestedFrom === participantRole || request.requestedFrom === 'both',
+    );
+    const resolution = row.resolutions[0] ?? null;
+    return {
+      id: row.id,
+      booking: {
+        id: String(row.booking.id),
+        status: row.booking.status,
+        paymentStatus: row.booking.paymentStatus,
+        bookingDate: row.booking.bookingDate.toISOString().slice(0, 10),
+        startTime: row.booking.startTime,
+        endTime: row.booking.endTime,
+        service: {
+          id: String(row.booking.service.id),
+          name: row.booking.service.name,
+          slug: row.booking.service.slug,
+          icon: row.booking.service.icon ?? '',
+        },
+      },
+      category: row.category,
+      description: row.description,
+      status: row.status,
+      priority: row.priority,
+      filedByCurrentUser: row.filedById === userId,
+      evidenceReview: {
+        status: row.evidenceReviewStatus,
+        awaitingResponseFrom: row.awaitingResponseFrom,
+        responseDueAt: row.responseDueAt?.toISOString() ?? null,
+      },
+      evidenceRequests: visibleRequests.map((request) => ({
+        id: request.id,
+        message: request.message,
+        requestedFrom: request.requestedFrom,
+        status: request.status,
+        dueAt: request.dueAt?.toISOString() ?? null,
+        fulfilledAt: request.fulfilledAt?.toISOString() ?? null,
+        createdAt: request.createdAt.toISOString(),
+      })),
+      myEvidence: myEvidence.map((evidence) => ({
+        id: evidence.id,
+        name: evidence.name,
+        publicId: evidence.publicId,
+        secureUrl: evidence.secureUrl,
+        resourceType: evidence.resourceType,
+        bytes: evidence.bytes,
+        mimeType: evidence.mimeType,
+        source: evidence.source,
+        reviewedAt: evidence.reviewedAt?.toISOString() ?? null,
+        createdAt: evidence.createdAt.toISOString(),
+      })),
+      finalResolution: resolution
+        ? {
+            type: resolution.actionType,
+            refundAmount:
+              resolution.refundAmount === null ? null : money(Number(resolution.refundAmount)),
+            currency: resolution.currency,
+            warningTarget: resolution.warningTarget,
+            summary: resolution.summary,
+            providerRefundStatus: resolution.providerRefundStatus,
+            appliedAt: resolution.appliedAt?.toISOString() ?? null,
+          }
+        : null,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      resolvedAt: row.resolvedAt?.toISOString() ?? null,
     };
   }
 
@@ -767,8 +1090,25 @@ export class BookingsService {
       throw new ForbiddenException('Dispute evidence URL must be a secure Cloudinary URL');
     }
     if (cloudName && !parsed.pathname.startsWith(`/${cloudName}/`)) {
-      throw new ForbiddenException('Dispute evidence URL belongs to a different Cloudinary account');
+      throw new ForbiddenException(
+        'Dispute evidence URL belongs to a different Cloudinary account',
+      );
     }
+  }
+
+  private enqueueBookingUpdate(
+    bookingId: number,
+    status: string,
+    reason: string,
+    transaction?: Prisma.TransactionClient,
+    extra: Record<string, Prisma.InputJsonValue> = {},
+  ) {
+    return this.realtime.enqueueBooking(
+      bookingId,
+      'booking:updated',
+      { bookingId: String(bookingId), status, reason, ...extra },
+      transaction,
+    );
   }
 
   private async loadQuoteContext(
@@ -781,20 +1121,38 @@ export class BookingsService {
   ) {
     const db = (transaction ?? this.prisma) as Prisma.TransactionClient;
     const tasker = await db.user.findFirst({
-      where: { id: taskerId, role: UserRole.Tasker, onboardingStatus: { not: null }, accountStatus: 'active', deletedAt: null },
+      where: {
+        id: taskerId,
+        role: UserRole.Tasker,
+        onboardingStatus: { not: null },
+        accountStatus: 'active',
+        deletedAt: null,
+      },
       select: { id: true, firstName: true, lastName: true, profilePicture: true, rating: true },
     });
     if (!tasker) throw new NotFoundException('Tasker not found');
-    const service = await db.service.findFirst({ where: { slug: serviceSlug } });
+    const service = await db.service.findFirst({ where: { slug: serviceSlug, isActive: true } });
     if (!service) throw new BadRequestException(`Unknown service: ${serviceSlug}`);
-    const option = serviceOptionId ? await db.serviceOption.findFirst({ where: { id: serviceOptionId, serviceId: service.id, isActive: true } }) : null;
-    if (serviceOptionId && !option) throw new BadRequestException('Selected service option is unavailable');
-    const taskerService = await db.userService.findUnique({ where: { userId_serviceId: { userId: taskerId, serviceId: service.id } } });
+    const option = serviceOptionId
+      ? await db.serviceOption.findFirst({
+          where: { id: serviceOptionId, serviceId: service.id, isActive: true },
+        })
+      : null;
+    if (serviceOptionId && !option)
+      throw new BadRequestException('Selected service option is unavailable');
+    const taskerService = await db.userService.findUnique({
+      where: { userId_serviceId: { userId: taskerId, serviceId: service.id } },
+    });
     if (!taskerService) throw new BadRequestException('Tasker does not offer this service');
-    const availability = await db.userAvailability.findMany({ where: { userId: taskerId, date: dateOnlyToDate(date), isBooked: false } });
+    const availability = await db.userAvailability.findMany({
+      where: { userId: taskerId, date: dateOnlyToDate(date), isBooked: false },
+    });
     const requestedMinutes = parseTimeToMinutes(time);
-    const slot = availability.find((item) => parseTimeToMinutes(item.startTime) === requestedMinutes);
-    if (!slot || requestedMinutes === null) throw new ConflictException('Requested date/time is unavailable');
+    const slot = availability.find(
+      (item) => parseTimeToMinutes(item.startTime) === requestedMinutes,
+    );
+    if (!slot || requestedMinutes === null)
+      throw new ConflictException('Requested date/time is unavailable');
     return { tasker, service, option, taskerService, slot };
   }
 
@@ -806,7 +1164,13 @@ export class BookingsService {
     donationAmount: number,
     service: { id: number; name: string | null; slug: string | null },
     option: { id: number; name: string; slug: string } | null,
-    tasker: { id: number; firstName: string | null; lastName: string | null; profilePicture: string | null; rating: Prisma.Decimal },
+    tasker: {
+      id: number;
+      firstName: string | null;
+      lastName: string | null;
+      profilePicture: string | null;
+      rating: Prisma.Decimal;
+    },
     bookingDate: Date,
   ) {
     const start = parseTimeToMinutes(startTime) ?? 0;
@@ -814,14 +1178,15 @@ export class BookingsService {
     const slotMinutes = Math.max(1, end - start);
     await this.platformSettings.assertBookingRules({ bookingDate, startTime, slotMinutes });
     const billableMinutes = Math.max(this.minimumBillableMinutes, slotMinutes);
-    const serviceAmount = money(hourlyRate * (billableMinutes / 60));
+    const rawServiceAmount = money(hourlyRate * (billableMinutes / 60));
     const pricing = await this.platformSettings.calculatePricingCharges({
-      serviceAmount,
+      serviceAmount: rawServiceAmount,
       taskerId: tasker.id,
       serviceId: service.id,
       bookingDate,
       bookingCreatedAt: new Date(),
     });
+    const serviceAmount = pricing.serviceAmount;
     const tip = money(tipAmount);
     const donation = money(donationAmount);
     const estimatedTotal = money(
@@ -834,9 +1199,16 @@ export class BookingsService {
     );
     return {
       currency: this.currency,
-      tasker: { id: String(tasker.id), name: `${tasker.firstName ?? ''} ${tasker.lastName ?? ''}`.trim(), profilePicture: tasker.profilePicture ?? '', rating: Number(tasker.rating) },
+      tasker: {
+        id: String(tasker.id),
+        name: `${tasker.firstName ?? ''} ${tasker.lastName ?? ''}`.trim(),
+        profilePicture: tasker.profilePicture ?? '',
+        rating: Number(tasker.rating),
+      },
       service: { id: String(service.id), name: service.name, slug: service.slug },
-      serviceOption: option ? { id: String(option.id), name: option.name, slug: option.slug } : null,
+      serviceOption: option
+        ? { id: String(option.id), name: option.name, slug: option.slug }
+        : null,
       hourlyRate,
       selectedSlotMinutes: slotMinutes,
       minimumBillableMinutes: this.minimumBillableMinutes,
@@ -851,6 +1223,10 @@ export class BookingsService {
         estimatedTotal,
       },
       pricingPolicy: {
+        taskerTierCode: pricing.taskerTierCode,
+        rawServiceAmount: pricing.rawServiceAmount,
+        minimumTaskPrice: pricing.minimumTaskPrice,
+        minimumTaskPriceApplied: pricing.minimumTaskPriceApplied,
         commissionRatePercent: pricing.commissionRatePercent,
         taxRatePercent: pricing.taxRatePercent,
         taxInclusive: pricing.taxInclusive,
@@ -860,7 +1236,10 @@ export class BookingsService {
   }
 
   private async findParticipantBooking(userId: number, bookingId: number) {
-    const booking = await this.prisma.booking.findFirst({ where: { id: bookingId, OR: [{ customerId: userId }, { taskerId: userId }] }, include: BOOKING_INCLUDE });
+    const booking = await this.prisma.booking.findFirst({
+      where: { id: bookingId, OR: [{ customerId: userId }, { taskerId: userId }] },
+      include: BOOKING_INCLUDE,
+    });
     if (!booking) throw new NotFoundException('Booking not found');
     return booking;
   }
@@ -868,42 +1247,96 @@ export class BookingsService {
   private serialize(booking: UnifiedBookingWithRelations, viewerId: number) {
     const viewerRole = booking.customerId === viewerId ? 'customer' : 'tasker';
 
-    const counterparty = viewerRole === 'customer'
-      ? {
-          id: String(booking.tasker.id),
-          name: `${booking.tasker.firstName ?? ''} ${booking.tasker.lastName ?? ''}`.trim(),
-          profilePicture: booking.tasker.profilePicture ?? '',
-          phone: `${booking.tasker.phoneCountryCode ?? ''}${booking.tasker.phoneNumber ?? ''}`,
-          rating: Number(booking.tasker.rating),
-          reviewsCount: booking.tasker.reviewsCount,
-          completedTasks: booking.tasker.completedTasks,
-          isElite: booking.tasker.isElite,
-        }
-      : {
-          id: String(booking.customer.id),
-          name: `${booking.customer.firstName ?? ''} ${booking.customer.lastName ?? ''}`.trim(),
-          profilePicture: booking.customer.profilePicture ?? '',
-          phone: `${booking.customer.phoneCountryCode ?? ''}${booking.customer.phoneNumber ?? ''}`,
-          rating: Number(booking.customer.rating),
-        };
+    const counterparty =
+      viewerRole === 'customer'
+        ? {
+            id: String(booking.tasker.id),
+            name: `${booking.tasker.firstName ?? ''} ${booking.tasker.lastName ?? ''}`.trim(),
+            profilePicture: booking.tasker.profilePicture ?? '',
+            phone: `${booking.tasker.phoneCountryCode ?? ''}${booking.tasker.phoneNumber ?? ''}`,
+            rating: Number(booking.tasker.rating),
+            reviewsCount: booking.tasker.reviewsCount,
+            completedTasks: booking.tasker.completedTasks,
+            isElite: booking.tasker.isElite,
+          }
+        : {
+            id: String(booking.customer.id),
+            name: `${booking.customer.firstName ?? ''} ${booking.customer.lastName ?? ''}`.trim(),
+            profilePicture: booking.customer.profilePicture ?? '',
+            phone: `${booking.customer.phoneCountryCode ?? ''}${booking.customer.phoneNumber ?? ''}`,
+            rating: Number(booking.customer.rating),
+          };
 
     return {
-      id: String(booking.id), status: booking.status, viewerRole,
-      service: { id: String(booking.service.id), name: booking.service.name, slug: booking.service.slug, icon: booking.service.icon ?? '' },
-      serviceOption: booking.serviceOption ? { id: String(booking.serviceOption.id), name: booking.serviceOption.name, slug: booking.serviceOption.slug } : null,
+      id: String(booking.id),
+      status: booking.status,
+      viewerRole,
+      service: {
+        id: String(booking.service.id),
+        name: booking.service.name,
+        slug: booking.service.slug,
+        icon: booking.service.icon ?? '',
+      },
+      serviceOption: booking.serviceOption
+        ? {
+            id: String(booking.serviceOption.id),
+            name: booking.serviceOption.name,
+            slug: booking.serviceOption.slug,
+          }
+        : null,
       counterparty,
       hourlyRate: { amount: Number(booking.hourlyRate), currency: booking.paymentCurrency },
-      date: dateOnlyFromDate(booking.bookingDate), startTime: booking.startTime, endTime: booking.endTime,
-      location: formatLocation({ label: booking.locationLabel, lat: Number(booking.locationLat), lng: Number(booking.locationLng), city: booking.locationCity, area: booking.locationArea }),
-      bookingDetails: { venueAddress: booking.venueAddress, apartmentSuite: booking.apartmentSuite, description: booking.description, attachments: Array.isArray(booking.attachments) ? booking.attachments : [] },
-      timing: { estimatedDurationMinutes: booking.estimatedDurationMinutes, extensionMinutes: booking.extensionMinutes, authorizedDurationMinutes: booking.estimatedDurationMinutes + booking.extensionMinutes, timerStatus: booking.workSession?.status ?? 'not_started' },
-      payment: { source: booking.paymentSource, status: booking.paymentStatus, currency: booking.paymentCurrency, serviceAmount: booking.serviceAmount === null ? null : Number(booking.serviceAmount), platformFeeAmount: Number(booking.platformFeeAmount), commissionRatePercent: Number(booking.commissionRatePercent), taxAmount: Number(booking.taxAmount), taxRatePercent: Number(booking.taxRatePercent), taxInclusive: booking.taxInclusive, serviceSurchargeAmount: Number(booking.serviceSurchargeAmount), tipAmount: Number(booking.tipAmount), donationAmount: Number(booking.donationAmount), donationDropoffRequested: booking.donationDropoffRequested, totalChargedAmount: booking.totalChargedAmount === null ? null : Number(booking.totalChargedAmount) },
-      counts: { messages: booking._count.messages, complaints: booking._count.complaints, reviews: booking._count.reviews },
-      createdAt: booking.createdAt.toISOString(), updatedAt: booking.updatedAt.toISOString(),
+      date: dateOnlyFromDate(booking.bookingDate),
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+      location: formatLocation({
+        label: booking.locationLabel,
+        lat: Number(booking.locationLat),
+        lng: Number(booking.locationLng),
+        city: booking.locationCity,
+        area: booking.locationArea,
+      }),
+      bookingDetails: {
+        venueAddress: booking.venueAddress,
+        apartmentSuite: booking.apartmentSuite,
+        description: booking.description,
+        attachments: Array.isArray(booking.attachments) ? booking.attachments : [],
+      },
+      timing: {
+        estimatedDurationMinutes: booking.estimatedDurationMinutes,
+        extensionMinutes: booking.extensionMinutes,
+        authorizedDurationMinutes: booking.estimatedDurationMinutes + booking.extensionMinutes,
+        timerStatus: booking.workSession?.status ?? 'not_started',
+      },
+      payment: {
+        source: booking.paymentSource,
+        status: booking.paymentStatus,
+        currency: booking.paymentCurrency,
+        serviceAmount: booking.serviceAmount === null ? null : Number(booking.serviceAmount),
+        platformFeeAmount: Number(booking.platformFeeAmount),
+        commissionRatePercent: Number(booking.commissionRatePercent),
+        taxAmount: Number(booking.taxAmount),
+        taxRatePercent: Number(booking.taxRatePercent),
+        taxInclusive: booking.taxInclusive,
+        serviceSurchargeAmount: Number(booking.serviceSurchargeAmount),
+        tipAmount: Number(booking.tipAmount),
+        donationAmount: Number(booking.donationAmount),
+        donationDropoffRequested: booking.donationDropoffRequested,
+        totalChargedAmount:
+          booking.totalChargedAmount === null ? null : Number(booking.totalChargedAmount),
+      },
+      counts: {
+        messages: booking._count.messages,
+        complaints: booking._count.complaints,
+        reviews: booking._count.reviews,
+      },
+      createdAt: booking.createdAt.toISOString(),
+      updatedAt: booking.updatedAt.toISOString(),
     };
   }
 
   private assertDashboardRole(user: User): void {
-    if (user.role !== UserRole.Customer && user.role !== UserRole.Tasker) throw new ForbiddenException('Bookings dashboard is available to customers and taskers');
+    if (user.role !== UserRole.Customer && user.role !== UserRole.Tasker)
+      throw new ForbiddenException('Bookings dashboard is available to customers and taskers');
   }
 }

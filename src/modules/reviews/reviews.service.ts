@@ -3,17 +3,22 @@ import { normalizePagination } from '../../common/utils/pagination.util';
 import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateReviewDto, ListReviewsQueryDto, UpdateReviewDto } from './reviews.dto';
 import type { ReviewListView, ReviewPersonView, ReviewView } from './reviews.types';
 
 @Injectable()
 export class ReviewsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async list(userId: number, query: ListReviewsQueryDto): Promise<ReviewListView> {
     const view = query.view ?? 'received';
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 20);
     const where: Prisma.ReviewWhereInput = {
+      moderationStatus: 'visible',
       ...(view === 'received' ? { revieweeId: userId } : { reviewerId: userId }),
       ...(query.rating ? { rating: query.rating } : {}),
     };
@@ -34,7 +39,10 @@ export class ReviewsService {
       }),
       this.prisma.review.count({ where }),
       this.prisma.review.aggregate({
-        where: view === 'received' ? { revieweeId: userId } : { reviewerId: userId },
+        where:
+          view === 'received'
+            ? { revieweeId: userId, moderationStatus: 'visible' }
+            : { reviewerId: userId, moderationStatus: 'visible' },
         _avg: { rating: true },
       }),
     ]);
@@ -74,14 +82,39 @@ export class ReviewsService {
           },
           include: {
             reviewer: {
-              select: { id: true, firstName: true, lastName: true, profilePicture: true, role: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                profilePicture: true,
+                role: true,
+              },
             },
             reviewee: {
-              select: { id: true, firstName: true, lastName: true, profilePicture: true, role: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                profilePicture: true,
+                role: true,
+              },
             },
           },
         });
         await this.recalculateUserRating(revieweeId, transaction);
+        await this.notifications.create(
+          revieweeId,
+          {
+            category: 'system',
+            type: 'review_received',
+            title: 'New review received',
+            body: `You received a ${dto.rating}-star review.`,
+            entityType: 'review',
+            entityId: review.id,
+            metadata: { bookingId: String(bookingId), rating: dto.rating },
+          },
+          transaction,
+        );
         return review;
       });
       return this.serialize(created, userId);
@@ -133,7 +166,7 @@ export class ReviewsService {
 
   async averageReceived(userId: number): Promise<number> {
     const result = await this.prisma.review.aggregate({
-      where: { revieweeId: userId },
+      where: { revieweeId: userId, moderationStatus: 'visible' },
       _avg: { rating: true },
     });
     return Number(result._avg.rating ?? 0);
@@ -141,7 +174,7 @@ export class ReviewsService {
 
   async averageGiven(userId: number): Promise<number> {
     const result = await this.prisma.review.aggregate({
-      where: { reviewerId: userId },
+      where: { reviewerId: userId, moderationStatus: 'visible' },
       _avg: { rating: true },
     });
     return Number(result._avg.rating ?? 0);
@@ -152,7 +185,7 @@ export class ReviewsService {
     transaction: Prisma.TransactionClient,
   ): Promise<void> {
     const aggregate = await transaction.review.aggregate({
-      where: { revieweeId: userId },
+      where: { revieweeId: userId, moderationStatus: 'visible' },
       _avg: { rating: true },
       _count: { _all: true },
     });

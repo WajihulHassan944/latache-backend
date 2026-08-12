@@ -20,7 +20,8 @@ export class DashboardController {
   @Get('overview')
   @ApiOperation({
     summary: 'Get the dashboard overview for the current user role',
-    description: 'The same endpoint serves customer and tasker dashboards. Administrators use the admin/RBAC surfaces instead.',
+    description:
+      'The same endpoint serves customer and tasker dashboards. Administrators use the admin/RBAC surfaces instead.',
   })
   overview(@CurrentUser() user: User) {
     if (user.role === UserRole.Customer) return this.customerDashboard.overview(user.id);

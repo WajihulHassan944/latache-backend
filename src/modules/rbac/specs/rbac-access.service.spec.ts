@@ -39,10 +39,7 @@ describe('RbacAccessService', () => {
 
   it('accepts only a subset as an administrator-specific override', () => {
     expect(
-      service.resolveEffectivePermissions(financeRole as never, [
-        'reports.read',
-        'finance.read',
-      ]),
+      service.resolveEffectivePermissions(financeRole as never, ['reports.read', 'finance.read']),
     ).toEqual({
       permissions: ['finance.read', 'reports.read'],
       inheritsRolePermissions: false,
@@ -55,9 +52,7 @@ describe('RbacAccessService', () => {
 
   it('rejects missing and inactive roles', async () => {
     repository.findRoleByCode.mockResolvedValueOnce(null);
-    await expect(service.requireActiveRoleByCode('unknown')).rejects.toThrow(
-      NotFoundException,
-    );
+    await expect(service.requireActiveRoleByCode('unknown')).rejects.toThrow(NotFoundException);
 
     repository.findRoleByCode.mockResolvedValueOnce({ ...financeRole, isActive: false });
     await expect(service.requireActiveRoleByCode('finance_admin')).rejects.toThrow(

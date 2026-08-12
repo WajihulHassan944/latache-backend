@@ -14,7 +14,10 @@ export class ListAdminCustomersDto extends AdminPaginationDto {
   @IsIn(['active', 'pending_verification', 'suspended', 'deactivated'])
   status?: string;
 
-  @ApiPropertyOptional({ enum: ['newest', 'oldest', 'bookings_desc', 'rating_desc'], default: 'newest' })
+  @ApiPropertyOptional({
+    enum: ['newest', 'oldest', 'bookings_desc', 'rating_desc'],
+    default: 'newest',
+  })
   @IsOptional()
   @IsIn(['newest', 'oldest', 'bookings_desc', 'rating_desc'])
   sort?: 'newest' | 'oldest' | 'bookings_desc' | 'rating_desc' = 'newest';

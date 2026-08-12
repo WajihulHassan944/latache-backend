@@ -3,9 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { json, urlencoded, type Request } from 'express';
+import { json, urlencoded, type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
+import compression from 'compression';
 import { AppModule } from './app.module';
+import { RealtimeIoAdapter } from './modules/realtime/realtime-io.adapter';
+import { RedisService } from './infrastructure/redis/redis.service';
 
 interface ValidationErrorNode {
   property: string;
@@ -19,16 +22,19 @@ const flattenValidationErrors = (
 ): Array<{ field: string; messages: string[] }> =>
   errors.flatMap((error) => {
     const field = prefix ? `${prefix}.${error.property}` : error.property;
-    const own = error.constraints
-      ? [{ field, messages: Object.values(error.constraints) }]
-      : [];
-    const nested = error.children?.length
-      ? flattenValidationErrors(error.children, field)
-      : [];
+    const own = error.constraints ? [{ field, messages: Object.values(error.constraints) }] : [];
+    const nested = error.children?.length ? flattenValidationErrors(error.children, field) : [];
     return [...own, ...nested];
   });
 
 async function bootstrap(): Promise<void> {
+  if ((process.env.SERVICE_MODE ?? 'all') === 'worker') {
+    const context = await NestFactory.createApplicationContext(AppModule);
+    context.enableShutdownHooks();
+    new Logger('Bootstrap').log('Latache background worker is running');
+    return;
+  }
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });
@@ -37,6 +43,13 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix('api');
   app.use(helmet());
+  if (config.get<boolean>('app.compressionEnabled', true)) {
+    app.use(
+      compression({
+        threshold: config.get<number>('app.compressionThresholdBytes', 1_024),
+      }),
+    );
+  }
   const bodyLimit = config.get<string>('app.requestBodyLimit', '1mb');
   app.use(
     json({
@@ -50,13 +63,38 @@ async function bootstrap(): Promise<void> {
     }),
   );
   app.use(urlencoded({ extended: true, limit: bodyLimit }));
+  app.use((request: Request, response: Response, next: NextFunction) => {
+    response.vary('Accept-Encoding');
+    const publicCatalogue =
+      request.method === 'GET' &&
+      !request.header('authorization') &&
+      (request.path.startsWith('/api/services') ||
+        request.path.startsWith('/api/platform/content'));
+    if (publicCatalogue) {
+      response.vary('Accept-Language');
+      response.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+    } else if (
+      request.path.startsWith('/api/auth') ||
+      request.path.startsWith('/api/notifications') ||
+      request.path.startsWith('/api/payments') ||
+      request.path.includes('/wallet') ||
+      request.path.includes('/finance')
+    ) {
+      response.setHeader('Cache-Control', 'private, no-store');
+    }
+    next();
+  });
 
   const express = app.getHttpAdapter().getInstance() as {
-    set(setting: string, value: boolean): void;
+    set(setting: string, value: boolean | string): void;
   };
   express.set('trust proxy', config.get<boolean>('app.trustProxy', false));
+  express.set('etag', 'weak');
 
   const allowedOrigins = new Set(config.get<string[]>('app.corsOrigins', []));
+  const realtimeAdapter = new RealtimeIoAdapter(app, allowedOrigins, app.get(RedisService));
+  await realtimeAdapter.connectToRedis();
+  app.useWebSocketAdapter(realtimeAdapter);
   app.enableCors({
     credentials: true,
     origin: (origin, callback) => {
@@ -74,6 +112,7 @@ async function bootstrap(): Promise<void> {
       transformOptions: { enableImplicitConversion: false },
       exceptionFactory: (errors) =>
         new BadRequestException({
+          code: 'VALIDATION_ERROR',
           message: 'Validation failed',
           errors: flattenValidationErrors(errors),
         }),
@@ -86,30 +125,78 @@ async function bootstrap(): Promise<void> {
       new DocumentBuilder()
         .setTitle('Latache API')
         .setDescription(
-          'Production API for Latache customers, taskers and administrators. Shared role-aware APIs cover dashboards, bookings, conversations, notifications and reviews; Stripe payment state is webhook-driven and financial APIs never fabricate success.',
+          'Production API for Latache customers, taskers and administrators. Dynamic catalogue content supports English (en), Arabic (ar), and Moroccan Darija (ary) through a saved user preference or Accept-Language with English/canonical fallback. UI labels and machine-readable domain codes remain frontend-owned and language-neutral. Shared role-aware APIs preserve provider-backed finance, transactional realtime, and persisted notification semantics.',
         )
-        .setVersion('3.10.0')
+        .setVersion('3.17.0')
         .addTag('01 Auth', 'Customer, tasker, admin, super-admin, session, and password flows')
-        .addTag('02 Uploads', 'Cloudinary signup, profile, identity, work-image, service-image, and booking-attachment uploads')
-        .addTag('03 RBAC - Roles & Permissions', 'Administrator roles, permissions, assignments, and account access')
+        .addTag(
+          '02 Uploads',
+          'Cloudinary signup, profile, identity, work-image, service-image, and booking-attachment uploads',
+        )
+        .addTag(
+          '03 RBAC - Roles & Permissions',
+          'Administrator roles, permissions, assignments, and account access',
+        )
         .addTag('04 Dashboard', 'Role-aware customer/tasker dashboard overview')
-        .addTag('05 Bookings & Tasks', 'Unified customer/tasker booking lifecycle, navigation, timer, rescheduling, extensions, and disputes')
-        .addTag('06 Payments', 'Customer Stripe cards, SetupIntents, real wallet ledger, and booking payment state')
-        .addTag('07 Conversations', 'Booking-backed conversations shared by customers and taskers')
-        .addTag('08 Notifications', 'Role-aware persisted notification inbox')
+        .addTag(
+          '05 Bookings & Tasks',
+          'Unified customer/tasker booking lifecycle, navigation, timer, rescheduling, extensions, and disputes',
+        )
+        .addTag(
+          '06 Payments',
+          'Customer Stripe cards, SetupIntents, real wallet ledger, and booking payment state',
+        )
+        .addTag(
+          '07 Conversations',
+          'Booking-backed messages, verified document attachments, and persisted voice/video call history',
+        )
+        .addTag(
+          '08 Notifications',
+          'Role-aware persisted, template-backed localized notification inbox',
+        )
         .addTag('09 Reviews', 'Booking-backed reviews shared by customers and taskers')
         .addTag('10 Favorites', 'Customer favorite taskers')
         .addTag('11 Tasker Profile & Skills', 'Tasker personal/business profile and active skills')
-        .addTag('12 Tasker Wallet & Payouts', 'Ledger-backed tasker wallet, encrypted payout methods, and non-fabricated withdrawals')
-        .addTag('13 Services', 'Service catalogue and optional booking service options')
-        .addTag('14 Tasker Discovery', 'Tasker discovery, availability and onboarding')
-        .addTag('24 Admin - Booking Management', 'Permission-aware booking operations, filtering, reporting, and safe lifecycle actions')
-        .addTag('25 Admin - Dispute Management', 'Investigation, evidence, resolution drafts, refunds, warnings, and audit-backed dispute decisions')
-        .addTag('health', 'Application and database health')
-        .addBearerAuth(
-          { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-          'bearer',
+        .addTag(
+          '12 Tasker Wallet & Payouts',
+          'Ledger-backed pending/available earnings, cash platform payables, encrypted payout methods, and non-fabricated withdrawals',
         )
+        .addTag('13 Services', 'Localized service catalogue and optional booking service options')
+        .addTag('14 Tasker Discovery', 'Tasker discovery, availability and onboarding')
+        .addTag(
+          '15 Support',
+          'Shared customer/tasker support tickets and persisted live-chat conversations',
+        )
+        .addTag(
+          '16 Realtime',
+          'Authenticated Socket.IO contract for notifications, chat, booking state, live location, and WebRTC voice/video signaling',
+        )
+        .addTag(
+          '26 Admin - Payments & Finance',
+          'Payment, earning-clearance, cash-receivable, payout, refund and revenue views backed by real financial records',
+        )
+        .addTag(
+          '27 Admin - Support Center',
+          'Permission-aware support queues, live chat, assignment, escalation and reports',
+        )
+        .addTag(
+          '28 Admin - Service Management',
+          'Service catalogue, sub-services, Tasker coverage and canonical pricing-policy views',
+        )
+        .addTag(
+          '29 Admin - Review Moderation',
+          'Permission-aware public review visibility moderation without rewriting author content',
+        )
+        .addTag(
+          '24 Admin - Booking Management',
+          'Permission-aware booking operations, filtering, reporting, and safe lifecycle actions',
+        )
+        .addTag(
+          '25 Admin - Dispute Management',
+          'Investigation, evidence, resolution drafts, refunds, warnings, and audit-backed dispute decisions',
+        )
+        .addTag('health', 'API, PostgreSQL, Redis, BullMQ worker/queue and realtime outbox health')
+        .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'bearer')
         .build(),
     );
     SwaggerModule.setup('api/docs', app, document, {
@@ -127,7 +214,7 @@ async function bootstrap(): Promise<void> {
 
 void bootstrap().catch((error: unknown) => {
   const logger = new Logger('Bootstrap');
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
   logger.error('Application failed to start', message);
   process.exitCode = 1;
 });

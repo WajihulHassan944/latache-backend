@@ -26,7 +26,9 @@ export class PayoutDataSecurityService {
       cipher.final(),
     ]);
     const tag = cipher.getAuthTag();
-    return ['v1', iv.toString('base64'), tag.toString('base64'), encrypted.toString('base64')].join('.');
+    return ['v1', iv.toString('base64'), tag.toString('base64'), encrypted.toString('base64')].join(
+      '.',
+    );
   }
 
   private key(): Buffer | null {

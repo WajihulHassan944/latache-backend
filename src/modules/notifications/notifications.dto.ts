@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 const bool = ({ value }: { value: unknown }): unknown => {
@@ -9,6 +9,16 @@ const bool = ({ value }: { value: unknown }): unknown => {
 };
 
 export class ListNotificationsQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Opaque notification ID returned as nextCursor. When supplied, cursor pagination takes precedence over page while preserving the existing response fields.',
+    example: 'cm5notification123',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  cursor?: string;
+
   @ApiPropertyOptional({
     enum: ['all', 'messages', 'tasks', 'payments', 'wallet', 'system'],
     default: 'all',

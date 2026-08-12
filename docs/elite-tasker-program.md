@@ -37,15 +37,15 @@ Existing Taskers that had `isElite=true` before v3.8 are conservatively assigned
 
 The same endpoint powers all of these screens:
 
-| Screen | Query |
-|---|---|
-| All Elite members | `view=members` |
-| Gold members | `view=members&tier=gold` |
-| Platinum members | `view=members&tier=platinum` |
-| Diamond members | `view=members&tier=diamond` |
-| Pending applications | `view=applications` |
-| Upgrade requests | `view=upgrade_requests` |
-| Downgrade requests | `view=downgrade_requests` |
+| Screen               | Query                        |
+| -------------------- | ---------------------------- |
+| All Elite members    | `view=members`               |
+| Gold members         | `view=members&tier=gold`     |
+| Platinum members     | `view=members&tier=platinum` |
+| Diamond members      | `view=members&tier=diamond`  |
+| Pending applications | `view=applications`          |
+| Upgrade requests     | `view=upgrade_requests`      |
+| Downgrade requests   | `view=downgrade_requests`    |
 
 Pagination, search, request status and sorting are shared rather than copied into seven endpoints.
 

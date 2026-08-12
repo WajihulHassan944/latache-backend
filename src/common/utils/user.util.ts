@@ -21,5 +21,7 @@ export const serializeUser = (user: User): PublicUser => {
     plain.adminId = `ADM-${String(user.id).padStart(3, '0')}`;
   }
 
+  plain.preferredLanguage = user.preferredLanguage ?? 'en';
+
   return plain;
 };

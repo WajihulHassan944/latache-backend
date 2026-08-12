@@ -61,7 +61,12 @@ export class RescheduleBookingDto {
 }
 
 export class ExtendBookingDto {
-  @ApiProperty({ example: 30, minimum: 1, maximum: 240, description: 'Additional minutes explicitly authorized by the customer.' })
+  @ApiProperty({
+    example: 30,
+    minimum: 1,
+    maximum: 240,
+    description: 'Additional minutes explicitly authorized by the customer.',
+  })
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -86,7 +91,10 @@ export class UpdateBookingBillingDto {
   @Max(100000)
   donationAmount?: number;
 
-  @ApiPropertyOptional({ example: true, description: 'Whether the customer requested a donation drop-off as part of this booking.' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Whether the customer requested a donation drop-off as part of this booking.',
+  })
   @IsOptional()
   @IsBoolean()
   donationDropoffRequested?: boolean;

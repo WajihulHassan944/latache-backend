@@ -87,13 +87,18 @@ export class RbacService {
   async roleDetails(id: string): Promise<SuccessEnvelope<RbacRoleView>> {
     const role = await this.access.requireRoleById(id);
     const adminCount = await this.repository.countAdminsUsingRole(role.id);
-    return success(this.toRole({ ...role, _count: { users: adminCount } }), 'Administrator role fetched successfully.');
+    return success(
+      this.toRole({ ...role, _count: { users: adminCount } }),
+      'Administrator role fetched successfully.',
+    );
   }
 
   async createRole(dto: CreateRbacRoleDto): Promise<SuccessEnvelope<RbacRoleView>> {
     const code = this.access.normalizeRoleCode(dto.code ?? dto.name);
     if (!/^[a-z][a-z0-9_]{2,63}$/.test(code)) {
-      throw new BadRequestException('Role code must be lower_snake_case and 3 to 64 characters long');
+      throw new BadRequestException(
+        'Role code must be lower_snake_case and 3 to 64 characters long',
+      );
     }
     if (await this.repository.findRoleByCode(code)) {
       throw new ConflictException('An administrator role with this code already exists');
@@ -108,7 +113,10 @@ export class RbacService {
       isSystem: false,
       isActive: true,
     });
-    return success(this.toRole({ ...role, _count: { users: 0 } }), 'Administrator role created successfully.');
+    return success(
+      this.toRole({ ...role, _count: { users: 0 } }),
+      'Administrator role created successfully.',
+    );
   }
 
   async updateRole(id: string, dto: UpdateRbacRoleDto): Promise<SuccessEnvelope<RbacRoleView>> {
@@ -122,7 +130,9 @@ export class RbacService {
       throw new ForbiddenException('System administrator roles cannot be deactivated');
     }
     if (dto.isActive === false && (await this.repository.countAdminsUsingRole(role.id)) > 0) {
-      throw new BadRequestException('Role cannot be deactivated while administrators are assigned to it');
+      throw new BadRequestException(
+        'Role cannot be deactivated while administrators are assigned to it',
+      );
     }
 
     const updated = await this.repository.updateRole(role.id, {
@@ -131,7 +141,10 @@ export class RbacService {
       ...(dto.isActive === undefined ? {} : { isActive: dto.isActive }),
     });
     const adminCount = await this.repository.countAdminsUsingRole(role.id);
-    return success(this.toRole({ ...updated, _count: { users: adminCount } }), 'Administrator role updated successfully.');
+    return success(
+      this.toRole({ ...updated, _count: { users: adminCount } }),
+      'Administrator role updated successfully.',
+    );
   }
 
   async updateRolePermissions(
@@ -161,7 +174,9 @@ export class RbacService {
       throw new ForbiddenException('System administrator roles cannot be deleted');
     }
     if ((await this.repository.countAdminsUsingRole(role.id)) > 0) {
-      throw new BadRequestException('Role cannot be deleted while administrators are assigned to it');
+      throw new BadRequestException(
+        'Role cannot be deleted while administrators are assigned to it',
+      );
     }
     await this.repository.softDeleteRole(role.id);
     return success(null, 'Administrator role deleted successfully.');
@@ -232,7 +247,9 @@ export class RbacService {
     this.assertManageableAdmin(actor, admin);
     const role = await this.access.requireActiveRoleByCode(dto.roleCode);
     if (role.code === AdminRole.SuperAdmin) {
-      throw new ForbiddenException('The canonical super administrator role cannot be assigned through the API');
+      throw new ForbiddenException(
+        'The canonical super administrator role cannot be assigned through the API',
+      );
     }
     const effective = this.access.resolveEffectivePermissions(role, dto.permissions);
     this.assertNoPrivilegeEscalation(actor, effective.permissions);
@@ -328,10 +345,14 @@ export class RbacService {
     );
     this.assertManageableAdmin(actor, admin);
     if (admin.accountStatus === dto.accountStatus) {
-      throw new ConflictException(`Administrator is already ${dto.accountStatus.replaceAll('_', ' ')}`);
+      throw new ConflictException(
+        `Administrator is already ${dto.accountStatus.replaceAll('_', ' ')}`,
+      );
     }
     if (dto.accountStatus !== AccountStatus.Active && !dto.reason?.trim()) {
-      throw new BadRequestException('A reason is required when suspending or deactivating an administrator');
+      throw new BadRequestException(
+        'A reason is required when suspending or deactivating an administrator',
+      );
     }
     const updated = await this.repository.updateAdminStatus(admin.id, dto.accountStatus);
     await this.audit.record({
@@ -363,7 +384,9 @@ export class RbacService {
 
   private assertManageableAdmin(actor: User, target: User): void {
     if (actor.id === target.id) {
-      throw new ForbiddenException('Administrators cannot modify their own RBAC assignment or account status');
+      throw new ForbiddenException(
+        'Administrators cannot modify their own RBAC assignment or account status',
+      );
     }
     if (target.role === UserRole.SuperAdmin || target.adminRole === AdminRole.SuperAdmin) {
       throw new ForbiddenException('The canonical super administrator cannot be modified');

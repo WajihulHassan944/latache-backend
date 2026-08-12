@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { compare, hash } from 'bcryptjs';
 import { AccountStatus } from '../../../common/enums/account-status.enum';
@@ -45,47 +41,41 @@ export class AuthPasswordService {
     dto: VerifyEmailDto,
   ): Promise<SuccessEnvelope<{ user: PublicUser }>> {
     const code = Number(dto.otp);
-    const result = await this.prisma.$transaction(
-      async (transaction: Prisma.TransactionClient) => {
-        const user = await this.repository.findUserByIdForUpdate(userId, transaction);
-        if (!user || user.deletedAt) return { kind: 'invalid' as const };
-        if (user.isVerified) return { kind: 'verified' as const, user };
-        if (user.otpAttempts >= MAX_OTP_ATTEMPTS) {
-          return { kind: 'blocked' as const };
-        }
+    const result = await this.prisma.$transaction(async (transaction: Prisma.TransactionClient) => {
+      const user = await this.repository.findUserByIdForUpdate(userId, transaction);
+      if (!user || user.deletedAt) return { kind: 'invalid' as const };
+      if (user.isVerified) return { kind: 'verified' as const, user };
+      if (user.otpAttempts >= MAX_OTP_ATTEMPTS) {
+        return { kind: 'blocked' as const };
+      }
 
-        if (!this.isActiveVerificationCode(user, code)) {
-          await transaction.user.update({
-            where: { id: user.id },
-            data: { otpAttempts: { increment: 1 } },
-          });
-          return { kind: 'invalid' as const };
-        }
-
-        const updated = await transaction.user.update({
+      if (!this.isActiveVerificationCode(user, code)) {
+        await transaction.user.update({
           where: { id: user.id },
-          data: {
-            isVerified: true,
-            otp: null,
-            otpExpires: null,
-            otpAttempts: 0,
-            accountStatus:
-              user.role === UserRole.Tasker
-                ? AccountStatus.PendingApproval
-                : AccountStatus.Active,
-          },
+          data: { otpAttempts: { increment: 1 } },
         });
-        return { kind: 'success' as const, user: updated };
-      },
-    );
+        return { kind: 'invalid' as const };
+      }
+
+      const updated = await transaction.user.update({
+        where: { id: user.id },
+        data: {
+          isVerified: true,
+          otp: null,
+          otpExpires: null,
+          otpAttempts: 0,
+          accountStatus:
+            user.role === UserRole.Tasker ? AccountStatus.PendingApproval : AccountStatus.Active,
+        },
+      });
+      return { kind: 'success' as const, user: updated };
+    });
 
     if (result.kind === 'invalid') {
       throw new BadRequestException('Invalid or expired verification OTP');
     }
     if (result.kind === 'blocked') {
-      throw new BadRequestException(
-        'Too many invalid attempts. Request a new verification OTP.',
-      );
+      throw new BadRequestException('Too many invalid attempts. Request a new verification OTP.');
     }
     if (result.kind === 'verified') {
       return success({ user: serializeUser(result.user) }, 'Email is already verified.');
@@ -95,13 +85,11 @@ export class AuthPasswordService {
 
   async resendVerification(
     dto: ResendVerificationEmailDto,
+    requestedLocale?: string,
   ): Promise<SuccessEnvelope<{ delivery: 'OTP_SENT_IF_ELIGIBLE' }>> {
     const user = await this.repository.findUserByEmail(dto.email);
     if (!user || user.isVerified || user.deletedAt) {
-      return success(
-        { delivery: 'OTP_SENT_IF_ELIGIBLE' },
-        GENERIC_VERIFICATION_MESSAGE,
-      );
+      return success({ delivery: 'OTP_SENT_IF_ELIGIBLE' }, GENERIC_VERIFICATION_MESSAGE);
     }
 
     const otp = generateNumericCode(6);
@@ -115,14 +103,15 @@ export class AuthPasswordService {
       name: user.firstName || user.email,
       otp,
       device: dto.device,
+      locale: user.preferredLanguage ?? requestedLocale ?? 'en',
     });
-    return success(
-      { delivery: 'OTP_SENT_IF_ELIGIBLE' },
-      GENERIC_VERIFICATION_MESSAGE,
-    );
+    return success({ delivery: 'OTP_SENT_IF_ELIGIBLE' }, GENERIC_VERIFICATION_MESSAGE);
   }
 
-  async forgotPassword(dto: ForgotPasswordDto): Promise<SuccessEnvelope<null>> {
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+    requestedLocale?: string,
+  ): Promise<SuccessEnvelope<null>> {
     const user = await this.repository.findUserByEmail(dto.email);
     if (!user || !user.isVerified || user.deletedAt) {
       return success(null, GENERIC_RESET_MESSAGE);
@@ -139,6 +128,7 @@ export class AuthPasswordService {
       to: user.email,
       name: user.firstName || user.email,
       otp: resetCode,
+      locale: user.preferredLanguage ?? requestedLocale ?? 'en',
     });
     return success(null, GENERIC_RESET_MESSAGE);
   }
@@ -169,18 +159,13 @@ export class AuthPasswordService {
     );
 
     if (outcome.kind === 'blocked') {
-      throw new BadRequestException(
-        'Too many invalid attempts. Request a new password reset OTP.',
-      );
+      throw new BadRequestException('Too many invalid attempts. Request a new password reset OTP.');
     }
     if (outcome.kind === 'invalid') {
       throw new BadRequestException('Invalid or expired password reset OTP');
     }
 
-    return success(
-      { purpose: 'PASSWORD_RESET', verified: true },
-      'Password reset OTP verified.',
-    );
+    return success({ purpose: 'PASSWORD_RESET', verified: true }, 'Password reset OTP verified.');
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<SuccessEnvelope<null>> {
@@ -224,9 +209,7 @@ export class AuthPasswordService {
       throw new BadRequestException('Invalid or expired password reset OTP');
     }
     if (outcome.kind === 'blocked') {
-      throw new BadRequestException(
-        'Too many invalid attempts. Request a new password reset OTP.',
-      );
+      throw new BadRequestException('Too many invalid attempts. Request a new password reset OTP.');
     }
     if (outcome.kind === 'same') {
       throw new BadRequestException('New password must be different');
@@ -234,10 +217,7 @@ export class AuthPasswordService {
     return success(null, 'Password reset successfully. Sign in with the new password.');
   }
 
-  async changePassword(
-    userId: number,
-    dto: ChangePasswordDto,
-  ): Promise<SuccessEnvelope<null>> {
+  async changePassword(userId: number, dto: ChangePasswordDto): Promise<SuccessEnvelope<null>> {
     const user = await this.repository.findUserById(userId);
     if (!user?.password || !(await compare(dto.currentPassword, user.password))) {
       throw new UnauthorizedException('Current password is incorrect');
@@ -261,11 +241,7 @@ export class AuthPasswordService {
   }
 
   private isActiveVerificationCode(user: User, code: number): boolean {
-    return Boolean(
-      user.otp === code &&
-        user.otpExpires &&
-        user.otpExpires.getTime() > Date.now(),
-    );
+    return Boolean(user.otp === code && user.otpExpires && user.otpExpires.getTime() > Date.now());
   }
 
   private isActiveResetCode(user: User, code: number): boolean {
@@ -282,10 +258,7 @@ export class AuthPasswordService {
   }
 
   private passwordResetOtpExpiry(): Date {
-    const minutes = this.config.get<number>(
-      'auth.passwordResetOtpExpiresInMinutes',
-      15,
-    );
+    const minutes = this.config.get<number>('auth.passwordResetOtpExpiresInMinutes', 15);
     return new Date(Date.now() + minutes * 60_000);
   }
 

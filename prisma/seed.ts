@@ -9,6 +9,7 @@ import {
 import { AccountStatus } from '../src/common/enums/account-status.enum';
 import { AdminRole } from '../src/common/enums/admin-role.enum';
 import { UserRole } from '../src/common/enums/user-role.enum';
+import { normalizeSearchText } from '../src/modules/localization/locale.service';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -20,28 +21,84 @@ const prisma = new PrismaClient({
 });
 
 const services = [
-  { name: 'Electrician', description: 'Wiring, fixtures and installations', slug: 'electrician', icon: 'Zap' },
-  { name: 'Plumbing', description: 'Leaks, drains and pipe repairs', slug: 'plumbing', icon: 'Droplets' },
-  { name: 'Painter', description: 'Interior and exterior wall perfection', slug: 'painter', icon: 'Paintbrush' },
-  { name: 'Carpentry', description: 'Custom furniture and repair', slug: 'carpentry', icon: 'Hammer' },
-  { name: 'Moving Help', description: 'Pack, lift and transport', slug: 'moving-help', icon: 'Truck' },
-  { name: 'Gardening', description: 'Landscape and maintenance', slug: 'gardening', icon: 'Sprout' },
-  { name: 'General Repair', description: 'Quick fixes for home issues', slug: 'general-repair', icon: 'Wrench' },
-  { name: 'Cleaning', description: 'Home and office cleaning services', slug: 'cleaning', icon: 'Sparkles' },
+  {
+    name: 'Electrician',
+    description: 'Wiring, fixtures and installations',
+    slug: 'electrician',
+    icon: 'Zap',
+  },
+  {
+    name: 'Plumbing',
+    description: 'Leaks, drains and pipe repairs',
+    slug: 'plumbing',
+    icon: 'Droplets',
+  },
+  {
+    name: 'Painter',
+    description: 'Interior and exterior wall perfection',
+    slug: 'painter',
+    icon: 'Paintbrush',
+  },
+  {
+    name: 'Carpentry',
+    description: 'Custom furniture and repair',
+    slug: 'carpentry',
+    icon: 'Hammer',
+  },
+  {
+    name: 'Moving Help',
+    description: 'Pack, lift and transport',
+    slug: 'moving-help',
+    icon: 'Truck',
+  },
+  {
+    name: 'Gardening',
+    description: 'Landscape and maintenance',
+    slug: 'gardening',
+    icon: 'Sprout',
+  },
+  {
+    name: 'General Repair',
+    description: 'Quick fixes for home issues',
+    slug: 'general-repair',
+    icon: 'Wrench',
+  },
+  {
+    name: 'Cleaning',
+    description: 'Home and office cleaning services',
+    slug: 'cleaning',
+    icon: 'Sparkles',
+  },
 ] as const;
 
 const seedServices = async (): Promise<void> => {
   for (const service of services) {
     const existing = await prisma.service.findFirst({ where: { slug: service.slug } });
-    if (existing) {
-      await prisma.service.update({
-        where: { id: existing.id },
-        data: { ...service, updatedAt: new Date() },
-      });
-    } else {
-      const now = new Date();
-      await prisma.service.create({ data: { ...service, createdAt: now, updatedAt: now } });
-    }
+    const row = existing
+      ? await prisma.service.update({
+          where: { id: existing.id },
+          data: { ...service, updatedAt: new Date() },
+        })
+      : await prisma.service.create({
+          data: { ...service, createdAt: new Date(), updatedAt: new Date() },
+        });
+    await prisma.serviceTranslation.upsert({
+      where: { serviceId_locale: { serviceId: row.id, locale: 'en' } },
+      create: {
+        serviceId: row.id,
+        locale: 'en',
+        name: service.name,
+        description: service.description,
+        normalizedName: normalizeSearchText(service.name),
+        normalizedDescription: normalizeSearchText(service.description),
+      },
+      update: {
+        name: service.name,
+        description: service.description,
+        normalizedName: normalizeSearchText(service.name),
+        normalizedDescription: normalizeSearchText(service.description),
+      },
+    });
   }
 };
 

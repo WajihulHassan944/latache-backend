@@ -13,10 +13,7 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { User } from '../../generated/prisma/client';
 import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
-import {
-  PlatformSettingsQueryDto,
-  UpdatePlatformSettingsDto,
-} from './dto/platform-settings.dto';
+import { PlatformSettingsQueryDto, UpdatePlatformSettingsDto } from './dto/platform-settings.dto';
 import { PlatformSettingsService } from './platform-settings.service';
 
 @ApiTags('27 Admin - Platform Settings')
@@ -33,9 +30,11 @@ export class PlatformSettingsController {
   @ApiOperation({
     summary: 'Get one or more platform-settings sections',
     description:
-      'One read API powers General, Currency, Tax, Booking Rules, Service Radius, Commission Rules, Referral Rules, and the read-only Elite Program settings tab. Elite writes continue through the existing Elite Program API to avoid duplicated policy ownership.',
+      'One read API powers General, Currency, Tax, Booking Rules, Service Radius, Commission Rules, Tasker Finance clearance/debt policy, Referral Rules, and the read-only Elite Program settings tab. Elite writes continue through the existing Elite Program API to avoid duplicated policy ownership.',
   })
-  @ApiOkResponse({ description: 'Requested platform policy sections and runtime capability flags.' })
+  @ApiOkResponse({
+    description: 'Requested platform policy sections and runtime capability flags.',
+  })
   get(@Query() query: PlatformSettingsQueryDto) {
     return this.settings.view(query.sections);
   }
@@ -45,7 +44,7 @@ export class PlatformSettingsController {
   @ApiOperation({
     summary: 'Update one or several platform-settings sections atomically',
     description:
-      'Only supplied fields are merged. Commission and global-tax policies affect NEW final booking charges. Automatic FX refresh and referral payouts are rejected until real provider/ledger integrations exist.',
+      'Only supplied fields are merged. Commission and global-tax policies affect NEW final booking charges. taskerFinance controls future earning clearance and cash-debt restriction policy; it never rewrites settled accounting snapshots. Automatic FX refresh and referral payouts remain rejected until real integrations exist.',
   })
   @ApiBody({
     type: UpdatePlatformSettingsDto,
@@ -75,6 +74,39 @@ export class PlatformSettingsController {
             serviceSurchargeAmount: 2.5,
             inclusivePricing: false,
             receiptsEnabled: true,
+          },
+        },
+      },
+      taskerFinance: {
+        summary: 'Configure Tasker earnings clearance and cash-debt ceiling',
+        value: {
+          taskerFinance: {
+            earningClearanceDays: 14,
+            cashDisputeClearanceDays: 14,
+            maximumOutstandingPlatformDebt: 250,
+            blockCashBookingsAtDebtLimit: true,
+          },
+        },
+      },
+      localizedGeneral: {
+        summary: 'Update English/Arabic/Darija public platform content',
+        value: {
+          general: {
+            platformName: 'Latache',
+            description: 'A trusted service marketplace.',
+            translations: [
+              {
+                locale: 'en',
+                platformName: 'Latache',
+                description: 'A trusted service marketplace.',
+              },
+              { locale: 'ar', platformName: 'Latache', description: 'منصة موثوقة للخدمات.' },
+              {
+                locale: 'ary',
+                platformName: 'Latache',
+                description: 'منصة ديال خدمات موثوقة.',
+              },
+            ],
           },
         },
       },

@@ -45,6 +45,26 @@ export interface DeleteUploadSuccessResponse {
   message: string;
 }
 
+export interface ConversationAttachmentReference {
+  publicId: string;
+  secureUrl: string;
+  resourceType: CloudinaryResourceType;
+  bytes: number;
+  originalFileName: string;
+  mimeType: string;
+  format?: string;
+}
+
+export interface CloudinaryResourceResult {
+  public_id: string;
+  secure_url: string;
+  resource_type: string;
+  format?: string;
+  bytes: number;
+  original_filename?: string;
+  context?: { custom?: Record<string, string> };
+}
+
 export interface CloudinaryUploadResult {
   public_id: string;
   secure_url: string;
@@ -65,6 +85,12 @@ export interface CloudinaryClient {
     api_secret: string;
     secure: boolean;
   }): unknown;
+  api: {
+    resource(
+      publicId: string,
+      options: { resource_type: CloudinaryResourceType },
+    ): Promise<CloudinaryResourceResult>;
+  };
   uploader: {
     upload_stream(
       options: {
@@ -75,6 +101,7 @@ export interface CloudinaryClient {
         unique_filename: boolean;
         overwrite: boolean;
         tags: string[];
+        context: Record<string, string>;
       },
       callback: (
         error: { message?: string } | undefined,

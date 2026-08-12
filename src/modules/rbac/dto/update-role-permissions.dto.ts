@@ -5,7 +5,8 @@ export class UpdateRolePermissionsDto {
   @ApiProperty({
     type: [String],
     example: ['finance.read', 'reports.read'],
-    description: 'Complete replacement set. Assigned admins inheriting the role are synchronized transactionally.',
+    description:
+      'Complete replacement set. Assigned admins inheriting the role are synchronized transactionally.',
   })
   @IsArray()
   @ArrayMaxSize(50)

@@ -5,6 +5,8 @@ export enum UploadFolder {
   TaskerIdentityDocument = 'tasker-identity-documents',
   TaskerWorkImage = 'tasker-work-images',
   BookingAttachment = 'booking-attachments',
+  ConversationAttachment = 'conversation-attachments',
+  SupportAttachment = 'support-attachments',
   ServiceImage = 'service-images',
   EliteBadgeAsset = 'elite-badge-assets',
 }

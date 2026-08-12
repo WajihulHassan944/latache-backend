@@ -7,8 +7,7 @@ export const generateNumericCode = (digits = 4): number => {
   return randomInt(minimum, maximum);
 };
 
-export const generateOpaqueToken = (): string =>
-  randomBytes(REFRESH_TOKEN_BYTES).toString('hex');
+export const generateOpaqueToken = (): string => randomBytes(REFRESH_TOKEN_BYTES).toString('hex');
 
 export const hashOpaqueToken = (token: string): string =>
   createHash('sha256').update(token).digest('hex');

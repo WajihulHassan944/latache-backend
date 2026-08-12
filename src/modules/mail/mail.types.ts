@@ -7,6 +7,12 @@ export interface MailTransporter {
     subject: string;
     html: string;
     text: string;
+    attachments?: Array<{
+      filename: string;
+      path: string;
+      cid: string;
+      contentDisposition: 'inline';
+    }>;
   }): Promise<unknown>;
   verify(): Promise<boolean>;
   close(): void;

@@ -16,10 +16,7 @@ export interface AdminAuditEventInput {
 export class AdminAuditService {
   constructor(private readonly prisma: PrismaService) {}
 
-  record(
-    input: AdminAuditEventInput,
-    transaction?: Prisma.TransactionClient,
-  ) {
+  record(input: AdminAuditEventInput, transaction?: Prisma.TransactionClient) {
     const client = transaction ?? this.prisma;
     return client.adminAuditLog.create({
       data: {
@@ -28,13 +25,9 @@ export class AdminAuditService {
         action: input.action,
         entityType: input.entityType,
         entityId:
-          input.entityId === undefined || input.entityId === null
-            ? null
-            : String(input.entityId),
+          input.entityId === undefined || input.entityId === null ? null : String(input.entityId),
         reason: input.reason?.trim() || null,
-        metadata: input.metadata
-          ? (input.metadata as Prisma.InputJsonValue)
-          : Prisma.DbNull,
+        metadata: input.metadata ? (input.metadata as Prisma.InputJsonValue) : Prisma.DbNull,
       },
     });
   }

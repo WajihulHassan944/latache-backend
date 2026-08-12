@@ -1,4 +1,14 @@
-import { Body, Controller, ForbiddenException, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import {
   ApiBearerAuth,
@@ -17,6 +27,7 @@ import type { User } from '../../../generated/prisma/client';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminFinanceQueryDto, AdminPayoutActionDto } from '../dto/admin-finance.dto';
+import { AdminEarningActionDto } from '../../tasker-finance/dto/tasker-finance.dto';
 import { AdminFinanceService } from '../services/admin-finance.service';
 
 @ApiTags('26 Admin - Payments & Finance')
@@ -33,10 +44,13 @@ export class AdminFinanceController {
   @ApiOperation({
     summary: 'Unified Payments & Finance dashboard read API',
     description:
-      'Use view=overview|transactions|refunds|payouts|revenue. Commission and tax tabs read/write through the single Platform Settings API. Refund execution stays in Dispute Management, preventing a second refund mutation flow. format=csv exports the same filtered records for transactions/refunds/payouts/revenue.',
+      'Use view=overview|transactions|refunds|payouts|revenue|earnings|cash_receivables. Earnings and cash receivables read the same ledger/state records used by Taskers and settlement workers. Commission, tax, and taskerFinance policy are managed through Platform Settings. Refund execution remains in Dispute Management.',
   })
   @ApiProduces('application/json', 'text/csv')
-  @ApiOkResponse({ description: 'Finance dashboard data generated exclusively from persisted payment/wallet/payout/dispute records.' })
+  @ApiOkResponse({
+    description:
+      'Finance dashboard data generated exclusively from persisted payment/wallet/payout/dispute records.',
+  })
   async read(
     @CurrentUser() actor: User,
     @Query() query: AdminFinanceQueryDto,
@@ -66,8 +80,16 @@ export class AdminFinanceController {
     type: AdminPayoutActionDto,
     examples: {
       approve: { value: { action: 'approve', note: 'Payout details verified.' } },
-      paid: { value: { action: 'mark_paid', providerReference: 'bank-transfer-482901', note: 'Verified in bank portal.' } },
-      reject: { value: { action: 'reject', note: 'Payout account ownership could not be verified.' } },
+      paid: {
+        value: {
+          action: 'mark_paid',
+          providerReference: 'bank-transfer-482901',
+          note: 'Verified in bank portal.',
+        },
+      },
+      reject: {
+        value: { action: 'reject', note: 'Payout account ownership could not be verified.' },
+      },
     },
   })
   payoutAction(
@@ -76,5 +98,20 @@ export class AdminFinanceController {
     @Body() dto: AdminPayoutActionDto,
   ) {
     return this.finance.payoutAction(actor, id, dto);
+  }
+
+  @Post('earnings/:id/actions')
+  @Permissions('finance.manage')
+  @ApiOperation({
+    summary: 'Block, unblock, or explicitly extend one pending earning clearance',
+    description:
+      'Every action is audited and uses the same earning record consumed by the release worker. Active disputes prevent unblocking. extend_clearance requires a later explicit timestamp and reason.',
+  })
+  earningAction(
+    @CurrentUser() actor: User,
+    @Param('id') id: string,
+    @Body() dto: AdminEarningActionDto,
+  ) {
+    return this.finance.earningAction(actor, id, dto);
   }
 }

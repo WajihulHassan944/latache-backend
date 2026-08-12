@@ -6,7 +6,8 @@ export class UploadFileDto {
   @ApiProperty({
     enum: UploadFolder,
     example: UploadFolder.CustomerProfile,
-    description: 'Logical asset category. Access is validated against the authenticated account role.',
+    description:
+      'Logical asset category. Access is validated against the authenticated account role.',
   })
   @IsEnum(UploadFolder)
   folder!: UploadFolder;

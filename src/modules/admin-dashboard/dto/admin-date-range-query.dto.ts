@@ -10,12 +10,18 @@ export class AdminDateRangeQueryDto {
   @IsIn(ADMIN_ANALYTICS_RANGES)
   range?: AdminAnalyticsRange = '30d';
 
-  @ApiPropertyOptional({ example: '2026-01-01', description: 'UTC date. Supply both from and to to override range.' })
+  @ApiPropertyOptional({
+    example: '2026-01-01',
+    description: 'UTC date. Supply both from and to to override range.',
+  })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   from?: string;
 
-  @ApiPropertyOptional({ example: '2026-08-08', description: 'UTC date, inclusive. Supply both from and to.' })
+  @ApiPropertyOptional({
+    example: '2026-08-08',
+    description: 'UTC date, inclusive. Supply both from and to.',
+  })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   to?: string;

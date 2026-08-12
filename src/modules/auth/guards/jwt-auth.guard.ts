@@ -1,9 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../../../common/types/authenticated-request';
 import { JwtIdentityGuard } from './jwt-identity.guard';
 

@@ -16,7 +16,11 @@ const trim = ({ value }: { value: unknown }): unknown =>
 
 const normalizeCode = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string'
-    ? value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    ? value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
     : value;
 
 export class CreateRbacRoleDto {

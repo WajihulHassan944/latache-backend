@@ -5,7 +5,4 @@ export enum UserRole {
   Tasker = 'tasker',
 }
 
-export const ADMINISTRATIVE_ROLES: readonly UserRole[] = [
-  UserRole.SuperAdmin,
-  UserRole.Admin,
-];
+export const ADMINISTRATIVE_ROLES: readonly UserRole[] = [UserRole.SuperAdmin, UserRole.Admin];

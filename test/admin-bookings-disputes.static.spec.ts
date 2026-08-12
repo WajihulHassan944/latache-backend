@@ -35,22 +35,29 @@ describe('admin booking and dispute management static contracts', () => {
   });
 
   it('implements end-to-end requested evidence without exposing admin notes to participants', () => {
-    const controller = read('src/modules/bookings/bookings.controller.ts');
+    const controller = read('src/modules/bookings/participant-disputes.controller.ts');
     const service = read('src/modules/bookings/bookings.service.ts');
-    expect(controller).toContain("@Get(':bookingId/complaints')");
-    expect(controller).toContain("@Post(':bookingId/complaints/:complaintId/evidence')");
+    expect(controller).toContain("@Get('disputes/:disputeId')");
+    expect(controller).toContain("@Post('disputes/:disputeId/evidence')");
     expect(service).toContain('assertBookingAttachmentOwnership');
     expect(service).toContain("parsed.hostname !== 'res.cloudinary.com'");
-    const participantSlice = service.slice(service.indexOf('async listComplaints'), service.indexOf('async fileComplaint'));
+    const participantSlice = service.slice(
+      service.indexOf('async listComplaints'),
+      service.indexOf('async fileComplaint'),
+    );
     expect(participantSlice).not.toContain('evidenceReviewNotes');
   });
 
   it('does not seed operational dispute/refund data', () => {
-    const migration = read('prisma/migrations/20260810130000_add_booking_dispute_management/migration.sql');
+    const migration = read(
+      'prisma/migrations/20260810130000_add_booking_dispute_management/migration.sql',
+    );
     expect(migration).toContain('CREATE TABLE "DisputeEvidence"');
     expect(migration).toContain('CREATE TABLE "DisputeEvidenceRequests"');
     expect(migration).toContain('CREATE TABLE "DisputeResolutions"');
-    expect(migration).toContain("evidenceReviewStatus\" VARCHAR(32) NOT NULL DEFAULT 'not_required'");
+    expect(migration).toContain(
+      "evidenceReviewStatus\" VARCHAR(32) NOT NULL DEFAULT 'not_required'",
+    );
     expect(migration).not.toMatch(/INSERT\s+INTO/i);
   });
 

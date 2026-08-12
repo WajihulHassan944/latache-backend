@@ -1,9 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { ADMINISTRATIVE_ROLES, UserRole } from '../../../common/enums/user-role.enum';
 import type { AuthenticatedRequest } from '../../../common/types/authenticated-request';
 import { JwtAuthGuard } from './jwt-auth.guard';

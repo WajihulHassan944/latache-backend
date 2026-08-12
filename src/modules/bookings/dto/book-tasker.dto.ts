@@ -16,6 +16,7 @@ import {
 import { IsClockTime } from '../../../common/validators/is-clock-time.validator';
 import { IsDateOnly } from '../../../common/validators/is-date-only.validator';
 import { FileMetadataDto } from '../../taskers/dto/file-metadata.dto';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class BookingLocationDto {
   @IsString()
@@ -76,7 +77,6 @@ export class BookTaskerDto {
   @Length(1, 120)
   serviceSlug!: string;
 
-
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -84,8 +84,14 @@ export class BookTaskerDto {
   serviceOptionId?: number;
 
   @IsOptional()
-  @IsIn(['stripe', 'wallet'])
-  paymentSource?: 'stripe' | 'wallet';
+  @IsIn(['stripe', 'wallet', 'cash'])
+  @ApiPropertyOptional({
+    enum: ['stripe', 'wallet', 'cash'],
+    default: 'stripe',
+    description:
+      'Cash is paid directly to the Tasker and later requires an explicit, idempotent physical-collection confirmation. It is never treated as platform escrow.',
+  })
+  paymentSource?: 'stripe' | 'wallet' | 'cash';
 
   @IsOptional()
   @IsString()

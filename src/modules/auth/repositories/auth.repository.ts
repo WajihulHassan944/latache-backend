@@ -16,7 +16,10 @@ export class AuthRepository {
     return (transaction ?? this.prisma).user.findUnique({ where: { id } });
   }
 
-  createUser(data: Prisma.UserUncheckedCreateInput, transaction?: Prisma.TransactionClient): Promise<User> {
+  createUser(
+    data: Prisma.UserUncheckedCreateInput,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<User> {
     return (transaction ?? this.prisma).user.create({ data });
   }
 
@@ -35,9 +38,7 @@ export class AuthRepository {
     const rows = await transaction.$queryRaw<Array<{ id: number }>>`
       SELECT "id" FROM "Users" WHERE "id" = ${id} FOR UPDATE
     `;
-    return rows.length === 0
-      ? null
-      : transaction.user.findUnique({ where: { id } });
+    return rows.length === 0 ? null : transaction.user.findUnique({ where: { id } });
   }
 
   countServices(serviceIds: number[], transaction?: Prisma.TransactionClient): Promise<number> {

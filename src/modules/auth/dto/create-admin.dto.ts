@@ -83,4 +83,17 @@ export class CreateAdminDto {
   @IsString({ each: true })
   @MaxLength(100, { each: true })
   permissions?: string[];
+
+  @ApiPropertyOptional({
+    enum: ['en', 'ar', 'ary'],
+    default: 'en',
+    description: 'ary is Moroccan Darija.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase().replace('_', '-') : value,
+  )
+  @IsString()
+  @Matches(/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/)
+  preferredLanguage?: string;
 }

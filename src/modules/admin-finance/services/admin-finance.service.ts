@@ -17,6 +17,8 @@ import {
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 import { PAYMENT_STATUS } from '../../payments/payments.constants';
 import { AdminFinanceQueryDto, AdminPayoutActionDto } from '../dto/admin-finance.dto';
+import { TaskerFinanceService } from '../../tasker-finance/tasker-finance.service';
+import type { AdminEarningActionDto } from '../../tasker-finance/dto/tasker-finance.dto';
 
 const money = (value: Prisma.Decimal | number | string | null | undefined): number =>
   Math.round((Number(value ?? 0) + Number.EPSILON) * 100) / 100;
@@ -33,6 +35,7 @@ export class AdminFinanceService {
     private readonly audit: AdminAuditService,
     private readonly notifications: NotificationsService,
     private readonly settings: PlatformSettingsService,
+    private readonly taskerFinance: TaskerFinanceService,
   ) {}
 
   async read(query: AdminFinanceQueryDto) {
@@ -41,13 +44,35 @@ export class AdminFinanceService {
     if (view === 'transactions') return this.transactions(query);
     if (view === 'refunds') return this.refunds(query);
     if (view === 'payouts') return this.payouts(query);
+    if (view === 'earnings') {
+      return this.taskerFinance.listAdminEarnings({
+        ...query,
+        from: query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined,
+        to: query.to ? new Date(`${query.to}T23:59:59.999Z`) : undefined,
+      });
+    }
+    if (view === 'cash_receivables') {
+      return this.taskerFinance.listAdminReceivables({
+        ...query,
+        from: query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined,
+        to: query.to ? new Date(`${query.to}T23:59:59.999Z`) : undefined,
+      });
+    }
     return this.revenue(query);
   }
 
-  async csv(query: AdminFinanceQueryDto): Promise<{ body: string; filename: string; truncated: boolean }> {
+  async csv(
+    query: AdminFinanceQueryDto,
+  ): Promise<{ body: string; filename: string; truncated: boolean }> {
     const view = query.view ?? 'transactions';
-    if (!['transactions', 'refunds', 'payouts', 'revenue'].includes(view)) {
-      throw new BadRequestException('CSV export is available for transactions, refunds, payouts, and revenue views');
+    if (
+      !['transactions', 'refunds', 'payouts', 'revenue', 'earnings', 'cash_receivables'].includes(
+        view,
+      )
+    ) {
+      throw new BadRequestException(
+        'CSV export is available for transactions, refunds, payouts, revenue, earnings, and cash_receivables views',
+      );
     }
     const data = await this.read({ ...query, format: 'json', page: 1, limit: 100 });
     const rows = 'items' in data && Array.isArray(data.items) ? data.items : [];
@@ -61,13 +86,20 @@ export class AdminFinanceService {
         keys
           .map((key) => {
             const value = row[key];
-            return csvCell(typeof value === 'object' && value !== null ? JSON.stringify(value) : value);
+            return csvCell(
+              typeof value === 'object' && value !== null ? JSON.stringify(value) : value,
+            );
           })
           .join(','),
       );
     }
-    const totalItems = 'totalItems' in data && typeof data.totalItems === 'number' ? data.totalItems : rows.length;
-    return { body: `${lines.join('\n')}\n`, filename: `latache-finance-${view}.csv`, truncated: totalItems > rows.length }; 
+    const totalItems =
+      'totalItems' in data && typeof data.totalItems === 'number' ? data.totalItems : rows.length;
+    return {
+      body: `${lines.join('\n')}\n`,
+      filename: `latache-finance-${view}.csv`,
+      truncated: totalItems > rows.length,
+    };
   }
 
   async payoutAction(actor: User, id: string, dto: AdminPayoutActionDto) {
@@ -106,7 +138,11 @@ export class AdminFinanceService {
             entityType: 'tasker_withdrawal',
             entityId: id,
             reason: dto.note,
-            metadata: { amount, currency: withdrawal.currency, payoutMethodType: withdrawal.payoutMethod.type },
+            metadata: {
+              amount,
+              currency: withdrawal.currency,
+              payoutMethodType: withdrawal.payoutMethod.type,
+            },
           },
           transaction,
         );
@@ -130,14 +166,20 @@ export class AdminFinanceService {
           throw new ConflictException('Only approved/processing payouts can be marked paid');
         }
         if (!dto.providerReference?.trim()) {
-          throw new BadRequestException('providerReference is required to confirm an actual external payout');
+          throw new BadRequestException(
+            'providerReference is required to confirm an actual external payout',
+          );
         }
         await transaction.$queryRaw`
           SELECT "taskerId" FROM "TaskerWallets" WHERE "taskerId" = ${withdrawal.taskerId} FOR UPDATE
         `;
-        const wallet = await transaction.taskerWallet.findUniqueOrThrow({ where: { taskerId: withdrawal.taskerId } });
+        const wallet = await transaction.taskerWallet.findUniqueOrThrow({
+          where: { taskerId: withdrawal.taskerId },
+        });
         if (money(wallet.pendingBalance) + 0.0001 < amount) {
-          throw new ConflictException('Tasker pending wallet balance is lower than the payout amount');
+          throw new ConflictException(
+            'Tasker pending wallet balance is lower than the payout amount',
+          );
         }
         await transaction.taskerWallet.update({
           where: { taskerId: withdrawal.taskerId },
@@ -181,7 +223,11 @@ export class AdminFinanceService {
             entityType: 'tasker_withdrawal',
             entityId: id,
             reason: dto.note,
-            metadata: { amount, currency: withdrawal.currency, providerReference: dto.providerReference },
+            metadata: {
+              amount,
+              currency: withdrawal.currency,
+              providerReference: dto.providerReference,
+            },
           },
           transaction,
         );
@@ -207,15 +253,21 @@ export class AdminFinanceService {
         throw new ConflictException('Only processing payouts can be marked failed');
       }
       if (!dto.note?.trim()) {
-        throw new BadRequestException('A note/reason is required when rejecting or failing a payout');
+        throw new BadRequestException(
+          'A note/reason is required when rejecting or failing a payout',
+        );
       }
 
       await transaction.$queryRaw`
         SELECT "taskerId" FROM "TaskerWallets" WHERE "taskerId" = ${withdrawal.taskerId} FOR UPDATE
       `;
-      const wallet = await transaction.taskerWallet.findUniqueOrThrow({ where: { taskerId: withdrawal.taskerId } });
+      const wallet = await transaction.taskerWallet.findUniqueOrThrow({
+        where: { taskerId: withdrawal.taskerId },
+      });
       if (money(wallet.pendingBalance) + 0.0001 < amount) {
-        throw new ConflictException('Tasker pending wallet balance is lower than the payout amount');
+        throw new ConflictException(
+          'Tasker pending wallet balance is lower than the payout amount',
+        );
       }
       await transaction.taskerWallet.update({
         where: { taskerId: withdrawal.taskerId },
@@ -236,12 +288,16 @@ export class AdminFinanceService {
           availableDelta: amount.toFixed(2),
           pendingDelta: (-amount).toFixed(2),
           currency: withdrawal.currency,
-          description: dto.action === 'reject' ? 'Payout request rejected; reservation released' : 'Payout failed; reservation released',
+          description:
+            dto.action === 'reject'
+              ? 'Payout request rejected; reservation released'
+              : 'Payout failed; reservation released',
           idempotencyKey: releaseKey,
         },
         update: {},
       });
-      const finalStatus = dto.action === 'reject' ? WITHDRAWAL_STATUS.Rejected : WITHDRAWAL_STATUS.Failed;
+      const finalStatus =
+        dto.action === 'reject' ? WITHDRAWAL_STATUS.Rejected : WITHDRAWAL_STATUS.Failed;
       const updated = await transaction.taskerWithdrawal.update({
         where: { id },
         data: {
@@ -284,9 +340,31 @@ export class AdminFinanceService {
     return this.serializePayout(result);
   }
 
+  earningAction(actor: User, id: string, dto: AdminEarningActionDto) {
+    return this.taskerFinance.earningAction({
+      actorId: actor.id,
+      earningId: id,
+      action: dto.action,
+      reason: dto.reason,
+      holdUntil: dto.holdUntil ? new Date(dto.holdUntil) : undefined,
+    });
+  }
+
   private async overview(query: AdminFinanceQueryDto) {
     const date = this.dateFilter(query);
-    const [charges, refunds, payouts, wallets, taskerWallets, bookingRevenue, recent, settings] = await Promise.all([
+    const [
+      charges,
+      refunds,
+      payouts,
+      wallets,
+      taskerWallets,
+      bookingRevenue,
+      recent,
+      settings,
+      earnings,
+      receivables,
+      platformAccounts,
+    ] = await Promise.all([
       this.prisma.paymentTransaction.aggregate({
         where: { kind: 'booking_charge', status: 'succeeded', createdAt: date },
         _sum: { amount: true },
@@ -304,10 +382,15 @@ export class AdminFinanceService {
         _count: true,
       }),
       this.prisma.customerWallet.aggregate({ _sum: { availableBalance: true }, _count: true }),
-      this.prisma.taskerWallet.aggregate({ _sum: { availableBalance: true, pendingBalance: true }, _count: true }),
+      this.prisma.taskerWallet.aggregate({
+        _sum: { availableBalance: true, pendingBalance: true },
+        _count: true,
+      }),
       this.prisma.booking.aggregate({
         where: {
-          paymentStatus: { in: [PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded, PAYMENT_STATUS.Refunded] },
+          paymentStatus: {
+            in: [PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded, PAYMENT_STATUS.Refunded],
+          },
           ...(date ? { paidAt: date } : {}),
         },
         _sum: {
@@ -319,6 +402,26 @@ export class AdminFinanceService {
       }),
       this.transactions({ ...query, page: 1, limit: 8 }),
       this.settings.view('commission,tax,currency'),
+      this.prisma.taskerEarning.groupBy({
+        by: ['status'],
+        where: date ? { settledAt: date } : undefined,
+        _sum: {
+          taskerNetAmount: true,
+          reversedAmount: true,
+          debtOffsetAmount: true,
+          releasedToAvailableAmount: true,
+        },
+        _count: true,
+      }),
+      this.prisma.taskerPlatformReceivable.aggregate({
+        where: date ? { confirmedAt: date } : undefined,
+        _sum: { originalPayableAmount: true, outstandingAmount: true, settledAmount: true },
+        _count: true,
+      }),
+      this.prisma.taskerPlatformAccount.aggregate({
+        _sum: { outstandingPayable: true },
+        _count: true,
+      }),
     ]);
     const payoutMap = Object.fromEntries(
       payouts.map((row) => [row.status, { count: row._count, amount: money(row._sum.amount) }]),
@@ -346,6 +449,27 @@ export class AdminFinanceService {
       taskerWalletLiability: {
         available: money(taskerWallets._sum.availableBalance),
         pending: money(taskerWallets._sum.pendingBalance),
+      },
+      taskerEarningsClearance: Object.fromEntries(
+        earnings.map((row) => [
+          row.status,
+          {
+            count: row._count,
+            taskerNetAmount: money(row._sum.taskerNetAmount),
+            reversedAmount: money(row._sum.reversedAmount),
+            debtOffsetAmount: money(row._sum.debtOffsetAmount),
+            releasedToAvailableAmount: money(row._sum.releasedToAvailableAmount),
+          },
+        ]),
+      ),
+      cashPlatformReceivables: {
+        count: receivables._count,
+        created: money(receivables._sum.originalPayableAmount),
+        outstandingInPeriodRecords: money(receivables._sum.outstandingAmount),
+        settledFromPeriodRecords: money(receivables._sum.settledAmount),
+        currentOutstandingAccountBalance: money(platformAccounts._sum.outstandingPayable),
+        taskerAccounts: platformAccounts._count,
+        note: 'Cash is physically held by Taskers. This is a platform receivable, not escrow or Tasker wallet money.',
       },
       payouts: payoutMap,
       recentTransactions: recent.items,
@@ -461,14 +585,25 @@ export class AdminFinanceService {
     const search = query.search?.trim();
     const where: Prisma.DisputeResolutionWhereInput = {
       createdAt: date,
-      actionType: { in: ['full_refund', 'partial_refund', 'full_refund_and_warning', 'partial_refund_and_warning'] },
+      actionType: {
+        in: [
+          'full_refund',
+          'partial_refund',
+          'full_refund_and_warning',
+          'partial_refund_and_warning',
+        ],
+      },
       ...(query.status ? { status: query.status } : {}),
       ...(search
         ? {
             OR: [
               { id: { contains: search, mode: 'insensitive' } },
               { complaintId: { contains: search, mode: 'insensitive' } },
-              { complaint: { booking: { customer: { email: { contains: search, mode: 'insensitive' } } } } },
+              {
+                complaint: {
+                  booking: { customer: { email: { contains: search, mode: 'insensitive' } } },
+                },
+              },
             ],
           }
         : {}),
@@ -547,7 +682,9 @@ export class AdminFinanceService {
       this.prisma.taskerWithdrawal.findMany({
         where,
         include: {
-          tasker: { select: { id: true, firstName: true, lastName: true, email: true, rating: true } },
+          tasker: {
+            select: { id: true, firstName: true, lastName: true, email: true, rating: true },
+          },
           payoutMethod: { select: { id: true, type: true, label: true, maskedIdentifier: true } },
         },
         orderBy: { requestedAt: 'desc' },
@@ -565,7 +702,10 @@ export class AdminFinanceService {
     return {
       view: 'payouts',
       summary: Object.fromEntries(
-        statusCounts.map((row) => [row.status, { count: row._count, amount: money(row._sum.amount) }]),
+        statusCounts.map((row) => [
+          row.status,
+          { count: row._count, amount: money(row._sum.amount) },
+        ]),
       ),
       page,
       limit,
@@ -591,7 +731,10 @@ export class AdminFinanceService {
     const gross = money(charges.reduce((sum, row) => sum + Number(row.amount), 0));
     const refunded = money(refunds.reduce((sum, row) => sum + Number(row.amount), 0));
     const byDay = new Map<string, { charges: number; refunds: number }>();
-    const byService = new Map<string, { serviceId: number | null; serviceName: string; gross: number; refunds: number }>();
+    const byService = new Map<
+      string,
+      { serviceId: number | null; serviceName: string; gross: number; refunds: number }
+    >();
     for (const row of transactions) {
       const day = row.createdAt.toISOString().slice(0, 10);
       const daily = byDay.get(day) ?? { charges: 0, refunds: 0 };
@@ -646,7 +789,13 @@ export class AdminFinanceService {
     adminNote: string | null;
     providerReference: string | null;
     failureReason: string | null;
-    tasker: { id: number; firstName: string | null; lastName: string | null; email: string; rating?: Prisma.Decimal };
+    tasker: {
+      id: number;
+      firstName: string | null;
+      lastName: string | null;
+      email: string;
+      rating?: Prisma.Decimal;
+    };
     payoutMethod: { id: string; type: string; label: string; maskedIdentifier: string };
   }) {
     return {

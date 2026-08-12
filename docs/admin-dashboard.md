@@ -13,17 +13,16 @@ All `/api/admin/*` endpoints require an active `admin` or `super_admin` session.
 
 ## Platform dashboard and analytics
 
-| Method | Route | Permission(s) | Purpose |
-|---|---|---|---|
-| GET | `/api/admin/dashboard/overview` | `analytics.read` | Platform totals, booking status, recent bookings and revenue trend |
-| GET | `/api/admin/dashboard/revenue` | `finance.read` | Paid-booking gross revenue, platform fees, Tasker earnings, tips and donations |
-| GET | `/api/admin/dashboard/users` | `analytics.read` | Customer growth and retention |
-| GET | `/api/admin/dashboard/taskers` | `analytics.read` | Tasker growth, onboarding and completion metrics |
-| GET | `/api/admin/dashboard/bookings` | `analytics.read` | Booking status/service analytics |
-| GET | `/api/admin/dashboard/activity` | `analytics.read` | Persisted registration, booking, payment, withdrawal and admin-audit activity |
+| Method | Route                           | Permission(s)    | Purpose                                                                        |
+| ------ | ------------------------------- | ---------------- | ------------------------------------------------------------------------------ |
+| GET    | `/api/admin/dashboard/overview` | `analytics.read` | Platform totals, booking status, recent bookings and revenue trend             |
+| GET    | `/api/admin/dashboard/revenue`  | `finance.read`   | Paid-booking gross revenue, platform fees, Tasker earnings, tips and donations |
+| GET    | `/api/admin/dashboard/users`    | `analytics.read` | Customer growth and retention                                                  |
+| GET    | `/api/admin/dashboard/taskers`  | `analytics.read` | Tasker growth, onboarding and completion metrics                               |
+| GET    | `/api/admin/dashboard/bookings` | `analytics.read` | Booking status/service analytics                                               |
+| GET    | `/api/admin/dashboard/activity` | `analytics.read` | Persisted registration, booking, payment, withdrawal and admin-audit activity  |
 
 Date-based endpoints support preset ranges and UTC custom ranges. No chart series is synthesized when data is absent; empty periods return empty arrays or zero values.
-
 
 ### Elite Tasker Program
 
@@ -39,16 +38,16 @@ The former aggregate `/api/admin/dashboard/elite-taskers` route is superseded in
 
 ## Customer Management
 
-| Method | Route | Permission(s) |
-|---|---|---|
-| GET | `/api/admin/customers` | `customers.read` |
-| GET | `/api/admin/customers/bookings` | `customers.read`, `bookings.read` |
-| GET | `/api/admin/customers/payments` | `customers.read`, `finance.read` |
-| GET | `/api/admin/customers/reports` | `customers.read`, `reports.read` |
-| GET | `/api/admin/customers/:id` | `customers.read` |
-| GET | `/api/admin/customers/:id/bookings` | `customers.read`, `bookings.read` |
-| GET | `/api/admin/customers/:id/payments` | `customers.read`, `finance.read` |
-| PATCH | `/api/admin/customers/:id/status` | `customers.manage` |
+| Method | Route                               | Permission(s)                     |
+| ------ | ----------------------------------- | --------------------------------- |
+| GET    | `/api/admin/customers`              | `customers.read`                  |
+| GET    | `/api/admin/customers/bookings`     | `customers.read`, `bookings.read` |
+| GET    | `/api/admin/customers/payments`     | `customers.read`, `finance.read`  |
+| GET    | `/api/admin/customers/reports`      | `customers.read`, `reports.read`  |
+| GET    | `/api/admin/customers/:id`          | `customers.read`                  |
+| GET    | `/api/admin/customers/:id/bookings` | `customers.read`, `bookings.read` |
+| GET    | `/api/admin/customers/:id/payments` | `customers.read`, `finance.read`  |
+| PATCH  | `/api/admin/customers/:id/status`   | `customers.manage`                |
 
 Customer moderation actions are `suspend`, `reactivate`, and `ban`. `ban` maps to Latache's existing `deactivated` lifecycle state instead of introducing a second overlapping status. Suspension and ban revoke active sessions. Reactivating a deactivated/banned customer is restricted to the super admin.
 
@@ -56,15 +55,15 @@ The payment-history filter separates transaction `status` from transaction `kind
 
 ## Tasker Management
 
-| Method | Route | Permission(s) |
-|---|---|---|
-| GET | `/api/admin/taskers` | `taskers.read` |
-| GET | `/api/admin/taskers/pending-verification` | `taskers.read` |
-| GET | `/api/admin/taskers/performance` | `analytics.read` |
-| GET | `/api/admin/taskers/earnings` | `taskers.read`, `finance.read` |
-| GET | `/api/admin/taskers/:id` | `taskers.read` |
-| POST | `/api/admin/taskers/:id/verification` | `taskers.manage` |
-| PATCH | `/api/admin/taskers/:id/status` | `taskers.manage` |
+| Method | Route                                     | Permission(s)                  |
+| ------ | ----------------------------------------- | ------------------------------ |
+| GET    | `/api/admin/taskers`                      | `taskers.read`                 |
+| GET    | `/api/admin/taskers/pending-verification` | `taskers.read`                 |
+| GET    | `/api/admin/taskers/performance`          | `analytics.read`               |
+| GET    | `/api/admin/taskers/earnings`             | `taskers.read`, `finance.read` |
+| GET    | `/api/admin/taskers/:id`                  | `taskers.read`                 |
+| POST   | `/api/admin/taskers/:id/verification`     | `taskers.manage`               |
+| PATCH  | `/api/admin/taskers/:id/status`           | `taskers.manage`               |
 
 The pending-verification queue includes both `submitted` and `pending_review` onboarding states while the account is `pending_approval`.
 
@@ -84,19 +83,19 @@ Rejection requires a structured reason code plus free-text reason. Approval/reje
 
 Admin-management designs are served by the existing RBAC/Auth resources instead of a duplicate dashboard controller:
 
-| Method | Route | Access |
-|---|---|---|
-| POST | `/api/auth/admins/register` | `admins.create`; delegated creation cannot exceed caller permissions |
-| GET | `/api/rbac/admins` | `admins.read` |
-| GET | `/api/rbac/admins/:id` | `admins.read` |
-| PATCH | `/api/rbac/admins/:id` | `admins.update` |
-| PATCH | `/api/rbac/admins/:id/access` | `admins.update`; no privilege escalation |
-| PATCH | `/api/rbac/admins/:id/status` | `admins.suspend` or `admins.delete`, depending on target status |
-| DELETE | `/api/rbac/admins/:id` | `admins.delete` |
-| GET | `/api/rbac/permissions` | `roles.read` |
-| GET | `/api/rbac/roles` | `roles.read` |
-| GET | `/api/rbac/roles/:id` | `roles.read` |
-| POST/PATCH/PUT/DELETE | `/api/rbac/roles...` | canonical super admin only |
+| Method                | Route                         | Access                                                               |
+| --------------------- | ----------------------------- | -------------------------------------------------------------------- |
+| POST                  | `/api/auth/admins/register`   | `admins.create`; delegated creation cannot exceed caller permissions |
+| GET                   | `/api/rbac/admins`            | `admins.read`                                                        |
+| GET                   | `/api/rbac/admins/:id`        | `admins.read`                                                        |
+| PATCH                 | `/api/rbac/admins/:id`        | `admins.update`                                                      |
+| PATCH                 | `/api/rbac/admins/:id/access` | `admins.update`; no privilege escalation                             |
+| PATCH                 | `/api/rbac/admins/:id/status` | `admins.suspend` or `admins.delete`, depending on target status      |
+| DELETE                | `/api/rbac/admins/:id`        | `admins.delete`                                                      |
+| GET                   | `/api/rbac/permissions`       | `roles.read`                                                         |
+| GET                   | `/api/rbac/roles`             | `roles.read`                                                         |
+| GET                   | `/api/rbac/roles/:id`         | `roles.read`                                                         |
+| POST/PATCH/PUT/DELETE | `/api/rbac/roles...`          | canonical super admin only                                           |
 
 Administrator email changes are intentionally excluded from generic profile editing because changing a login identifier should be implemented through a separately verified auth flow.
 

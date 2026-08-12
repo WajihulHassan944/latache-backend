@@ -7,13 +7,29 @@ export class TaskerVerificationActionDto {
   action!: 'approve' | 'reject';
 
   @ApiPropertyOptional({
-    enum: ['incomplete_documentation', 'failed_background_check', 'invalid_certification', 'duplicate_account', 'underage_applicant', 'other'],
+    enum: [
+      'incomplete_documentation',
+      'failed_background_check',
+      'invalid_certification',
+      'duplicate_account',
+      'underage_applicant',
+      'other',
+    ],
   })
   @IsOptional()
-  @IsIn(['incomplete_documentation', 'failed_background_check', 'invalid_certification', 'duplicate_account', 'underage_applicant', 'other'])
+  @IsIn([
+    'incomplete_documentation',
+    'failed_background_check',
+    'invalid_certification',
+    'duplicate_account',
+    'underage_applicant',
+    'other',
+  ])
   reasonCode?: string;
 
-  @ApiPropertyOptional({ example: 'Identity document is unreadable; applicant may resubmit a clearer copy.' })
+  @ApiPropertyOptional({
+    example: 'Identity document is unreadable; applicant may resubmit a clearer copy.',
+  })
   @IsOptional()
   @IsString()
   @MinLength(3)

@@ -1,61 +1,79 @@
 {
-  "project": "Latache Backend",
-  "version": "3.10.0",
-  "focus": "Permission-aware Payments & Finance plus unified Platform Settings",
-  "design_screens_reviewed": 19,
-  "validation": {
-    "typescript_syntax_files": 235,
-    "typescript_syntax_errors": 0,
-    "unique_api_routes": 168,
-    "duplicate_api_routes": 0,
-    "static_project_verifier": "passed",
-    "strict_source_smoke_check": "no TS2322/TS2345/TS2769/TS4053-class diagnostics after excluding unresolved third-party/generated types",
-    "credential_scan": "passed (no posted Neon password or live Stripe/SMTP/API key patterns found)",
-    "standalone_html_files": 0,
-    "json_yaml_parse": "passed",
-    "archive_integrity": "passed (ZIP CRC, clean extraction, file-by-file SHA-256 round-trip)"
+  "release": "3.17.0",
+  "focus": "Shared premium transactional-email design and Moroccan Darija localization",
+  "checkedAtUtc": "2026-08-12T10:28:28Z",
+  "staticChecks": {
+    "apiRoutes": 197,
+    "uniqueApiRoutes": 197,
+    "duplicateApiRoutes": 0,
+    "legacyDuplicateRoutes": 0,
+    "staticProjectVerifier": "passed"
   },
-  "database": {
-    "new_migration": "20260810173000_add_finance_platform_settings",
-    "new_table": "PlatformSettings",
-    "booking_finance_audit_fields": [
-      "taxAmount",
-      "serviceSurchargeAmount",
-      "commissionRatePercent",
-      "taxRatePercent",
-      "taxInclusive"
+  "migration": {
+    "name": null,
+    "kind": "not_required",
+    "prismaValidate": "passed",
+    "prismaGenerate": "passed",
+    "appliedToExternalDatabase": false,
+    "reason": "The existing preferred-language string and locale-keyed translation rows already support ary without a schema change. Existing unapplied migrations still deploy normally."
+  },
+  "emailDesign": {
+    "sharedTypeScriptShell": true,
+    "standaloneHtmlTemplates": 0,
+    "generatedCidAssets": 3,
+    "assetsCopiedToProductionBuild": true,
+    "canonicalLogoUrl": "https://latache-web.vercel.app/images/logo-full.svg",
+    "coveredFlows": [
+      "verification_otp",
+      "password_reset_otp",
+      "administrator_welcome"
     ],
-    "payout_review_fields": [
-      "reviewedById",
-      "reviewedAt",
-      "adminNote"
-    ],
-    "fake_operational_or_financial_rows_seeded": false
+    "plainTextAlternatives": true,
+    "escapedDynamicContent": true
   },
-  "api_consolidation": {
-    "finance_read": "GET /api/admin/finance?view=overview|transactions|refunds|payouts|revenue",
-    "payout_mutation": "POST /api/admin/finance/payouts/:id/actions",
-    "refund_mutation": "existing POST /api/admin/disputes/:id/actions",
-    "settings_read": "GET /api/admin/platform-settings?sections=...",
-    "settings_write": "PUT /api/admin/platform-settings",
-    "elite_policy_owner": "existing /api/admin/elite-taskers/program"
+  "localization": {
+    "defaultLocale": "en",
+    "supportedLocales": ["en", "ar", "ary"],
+    "darijaRegionalTagResolution": "ary-MA -> ary",
+    "darijaNotifications": true,
+    "darijaTransactionalEmail": true,
+    "englishFallbackRetained": true
   },
-  "runtime_policy": {
-    "commission": "applied to new booking quotes/final charges and audited on booking",
-    "global_tax": "disabled by default; applied only when explicitly configured",
-    "service_radius": "global min/default/max applied to Tasker discovery",
-    "booking_rules": "advance notice/horizon/duration enforceable when enabled",
-    "unsupported_integrations": "rejected rather than simulated"
+  "verification": {
+    "command": "npm run verify",
+    "strictTypeScript": "passed",
+    "nestBuild": "passed",
+    "eslint": "passed",
+    "jestSuites": 29,
+    "jestTests": 126,
+    "jestResult": "passed",
+    "healthE2eCommand": "npm run test:e2e -- --runInBand test/health.e2e-spec.ts",
+    "healthE2eTests": 1,
+    "healthE2eResult": "passed",
+    "databaseConcurrencyE2eRun": false,
+    "databaseConcurrencyE2eReason": "No migrated disposable PostgreSQL test database was supplied."
   },
-  "financial_safety": {
-    "stripe_refunds": "remain provider-backed through dispute resolution",
-    "payout_approve": "state review only; no fake transfer",
-    "payout_mark_paid": "requires real external providerReference and consumes reserved pending balance",
-    "escrow": "not fabricated; explicitly unavailable because no escrow ledger exists",
-    "multi_currency_settlement": "cannot be enabled without a real conversion/settlement engine"
+  "dependencyAudit": {
+    "command": "npm audit --omit=dev --audit-level=high",
+    "result": "review_required",
+    "highSeverity": 2,
+    "source": "Transitive js-yaml dependency through @nestjs/swagger",
+    "fixedVersionAvailableAtCheckTime": false
   },
-  "limitations": [
-    "A dependency-aware NestJS/Prisma build could not be executed in this packaging environment because the sandbox npm mirror does not provide the required project packages.",
-    "Run npm install, npm run prisma:generate, npm run prisma:validate, npm run prisma:migrate:deploy, npm run build, and npm run start:dev locally."
-  ]
+  "preservation": {
+    "taskerFinanceV314Retained": true,
+    "multilingualV315Retained": true,
+    "performanceV316Retained": true,
+    "postgresFinancialAuthorityRetained": true,
+    "realtimeRoomPrivacyRetained": true,
+    "legacyRoutesReintroduced": false
+  },
+  "security": {
+    "envFilePackaged": false,
+    "nodeModulesPackaged": false,
+    "distPackaged": false,
+    "coveragePackaged": false,
+    "gitMetadataPackaged": false,
+    "credentialsEmbedded": false
+  }
 }

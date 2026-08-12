@@ -128,7 +128,8 @@ export class RegisterTaskerDto extends BaseRegistrationDto {
   yearsOfExperience!: number;
 
   @ApiProperty({
-    example: 'I am a reliable professional with two years of experience delivering high-quality work.',
+    example:
+      'I am a reliable professional with two years of experience delivering high-quality work.',
     minLength: 20,
     maxLength: 2000,
   })

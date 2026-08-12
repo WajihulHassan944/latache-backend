@@ -18,6 +18,7 @@ import {
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiHeader,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -27,6 +28,7 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
+import { RequestLocale } from '../localization/request-locale.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -86,6 +88,7 @@ export class AuthController {
             email: 'sarah@example.com',
             phoneCountryCode: '+212',
             phoneNumber: '612345678',
+            preferredLanguage: 'ar',
             zipCode: '10001',
             role: 'customer',
             accountStatus: 'pending_verification',
@@ -105,8 +108,19 @@ export class AuthController {
   @ApiBadRequestResponse({ schema: { example: validationErrorExample } })
   @ApiConflictResponse({ description: 'An account with the email already exists.' })
   @ApiServiceUnavailableResponse({ description: 'The verification email could not be delivered.' })
-  registerCustomer(@Body() dto: RegisterCustomerDto, @Req() request: Request) {
-    return this.auth.registerCustomer(dto, this.metadata(dto.device, request));
+  @ApiHeader({
+    name: 'Accept-Language',
+    required: false,
+    example: 'ary-MA, ar;q=0.8, en;q=0.5',
+    description:
+      'Supports en, ar, and ary (Moroccan Darija). A submitted/saved preferredLanguage takes priority; English is the fallback.',
+  })
+  registerCustomer(
+    @Body() dto: RegisterCustomerDto,
+    @Req() request: Request,
+    @RequestLocale() locale: string,
+  ) {
+    return this.auth.registerCustomer(dto, this.metadata(dto.device, request), locale);
   }
 
   @Post('taskers/register')
@@ -144,12 +158,25 @@ export class AuthController {
       },
     },
   })
-  @ApiBadRequestResponse({ description: 'Invalid fields, overlapping availability, or duplicate services.' })
+  @ApiBadRequestResponse({
+    description: 'Invalid fields, overlapping availability, or duplicate services.',
+  })
   @ApiNotFoundResponse({ description: 'One or more selected service IDs do not exist.' })
   @ApiConflictResponse({ description: 'An account with the email already exists.' })
   @ApiServiceUnavailableResponse({ description: 'The verification email could not be delivered.' })
-  registerTasker(@Body() dto: RegisterTaskerDto, @Req() request: Request) {
-    return this.auth.registerTasker(dto, this.metadata(dto.device, request));
+  @ApiHeader({
+    name: 'Accept-Language',
+    required: false,
+    example: 'ary-MA, ar;q=0.8, en;q=0.5',
+    description:
+      'Supports en, ar, and ary (Moroccan Darija). A submitted/saved preferredLanguage takes priority; English is the fallback.',
+  })
+  registerTasker(
+    @Body() dto: RegisterTaskerDto,
+    @Req() request: Request,
+    @RequestLocale() locale: string,
+  ) {
+    return this.auth.registerTasker(dto, this.metadata(dto.device, request), locale);
   }
 
   @Post('admins/register')
@@ -326,8 +353,15 @@ export class AuthController {
     },
   })
   @ApiServiceUnavailableResponse({ description: 'SMTP delivery failed for an eligible account.' })
-  resendVerification(@Body() dto: ResendVerificationEmailDto) {
-    return this.auth.resendVerification(dto);
+  @ApiHeader({
+    name: 'Accept-Language',
+    required: false,
+    example: 'ary-MA, ar;q=0.8, en;q=0.5',
+    description:
+      'Supports en, ar, and ary (Moroccan Darija). A saved preferredLanguage takes priority; English is the fallback.',
+  })
+  resendVerification(@Body() dto: ResendVerificationEmailDto, @RequestLocale() locale: string) {
+    return this.auth.resendVerification(dto, locale);
   }
 
   @Post('forgot-password')
@@ -348,8 +382,15 @@ export class AuthController {
     },
   })
   @ApiServiceUnavailableResponse({ description: 'SMTP delivery failed for an eligible account.' })
-  forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.auth.forgotPassword(dto);
+  @ApiHeader({
+    name: 'Accept-Language',
+    required: false,
+    example: 'ary-MA, ar;q=0.8, en;q=0.5',
+    description:
+      'Supports en, ar, and ary (Moroccan Darija). A saved preferredLanguage takes priority; English is the fallback.',
+  })
+  forgotPassword(@Body() dto: ForgotPasswordDto, @RequestLocale() locale: string) {
+    return this.auth.forgotPassword(dto, locale);
   }
 
   @Post('verify-reset-otp')
@@ -357,7 +398,8 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({
     summary: 'Verify a password-reset OTP',
-    description: 'Validates the latest unexpired reset OTP before the client displays or submits the reset form.',
+    description:
+      'Validates the latest unexpired reset OTP before the client displays or submits the reset form.',
   })
   @ApiOkResponse({
     schema: {
@@ -390,7 +432,9 @@ export class AuthController {
       },
     },
   })
-  @ApiBadRequestResponse({ description: 'OTP invalid/expired, attempts exhausted, or password unchanged.' })
+  @ApiBadRequestResponse({
+    description: 'OTP invalid/expired, attempts exhausted, or password unchanged.',
+  })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.auth.resetPassword(dto);
   }
@@ -450,7 +494,8 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: 'Update the authenticated account profile',
-    description: 'Updates only safe self-service fields; role, permissions, email, and account status cannot be changed here.',
+    description:
+      'Updates safe self-service fields including preferredLanguage (en/ar/ary, where ary is Moroccan Darija). The saved preference controls backend-generated dynamic content, notifications, and email before Accept-Language; role, permissions, email, and account status cannot be changed here.',
   })
   @ApiOkResponse({
     schema: {
@@ -511,7 +556,9 @@ export class AuthController {
       example: { success: true, data: null, message: 'Session revoked successfully.' },
     },
   })
-  @ApiNotFoundResponse({ description: 'The active session does not belong to the account or no longer exists.' })
+  @ApiNotFoundResponse({
+    description: 'The active session does not belong to the account or no longer exists.',
+  })
   revokeSession(@CurrentUser() user: User, @Param() params: SessionParamDto) {
     return this.auth.revokeSession(user.id, params.id);
   }

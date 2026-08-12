@@ -1,20 +1,15 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import type { User } from '../../generated/prisma/client';
 import { AdminAuditService } from '../admin-audit/admin-audit.service';
+import { LocaleService } from '../localization/locale.service';
 import type {
   BookingRulesSettingsDto,
   CommissionSettingsDto,
-  CurrencySettingsDto,
-  GeneralSettingsDto,
-  ReferralSettingsDto,
   ServiceRadiusSettingsDto,
+  TaskerFinanceSettingsDto,
   TaxSettingsDto,
   UpdatePlatformSettingsDto,
 } from './dto/platform-settings.dto';
@@ -22,10 +17,11 @@ import {
   PLATFORM_SETTING_KEYS,
   type PlatformSettingKey,
   type PricingChargeResult,
+  type TaskerFinancePolicy,
 } from './platform-settings.types';
+import { AppCacheService, CacheNamespace } from '../../infrastructure/redis/app-cache.service';
 
-const money = (value: number): number =>
-  Math.round((value + Number.EPSILON) * 100) / 100;
+const money = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 
 const dateOnly = (value: Date): string => value.toISOString().slice(0, 10);
 
@@ -35,18 +31,27 @@ export class PlatformSettingsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly audit: AdminAuditService,
+    private readonly locales: LocaleService,
+    private readonly cache: AppCacheService,
   ) {}
 
   async view(sections?: string): Promise<Record<string, unknown>> {
     const requested = this.parseSections(sections);
+    return this.cache.getOrLoad(
+      CacheNamespace.PlatformContent,
+      { operation: 'settings-view', sections: [...requested].sort() },
+      this.config.get<number>('cache.settingsTtlSeconds', 300),
+      () => this.loadView(requested),
+    );
+  }
+
+  private async loadView(requested: string[]): Promise<Record<string, unknown>> {
     const stored = await this.prisma.platformSetting.findMany({
       where: requested.length
         ? { key: { in: requested.filter((key) => key !== 'eliteProgram') } }
         : undefined,
     });
-    const storedMap = new Map(
-      stored.map((row) => [row.key, row.value as Record<string, unknown>]),
-    );
+    const storedMap = new Map(stored.map((row) => [row.key, row.value as Record<string, unknown>]));
     const defaults = this.defaults();
     const response: Record<string, unknown> = {};
 
@@ -72,10 +77,11 @@ export class PlatformSettingsService {
       externalExchangeRateProviderAvailable: false,
       referralRewardEngineAvailable: false,
       cancellationSettlementPolicyAvailable: false,
+      taskerEarningClearanceAvailable: true,
+      cashPlatformPayableAccountingAvailable: true,
       regionSpecificRadiusResolutionAvailable: false,
       eliteRulesManagedBy: '/api/admin/elite-taskers/program',
-      note:
-        'Jurisdiction tax overrides are persisted for policy/reporting but are not auto-applied until bookings carry a verified tax jurisdiction. Referral rewards remain disabled until a referral ledger/module exists.',
+      note: 'Jurisdiction tax overrides are persisted for policy/reporting but are not auto-applied until bookings carry a verified tax jurisdiction. Referral rewards remain disabled until a referral ledger/module exists.',
     };
     return response;
   }
@@ -86,6 +92,23 @@ export class PlatformSettingsService {
     >;
     if (entries.length === 0) {
       throw new BadRequestException('At least one settings section must be supplied');
+    }
+
+    const general = dto.general as Record<string, unknown> | undefined;
+    const translations = general?.translations as Array<Record<string, unknown>> | undefined;
+    if (translations) {
+      const localeCodes = translations.map((translation) =>
+        this.locales.requireSupported(String(translation.locale)),
+      );
+      if (new Set(localeCodes).size !== localeCodes.length) {
+        throw new BadRequestException({
+          code: 'DUPLICATE_TRANSLATION_LOCALE',
+          message: 'Each locale may appear only once in general.translations',
+        });
+      }
+      translations.forEach((translation, index) => {
+        translation.locale = localeCodes[index];
+      });
     }
 
     await this.validateCrossField(dto);
@@ -123,7 +146,35 @@ export class PlatformSettingsService {
       }
     });
 
+    await Promise.all([
+      this.cache.invalidate(CacheNamespace.PlatformContent),
+      this.cache.invalidate(CacheNamespace.AdminAnalytics),
+    ]);
+
     return this.view(entries.map(([key]) => key).join(','));
+  }
+
+  async publicContent(locale: string): Promise<Record<string, unknown>> {
+    const response = await this.view('general');
+    const general = response.general as Record<string, unknown>;
+    const translations = (general.translations ?? []) as Array<{
+      locale: string;
+      platformName?: string;
+      description?: string;
+    }>;
+    const requested = translations.find((translation) => translation.locale === locale);
+    const english = translations.find(
+      (translation) => translation.locale === this.locales.defaultLocale,
+    );
+    const selected = requested ?? english;
+    return {
+      platformName: selected?.platformName ?? general.platformName,
+      description: selected?.description ?? general.description,
+      supportEmail: general.supportEmail,
+      platformUrl: general.platformUrl,
+      resolvedLocale: selected?.locale ?? 'canonical',
+      translationFallback: !requested,
+    };
   }
 
   /**
@@ -155,6 +206,16 @@ export class PlatformSettingsService {
           : tierCode === 'diamond'
             ? commission.diamondRatePercent
             : commission.standardRatePercent;
+    const minimumTaskPrice =
+      tierCode === 'gold'
+        ? Number(commission.goldMinTaskPrice ?? 0)
+        : tierCode === 'platinum'
+          ? Number(commission.platinumMinTaskPrice ?? 0)
+          : tierCode === 'diamond'
+            ? Number(commission.diamondMinTaskPrice ?? 0)
+            : Number(commission.standardMinTaskPrice ?? 0);
+    const rawServiceAmount = money(input.serviceAmount);
+    const effectiveServiceAmount = money(Math.max(rawServiceAmount, minimumTaskPrice));
 
     let rate = Number(baseRate ?? 0);
     if (commission.categoryOverridesEnabled) {
@@ -172,7 +233,7 @@ export class PlatformSettingsService {
     }
     rate = Math.max(0, Math.min(100, rate));
 
-    const calculatedFee = money(input.serviceAmount * (rate / 100));
+    const calculatedFee = money(effectiveServiceAmount * (rate / 100));
     const platformFeeAmount = money(
       Math.max(calculatedFee, Number(commission.minimumCommissionAmount ?? 0)),
     );
@@ -187,12 +248,17 @@ export class PlatformSettingsService {
       serviceSurchargeAmount = money(Number(tax.serviceSurchargeAmount ?? 0));
       if (taxRatePercent > 0) {
         taxAmount = tax.inclusivePricing
-          ? money(input.serviceAmount * (taxRatePercent / (100 + taxRatePercent)))
-          : money(input.serviceAmount * (taxRatePercent / 100));
+          ? money(effectiveServiceAmount * (taxRatePercent / (100 + taxRatePercent)))
+          : money(effectiveServiceAmount * (taxRatePercent / 100));
       }
     }
 
     return {
+      rawServiceAmount,
+      serviceAmount: effectiveServiceAmount,
+      minimumTaskPrice,
+      minimumTaskPriceApplied: effectiveServiceAmount > rawServiceAmount,
+      taskerTierCode: tierCode,
       platformFeeAmount,
       taxAmount,
       serviceSurchargeAmount,
@@ -206,19 +272,37 @@ export class PlatformSettingsService {
     return this.section<ServiceRadiusSettingsDto>('serviceRadius');
   }
 
-  async assertBookingRules(input: { bookingDate: Date; startTime: string; slotMinutes: number }): Promise<void> {
+  async taskerFinancePolicy(transaction?: Prisma.TransactionClient): Promise<TaskerFinancePolicy> {
+    const section = await this.section<TaskerFinanceSettingsDto>('taskerFinance', transaction);
+    return {
+      earningClearanceDays: Number(section.earningClearanceDays ?? 14),
+      cashDisputeClearanceDays: Number(section.cashDisputeClearanceDays ?? 14),
+      maximumOutstandingPlatformDebt: money(Number(section.maximumOutstandingPlatformDebt ?? 0)),
+      blockCashBookingsAtDebtLimit: Boolean(section.blockCashBookingsAtDebtLimit),
+    };
+  }
+
+  async assertBookingRules(input: {
+    bookingDate: Date;
+    startTime: string;
+    slotMinutes: number;
+  }): Promise<void> {
     const rules = await this.section<BookingRulesSettingsDto>('bookingRules');
     if (!rules.enforcementEnabled) return;
     const minDuration = Number(rules.minDurationMinutes ?? 1);
     const maxDuration = Number(rules.maxDurationMinutes ?? 2880);
     if (input.slotMinutes < minDuration || input.slotMinutes > maxDuration) {
-      throw new ConflictException(`Booking duration must be between ${minDuration} and ${maxDuration} minutes`);
+      throw new ConflictException(
+        `Booking duration must be between ${minDuration} and ${maxDuration} minutes`,
+      );
     }
     const now = new Date();
     const maxAdvanceDays = Number(rules.maxAdvanceDays ?? 365);
     const latest = new Date(now.getTime() + maxAdvanceDays * 24 * 60 * 60 * 1000);
     if (input.bookingDate > latest) {
-      throw new ConflictException(`Bookings cannot be scheduled more than ${maxAdvanceDays} days ahead`);
+      throw new ConflictException(
+        `Bookings cannot be scheduled more than ${maxAdvanceDays} days ahead`,
+      );
     }
     const [hours, minutes] = input.startTime.split(':').map((value) => Number(value));
     if (Number.isFinite(hours) && Number.isFinite(minutes)) {
@@ -226,15 +310,20 @@ export class PlatformSettingsService {
       scheduled.setUTCHours(hours ?? 0, minutes ?? 0, 0, 0);
       const minimumNotice = Number(rules.minAdvanceNoticeMinutes ?? 0);
       if (minimumNotice > 0 && scheduled.getTime() - now.getTime() < minimumNotice * 60 * 1000) {
-        throw new ConflictException(`Booking requires at least ${minimumNotice} minutes advance notice`);
+        throw new ConflictException(
+          `Booking requires at least ${minimumNotice} minutes advance notice`,
+        );
       }
     }
   }
 
   private async section<T extends object>(
     key: PlatformSettingKey,
+    transaction?: Prisma.TransactionClient,
   ): Promise<T> {
-    const row = await this.prisma.platformSetting.findUnique({ where: { key } });
+    const row = await (transaction ?? this.prisma).platformSetting.findUnique({
+      where: { key },
+    });
     return {
       ...(this.defaults()[key] as Record<string, unknown>),
       ...((row?.value as Record<string, unknown> | undefined) ?? {}),
@@ -244,7 +333,14 @@ export class PlatformSettingsService {
   private parseSections(raw?: string): string[] {
     const all: string[] = [...PLATFORM_SETTING_KEYS, 'eliteProgram'];
     if (!raw?.trim()) return all;
-    const requested = [...new Set(raw.split(',').map((item) => item.trim()).filter(Boolean))];
+    const requested = [
+      ...new Set(
+        raw
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    ];
     const invalid = requested.filter((key) => !all.includes(key));
     if (invalid.length) {
       throw new BadRequestException(`Unknown settings section(s): ${invalid.join(', ')}`);
@@ -324,11 +420,24 @@ export class PlatformSettingsService {
         goldRatePercent: fallbackCommission,
         platinumRatePercent: fallbackCommission,
         diamondRatePercent: fallbackCommission,
+        standardMinTaskPrice: 0,
+        goldMinTaskPrice: 0,
+        platinumMinTaskPrice: 0,
+        diamondMinTaskPrice: 0,
         sameDaySurchargePercent: 0,
         weekendSurchargePercent: 0,
         minimumCommissionAmount: 0,
         categoryOverridesEnabled: false,
         categoryOverrides: [],
+      },
+      taskerFinance: {
+        earningClearanceDays: this.config.get<number>('taskerFinance.defaultClearanceDays', 14),
+        cashDisputeClearanceDays: this.config.get<number>(
+          'taskerFinance.defaultCashDisputeDays',
+          14,
+        ),
+        maximumOutstandingPlatformDebt: 0,
+        blockCashBookingsAtDebtLimit: false,
       },
       referral: {
         clientReferralEnabled: false,
@@ -410,7 +519,9 @@ export class PlatformSettingsService {
       );
     }
     if (dto.bookingRules?.requireTaskerConfirmation === false) {
-      throw new ConflictException('Tasker confirmation is required by the current booking lifecycle.');
+      throw new ConflictException(
+        'Tasker confirmation is required by the current booking lifecycle.',
+      );
     }
     if (Number(dto.bookingRules?.lateCancellationFeePercent ?? 0) > 0) {
       throw new ConflictException(
@@ -453,6 +564,22 @@ export class PlatformSettingsService {
       if (dto.currency.primaryCurrency.toUpperCase() !== runtime) {
         throw new ConflictException(
           `Primary operational currency is currently ${runtime}. Changing it requires a controlled currency migration and PAYMENTS_CURRENCY update; display/exchange currencies may still be configured.`,
+        );
+      }
+    }
+    if (
+      dto.taskerFinance?.blockCashBookingsAtDebtLimit === true &&
+      Number(dto.taskerFinance.maximumOutstandingPlatformDebt ?? 0) <= 0
+    ) {
+      const current = await this.section<TaskerFinanceSettingsDto>('taskerFinance');
+      const threshold = Number(
+        dto.taskerFinance.maximumOutstandingPlatformDebt ??
+          current.maximumOutstandingPlatformDebt ??
+          0,
+      );
+      if (threshold <= 0) {
+        throw new BadRequestException(
+          'maximumOutstandingPlatformDebt must be greater than zero when cash-booking debt blocking is enabled',
         );
       }
     }

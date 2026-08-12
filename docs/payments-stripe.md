@@ -39,10 +39,11 @@ Tasker stops timer
   -> Stripe source: real off-session PaymentIntent
   -> verified succeeded state/webhook
   -> booking paid
-  -> Tasker earning credited once
+  -> Tasker earning created once as pending
+  -> mature, undisputed earning released by the database-safe worker
 ```
 
-Tasker earning excludes Latache platform fee and donation amount.
+Tasker earning excludes Latache platform fee and donation amount. It is not withdrawable until the configured clearance timestamp. Outstanding cash platform payables are offset before the release remainder becomes available.
 
 ## Stripe webhook
 
@@ -54,6 +55,8 @@ The handler verifies the `Stripe-Signature` against the raw request body and con
 
 Customer wallet top-ups do not increase the wallet when the PaymentIntent is merely created. The wallet is credited only after verified `payment_intent.succeeded` processing.
 
+Webhook replay cannot duplicate an earning: Stripe event IDs and booking earning uniqueness are both persisted. A synchronously returned succeeded PaymentIntent is reconciled through the same idempotent settlement path before the API returns; its later webhook is a no-op reconciliation.
+
 ## Dispute refunds
 
 Dispute refunds are initiated only by `POST /api/admin/disputes/:id/actions` with a refund resolution and require `finance.manage` in addition to `support.manage`.
@@ -61,3 +64,5 @@ Dispute refunds are initiated only by `POST /api/admin/disputes/:id/actions` wit
 For Stripe-settled bookings the backend creates an idempotent Stripe Refund against the original PaymentIntent. Provider `pending`/`requires_action` states remain processing; the dispute is marked resolved only after a succeeded refund is reconciled.
 
 Configure the Stripe endpoint for `refund.created`, `refund.updated`, and `refund.failed` in addition to the existing PaymentIntent events. Customer-wallet refunds use the internal wallet ledger and do not call Stripe.
+
+Pending earnings are reduced before available balance. If the earning was already released, the existing Tasker wallet clawback/negative-balance accounting applies only to the attributable released portion.

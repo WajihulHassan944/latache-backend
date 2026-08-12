@@ -13,7 +13,10 @@ export class AuthSessionsRepository {
     return (transaction ?? this.prisma).refreshToken.create({ data });
   }
 
-  findByHash(tokenHash: string, transaction?: Prisma.TransactionClient): Promise<RefreshToken | null> {
+  findByHash(
+    tokenHash: string,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<RefreshToken | null> {
     return (transaction ?? this.prisma).refreshToken.findUnique({ where: { tokenHash } });
   }
 
@@ -63,8 +66,6 @@ export class AuthSessionsRepository {
     const rows = await transaction.$queryRaw<Array<{ id: number }>>`
       SELECT "id" FROM "RefreshTokens" WHERE "tokenHash" = ${tokenHash} FOR UPDATE
     `;
-    return rows.length === 0
-      ? null
-      : transaction.refreshToken.findUnique({ where: { tokenHash } });
+    return rows.length === 0 ? null : transaction.refreshToken.findUnique({ where: { tokenHash } });
   }
 }

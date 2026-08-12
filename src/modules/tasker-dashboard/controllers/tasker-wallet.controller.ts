@@ -15,7 +15,6 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiHeader,
-  ApiOkResponse,
   ApiOperation,
   ApiServiceUnavailableResponse,
   ApiTags,
@@ -43,6 +42,7 @@ import {
   StringIdParamDto,
 } from '../dto';
 import { TaskerWalletService } from '../services/tasker-wallet.service';
+import { TaskerEarningsQueryDto } from '../../tasker-finance/dto/tasker-finance.dto';
 
 @ApiTags('12 Tasker Wallet & Payouts')
 @ApiBearerAuth('bearer')
@@ -63,12 +63,36 @@ export class TaskerWalletController {
   }
 
   @Get('transactions')
-  @ApiOperation({ summary: 'List persisted wallet ledger transactions' })
+  @ApiOperation({
+    summary: 'List persisted wallet ledger transactions',
+    description:
+      'Supports the existing page/limit contract and additive nextCursor/cursor pagination. This financial endpoint is never Redis-cached; PostgreSQL ledger rows remain authoritative.',
+  })
   transactions(
     @CurrentUser() user: User,
     @Query() query: ListWalletTransactionsQueryDto,
   ): Promise<WalletTransactionsListView> {
     return this.wallet.listTransactions(user.id, query);
+  }
+
+  @Get('earnings')
+  @ApiOperation({
+    summary: 'List Tasker earning-clearance records',
+    description:
+      'Returns the same persisted earning records Finance sees, including pricing snapshots, pending/available/reversed state, hold reason, and expected availability timestamp.',
+  })
+  earnings(@CurrentUser() user: User, @Query() query: TaskerEarningsQueryDto) {
+    return this.wallet.listEarnings(user.id, query);
+  }
+
+  @Get('platform-payables')
+  @ApiOperation({
+    summary: 'Get cash platform payable balance, receivables, and audit ledger',
+    description:
+      'Cash is recorded as physically held by the Tasker. This endpoint exposes the amount owed to Latache and all debt creation/earning-offset ledger movements; it never represents cash as platform-held wallet money.',
+  })
+  platformPayables(@CurrentUser() user: User, @Query() query: TaskerEarningsQueryDto) {
+    return this.wallet.platformPayables(user.id, query);
   }
 
   @Get('payout-capabilities')
@@ -171,7 +195,9 @@ export class TaskerWalletController {
     description:
       'In disabled mode this returns 503 and does not reserve funds. In manual mode it atomically reserves real available funds and creates pending_review; it never returns a fake paid/success state.',
   })
-  @ApiServiceUnavailableResponse({ description: 'Withdrawal execution is disabled for this deployment.' })
+  @ApiServiceUnavailableResponse({
+    description: 'Withdrawal execution is disabled for this deployment.',
+  })
   @ApiConflictResponse({ description: 'Insufficient balance or payout method is unavailable.' })
   requestWithdrawal(
     @CurrentUser() user: User,

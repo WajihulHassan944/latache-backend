@@ -11,6 +11,7 @@ import {
   Min,
 } from 'class-validator';
 import { TaskerSort } from '../../../common/enums/tasker-sort.enum';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 const toBoolean = ({ value }: { value: unknown }): unknown => {
   if (value === 'true' || value === true) return true;
@@ -19,6 +20,15 @@ const toBoolean = ({ value }: { value: unknown }): unknown => {
 };
 
 export class ListTaskersQueryDto {
+  @ApiPropertyOptional({
+    example: 'تنظيف',
+    description:
+      'Unicode search across Tasker name/bio and canonical or localized Service content. Arabic diacritics and common letter variants are normalized for Service translations.',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
   @IsOptional()
   @IsString()
   serviceSlug?: string;

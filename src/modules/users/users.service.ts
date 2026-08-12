@@ -11,10 +11,7 @@ export class UsersService {
     return (transaction ?? this.prisma).user.findUnique({ where: { id } });
   }
 
-  findByEmail(
-    email: string,
-    transaction?: Prisma.TransactionClient,
-  ): Promise<User | null> {
+  findByEmail(email: string, transaction?: Prisma.TransactionClient): Promise<User | null> {
     return (transaction ?? this.prisma).user.findFirst({
       where: {
         email: {
@@ -46,10 +43,7 @@ export class UsersService {
     }
   }
 
-  async findByIdForUpdate(
-    id: number,
-    transaction: Prisma.TransactionClient,
-  ): Promise<User | null> {
+  async findByIdForUpdate(id: number, transaction: Prisma.TransactionClient): Promise<User | null> {
     const rows = await transaction.$queryRaw<Array<{ id: number }>>`
       SELECT "id" FROM "Users" WHERE "id" = ${id} FOR UPDATE
     `;

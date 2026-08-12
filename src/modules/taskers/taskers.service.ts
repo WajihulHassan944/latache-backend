@@ -19,10 +19,7 @@ import { ListTaskersQueryDto } from './dto/list-taskers-query.dto';
 import { PublicTaskerReviewsQueryDto } from './dto/public-tasker-reviews-query.dto';
 import { ReviewsService } from '../reviews/reviews.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
-import {
-  AvailabilitySlotDto,
-  SubmitOnboardingDto,
-} from './dto/submit-onboarding.dto';
+import { AvailabilitySlotDto, SubmitOnboardingDto } from './dto/submit-onboarding.dto';
 import { TaskersRepository } from './taskers.repository';
 
 @Injectable()
@@ -58,10 +55,7 @@ export class TaskersService {
         throw new ForbiddenException('Only taskers can submit onboarding applications');
       }
 
-      const serviceRecords = await this.repository.findServicesBySlugs(
-        requestedSlugs,
-        transaction,
-      );
+      const serviceRecords = await this.repository.findServicesBySlugs(requestedSlugs, transaction);
       const serviceIdBySlug = new Map<string, number>();
       for (const service of serviceRecords) {
         if (service.slug && !serviceIdBySlug.has(service.slug)) {
@@ -86,9 +80,7 @@ export class TaskersService {
             select: { availabilityId: true },
           })
         : [];
-      const referencedIds = new Set(
-        referencedBookings.map((booking) => booking.availabilityId),
-      );
+      const referencedIds = new Set(referencedBookings.map((booking) => booking.availabilityId));
       const today = todayDateOnly();
       const preserved = existingSlots.filter((slot) => {
         const date = dateOnlyFromDate(slot.date);
@@ -99,16 +91,14 @@ export class TaskersService {
         const exactPreserved = preserved.find(
           (slot) =>
             dateOnlyFromDate(slot.date) === requested.date &&
-            parseTimeToMinutes(slot.startTime) ===
-              parseTimeToMinutes(requested.startTime) &&
+            parseTimeToMinutes(slot.startTime) === parseTimeToMinutes(requested.startTime) &&
             parseTimeToMinutes(slot.endTime) === parseTimeToMinutes(requested.endTime),
         );
         if (exactPreserved) return false;
 
         const conflicting = preserved.find(
           (slot) =>
-            dateOnlyFromDate(slot.date) === requested.date &&
-            rangesOverlap(slot, requested),
+            dateOnlyFromDate(slot.date) === requested.date && rangesOverlap(slot, requested),
         );
         if (conflicting) {
           throw new ConflictException(
@@ -177,7 +167,7 @@ export class TaskersService {
     };
   }
 
-  async list(query: ListTaskersQueryDto) {
+  async list(query: ListTaskersQueryDto, locale: string) {
     try {
       const effectiveQuery = { ...query };
       if (query.lat !== undefined && query.lng !== undefined) {
@@ -187,29 +177,25 @@ export class TaskersService {
           const minimum = Number(policy.minimumRadiusKm ?? 0.1);
           const fallback = Number(policy.defaultRadiusKm ?? 20);
           if (query.radius !== undefined && (query.radius < minimum || query.radius > maximum)) {
-            throw new BadRequestException(
-              `radius must be between ${minimum} and ${maximum} km`,
-            );
+            throw new BadRequestException(`radius must be between ${minimum} and ${maximum} km`);
           }
           effectiveQuery.radius = query.radius ?? fallback;
         }
       }
-      return await this.repository.list(effectiveQuery);
+      return await this.repository.list(effectiveQuery, locale);
     } catch (error) {
       if (error instanceof Error && error.message === 'LAT_LNG_PAIR_REQUIRED') {
         throw new BadRequestException('lat and lng must be provided together');
       }
       if (error instanceof Error && error.message === 'INVALID_PRICE_RANGE') {
-        throw new BadRequestException(
-          'minPrice must be less than or equal to maxPrice',
-        );
+        throw new BadRequestException('minPrice must be less than or equal to maxPrice');
       }
       throw error;
     }
   }
 
-  async getById(id: number, serviceSlug?: string) {
-    const tasker = await this.repository.getById(id, serviceSlug);
+  async getById(id: number, serviceSlug: string | undefined, locale: string) {
+    const tasker = await this.repository.getById(id, serviceSlug, locale);
     if (!tasker) throw new NotFoundException('Tasker not found');
     return tasker;
   }

@@ -22,29 +22,29 @@ When a role permission set changes, all assigned administrators with `inheritsRo
 
 ## Role APIs
 
-| Method | Route | Access |
-|---|---|---|
-| GET | `/api/rbac/me` | Any verified admin/super admin |
-| GET | `/api/rbac/permissions` | Super admin or admin with `roles.read` |
-| GET | `/api/rbac/roles` | Super admin or admin with `roles.read` |
-| GET | `/api/rbac/roles/:id` | Super admin or admin with `roles.read` |
-| POST | `/api/rbac/roles` | Super admin |
-| PATCH | `/api/rbac/roles/:id` | Super admin |
-| PUT | `/api/rbac/roles/:id/permissions` | Super admin |
-| DELETE | `/api/rbac/roles/:id` | Super admin |
+| Method | Route                             | Access                                 |
+| ------ | --------------------------------- | -------------------------------------- |
+| GET    | `/api/rbac/me`                    | Any verified admin/super admin         |
+| GET    | `/api/rbac/permissions`           | Super admin or admin with `roles.read` |
+| GET    | `/api/rbac/roles`                 | Super admin or admin with `roles.read` |
+| GET    | `/api/rbac/roles/:id`             | Super admin or admin with `roles.read` |
+| POST   | `/api/rbac/roles`                 | Super admin                            |
+| PATCH  | `/api/rbac/roles/:id`             | Super admin                            |
+| PUT    | `/api/rbac/roles/:id/permissions` | Super admin                            |
+| DELETE | `/api/rbac/roles/:id`             | Super admin                            |
 
 Role codes are immutable. The canonical `super_admin` role cannot be modified. System roles cannot be deleted or deactivated. Custom roles cannot be deactivated or deleted while administrators are assigned.
 
 ## Administrator access APIs
 
-| Method | Route | Access |
-|---|---|---|
-| GET | `/api/rbac/admins` | Super admin or admin with `admins.read` |
-| GET | `/api/rbac/admins/:id` | Super admin or admin with `admins.read` |
-| PATCH | `/api/rbac/admins/:id` | Super admin or admin with `admins.update`; non-escalating |
-| PATCH | `/api/rbac/admins/:id/access` | Super admin or admin with `admins.update`; non-escalating |
-| PATCH | `/api/rbac/admins/:id/status` | `admins.suspend` or `admins.delete`, depending on state |
-| DELETE | `/api/rbac/admins/:id` | Super admin or admin with `admins.delete` |
+| Method | Route                         | Access                                                    |
+| ------ | ----------------------------- | --------------------------------------------------------- |
+| GET    | `/api/rbac/admins`            | Super admin or admin with `admins.read`                   |
+| GET    | `/api/rbac/admins/:id`        | Super admin or admin with `admins.read`                   |
+| PATCH  | `/api/rbac/admins/:id`        | Super admin or admin with `admins.update`; non-escalating |
+| PATCH  | `/api/rbac/admins/:id/access` | Super admin or admin with `admins.update`; non-escalating |
+| PATCH  | `/api/rbac/admins/:id/status` | `admins.suspend` or `admins.delete`, depending on state   |
+| DELETE | `/api/rbac/admins/:id`        | Super admin or admin with `admins.delete`                 |
 
 The current caller cannot modify their own assignment/status through these management routes, and the canonical super-admin account is immutable. Delegated administrators can manage only targets whose effective permissions are a subset of their own access.
 

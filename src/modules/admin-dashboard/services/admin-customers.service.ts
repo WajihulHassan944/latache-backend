@@ -101,7 +101,9 @@ export class AdminCustomersService {
           _sum: { amount: true },
         })
       : [];
-    const spendByCustomer = new Map(spendRows.map((row) => [row.customerId, money(row._sum.amount)]));
+    const spendByCustomer = new Map(
+      spendRows.map((row) => [row.customerId, money(row._sum.amount)]),
+    );
 
     return {
       items: customers.map((customer) => ({
@@ -180,7 +182,10 @@ export class AdminCustomersService {
           name: fullName(booking.customer.firstName, booking.customer.lastName),
           email: booking.customer.email,
         },
-        tasker: { id: String(booking.tasker.id), name: fullName(booking.tasker.firstName, booking.tasker.lastName) },
+        tasker: {
+          id: String(booking.tasker.id),
+          name: fullName(booking.tasker.firstName, booking.tasker.lastName),
+        },
         service: booking.service,
         createdAt: booking.createdAt.toISOString(),
       })),
@@ -210,7 +215,9 @@ export class AdminCustomersService {
         where,
         include: {
           customer: { select: { id: true, firstName: true, lastName: true, email: true } },
-          booking: { select: { id: true, service: { select: { id: true, name: true, slug: true } } } },
+          booking: {
+            select: { id: true, service: { select: { id: true, name: true, slug: true } } },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -277,39 +284,52 @@ export class AdminCustomersService {
 
   async details(customerId: number) {
     const customer = await this.requireCustomer(customerId);
-    const [bookingCounts, spend, recentBookings, recentPayments, reviewsReceived] = await Promise.all([
-      this.prisma.booking.groupBy({
-        by: ['status'],
-        where: { customerId },
-        _count: { _all: true },
-      }),
-      this.prisma.paymentTransaction.aggregate({
-        where: { customerId, kind: 'booking_charge', status: 'succeeded' },
-        _sum: { amount: true },
-      }),
-      this.prisma.booking.findMany({
-        where: { customerId },
-        select: {
-          id: true,
-          status: true,
-          bookingDate: true,
-          startTime: true,
-          totalChargedAmount: true,
-          paymentCurrency: true,
-          service: { select: { id: true, name: true, slug: true } },
-          tasker: { select: { id: true, firstName: true, lastName: true } },
-        },
-        orderBy: [{ bookingDate: 'desc' }, { startTime: 'desc' }],
-        take: 5,
-      }),
-      this.prisma.paymentTransaction.findMany({
-        where: { customerId },
-        select: { id: true, kind: true, status: true, amount: true, currency: true, bookingId: true, createdAt: true },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-      }),
-      this.prisma.review.aggregate({ where: { revieweeId: customerId }, _avg: { rating: true }, _count: { _all: true } }),
-    ]);
+    const [bookingCounts, spend, recentBookings, recentPayments, reviewsReceived] =
+      await Promise.all([
+        this.prisma.booking.groupBy({
+          by: ['status'],
+          where: { customerId },
+          _count: { _all: true },
+        }),
+        this.prisma.paymentTransaction.aggregate({
+          where: { customerId, kind: 'booking_charge', status: 'succeeded' },
+          _sum: { amount: true },
+        }),
+        this.prisma.booking.findMany({
+          where: { customerId },
+          select: {
+            id: true,
+            status: true,
+            bookingDate: true,
+            startTime: true,
+            totalChargedAmount: true,
+            paymentCurrency: true,
+            service: { select: { id: true, name: true, slug: true } },
+            tasker: { select: { id: true, firstName: true, lastName: true } },
+          },
+          orderBy: [{ bookingDate: 'desc' }, { startTime: 'desc' }],
+          take: 5,
+        }),
+        this.prisma.paymentTransaction.findMany({
+          where: { customerId },
+          select: {
+            id: true,
+            kind: true,
+            status: true,
+            amount: true,
+            currency: true,
+            bookingId: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+        }),
+        this.prisma.review.aggregate({
+          where: { revieweeId: customerId, moderationStatus: 'visible' },
+          _avg: { rating: true },
+          _count: { _all: true },
+        }),
+      ]);
 
     return {
       customer: {
@@ -330,8 +350,10 @@ export class AdminCustomersService {
       },
       metrics: {
         totalBookings: bookingCounts.reduce((sum, row) => sum + row._count._all, 0),
-        completedBookings: bookingCounts.find((row) => row.status === 'completed')?._count._all ?? 0,
-        cancelledBookings: bookingCounts.find((row) => row.status === 'cancelled')?._count._all ?? 0,
+        completedBookings:
+          bookingCounts.find((row) => row.status === 'completed')?._count._all ?? 0,
+        cancelledBookings:
+          bookingCounts.find((row) => row.status === 'cancelled')?._count._all ?? 0,
         totalSpent: money(spend._sum.amount),
         averageRatingReceived: Number(Number(reviewsReceived._avg.rating ?? 0).toFixed(2)),
         reviewsReceived: reviewsReceived._count._all,
@@ -344,7 +366,10 @@ export class AdminCustomersService {
         amount: booking.totalChargedAmount === null ? null : money(booking.totalChargedAmount),
         currency: booking.paymentCurrency,
         service: booking.service,
-        tasker: { id: String(booking.tasker.id), name: fullName(booking.tasker.firstName, booking.tasker.lastName) },
+        tasker: {
+          id: String(booking.tasker.id),
+          name: fullName(booking.tasker.firstName, booking.tasker.lastName),
+        },
       })),
       recentPayments: recentPayments.map((payment) => ({
         id: payment.id,
@@ -422,7 +447,11 @@ export class AdminCustomersService {
     const [rows, totalItems, summary] = await Promise.all([
       this.prisma.paymentTransaction.findMany({
         where,
-        include: { booking: { select: { id: true, service: { select: { id: true, name: true, slug: true } } } } },
+        include: {
+          booking: {
+            select: { id: true, service: { select: { id: true, name: true, slug: true } } },
+          },
+        },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
@@ -436,7 +465,11 @@ export class AdminCustomersService {
       }),
     ]);
     return {
-      summary: summary.map((row) => ({ status: row.status, count: row._count._all, amount: money(row._sum.amount) })),
+      summary: summary.map((row) => ({
+        status: row.status,
+        count: row._count._all,
+        amount: money(row._sum.amount),
+      })),
       items: rows.map((payment) => ({
         id: payment.id,
         bookingId: payment.bookingId ? String(payment.bookingId) : null,
@@ -467,21 +500,31 @@ export class AdminCustomersService {
       }),
       this.prisma.paymentTransaction.groupBy({
         by: ['customerId'],
-        where: { kind: 'booking_charge', status: 'succeeded', ...(period ? { createdAt: period } : {}) },
+        where: {
+          kind: 'booking_charge',
+          status: 'succeeded',
+          ...(period ? { createdAt: period } : {}),
+        },
         _sum: { amount: true },
         _count: { _all: true },
         orderBy: { _sum: { amount: 'desc' } },
         take: 10,
       }),
       this.prisma.user.count({
-        where: { role: UserRole.Customer, deletedAt: null, ...(period ? { createdAt: period } : {}) },
+        where: {
+          role: UserRole.Customer,
+          deletedAt: null,
+          ...(period ? { createdAt: period } : {}),
+        },
       }),
     ]);
 
     let retentionRate = 0;
     if (range.from && range.toExclusive) {
       const [base, retained] = await Promise.all([
-        this.prisma.user.count({ where: { role: UserRole.Customer, deletedAt: null, createdAt: { lt: range.from } } }),
+        this.prisma.user.count({
+          where: { role: UserRole.Customer, deletedAt: null, createdAt: { lt: range.from } },
+        }),
         this.prisma.user.count({
           where: {
             role: UserRole.Customer,
@@ -502,7 +545,8 @@ export class AdminCustomersService {
         })
       : [];
     const byId = new Map(topCustomers.map((customer) => [customer.id, customer]));
-    const deactivated = statusRows.find((row) => row.accountStatus === AccountStatus.Deactivated)?._count._all ?? 0;
+    const deactivated =
+      statusRows.find((row) => row.accountStatus === AccountStatus.Deactivated)?._count._all ?? 0;
 
     return {
       range: {
@@ -517,7 +561,10 @@ export class AdminCustomersService {
         retentionRate,
         churnRate: percentage(deactivated, totalCustomers),
       },
-      statusBreakdown: statusRows.map((row) => ({ status: row.accountStatus, count: row._count._all })),
+      statusBreakdown: statusRows.map((row) => ({
+        status: row.accountStatus,
+        count: row._count._all,
+      })),
       topCustomersBySpend: topSpendRows.map((row) => {
         const customer = byId.get(row.customerId);
         return {
@@ -530,8 +577,10 @@ export class AdminCustomersService {
         };
       }),
       definitions: {
-        retentionRate: 'Existing customers who logged in during the selected period divided by customers who existed before the period.',
-        churnRate: 'Currently deactivated customer accounts divided by all non-deleted customer accounts.',
+        retentionRate:
+          'Existing customers who logged in during the selected period divided by customers who existed before the period.',
+        churnRate:
+          'Currently deactivated customer accounts divided by all non-deleted customer accounts.',
       },
     };
   }
@@ -553,8 +602,14 @@ export class AdminCustomersService {
     if (dto.action === 'reactivate' && customer.accountStatus === AccountStatus.Active) {
       throw new ConflictException('Customer is already active');
     }
-    if (dto.action === 'reactivate' && customer.accountStatus === AccountStatus.Deactivated && actor.role !== UserRole.SuperAdmin) {
-      throw new ForbiddenException('Only the super administrator may reactivate a deactivated/banned customer');
+    if (
+      dto.action === 'reactivate' &&
+      customer.accountStatus === AccountStatus.Deactivated &&
+      actor.role !== UserRole.SuperAdmin
+    ) {
+      throw new ForbiddenException(
+        'Only the super administrator may reactivate a deactivated/banned customer',
+      );
     }
 
     const nextStatus =
@@ -589,8 +644,15 @@ export class AdminCustomersService {
         {
           category: 'system',
           type: `account_${nextStatus}`,
-          title: dto.action === 'reactivate' ? 'Account reactivated' : dto.action === 'suspend' ? 'Account suspended' : 'Account deactivated',
-          body: dto.reason?.trim() || 'Your Latache account status has been updated by an administrator.',
+          title:
+            dto.action === 'reactivate'
+              ? 'Account reactivated'
+              : dto.action === 'suspend'
+                ? 'Account suspended'
+                : 'Account deactivated',
+          body:
+            dto.reason?.trim() ||
+            'Your Latache account status has been updated by an administrator.',
           entityType: 'account',
           entityId: String(customerId),
         },

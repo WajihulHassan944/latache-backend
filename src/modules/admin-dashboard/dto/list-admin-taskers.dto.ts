@@ -33,7 +33,10 @@ export class ListAdminTaskersDto extends AdminPaginationDto {
   @IsBoolean()
   isElite?: boolean;
 
-  @ApiPropertyOptional({ enum: ['newest', 'oldest', 'rating_desc', 'completed_desc'], default: 'newest' })
+  @ApiPropertyOptional({
+    enum: ['newest', 'oldest', 'rating_desc', 'completed_desc'],
+    default: 'newest',
+  })
   @IsOptional()
   @IsIn(['newest', 'oldest', 'rating_desc', 'completed_desc'])
   sort?: 'newest' | 'oldest' | 'rating_desc' | 'completed_desc' = 'newest';

@@ -2,6 +2,9 @@
 
 `npm run verify:static` validates:
 
+- Additive multilingual migration, locale-row models, canonical resource reuse, and absence of language-specific columns.
+- Unified profile preference, localized catalogue, template-backed notification, email, and platform-content surfaces.
+
 - Prisma, PostgreSQL and Nodemailer dependency policy.
 - Six mapped domain tables and required auth-expansion migration.
 - TypeScript-only runtime/source policy.

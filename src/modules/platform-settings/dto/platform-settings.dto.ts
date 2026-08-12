@@ -13,6 +13,8 @@ import {
   Max,
   Min,
   ValidateNested,
+  Matches,
+  ArrayMaxSize,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -99,27 +101,73 @@ export class GeneralSettingsDto {
   @IsOptional() @IsBoolean() pushNotificationsEnabled?: boolean;
   @IsOptional() @IsBoolean() liveChatEnabled?: boolean;
   @IsOptional() @IsBoolean() maintenanceMode?: boolean;
+  @ApiPropertyOptional({
+    type: 'array',
+    description:
+      'Localized public platform identity/content. Locale codes are checked against SUPPORTED_LOCALES.',
+    example: [{ locale: 'ar', platformName: 'Latache', description: 'منصة موثوقة للخدمات.' }],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => GeneralContentTranslationDto)
+  translations?: GeneralContentTranslationDto[];
+}
+
+export class GeneralContentTranslationDto {
+  @IsString()
+  @Matches(/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/)
+  locale!: string;
+
+  @IsOptional() @IsString() @Length(2, 120) platformName?: string;
+  @IsOptional() @IsString() @Length(0, 1000) description?: string;
 }
 
 export class CurrencySettingsDto {
   @IsOptional() @IsString() @Length(3, 3) primaryCurrency?: string;
   @IsOptional() @IsString() @Length(1, 40) displayFormat?: string;
-  @IsOptional() @IsIn(['manual', 'open_exchange_rates']) exchangeRateSource?: 'manual' | 'open_exchange_rates';
+  @IsOptional() @IsIn(['manual', 'open_exchange_rates']) exchangeRateSource?:
+    | 'manual'
+    | 'open_exchange_rates';
   @IsOptional() @IsBoolean() multiCurrencyEnabled?: boolean;
   @IsOptional() @IsBoolean() autoRateRefresh?: boolean;
-  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CurrencyItemDto) activeCurrencies?: CurrencyItemDto[];
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CurrencyItemDto)
+  activeCurrencies?: CurrencyItemDto[];
 }
 
 export class TaxSettingsDto {
   @IsOptional() @IsIn(['disabled', 'global']) mode?: 'disabled' | 'global';
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Max(100) defaultRatePercent?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100000) serviceSurchargeAmount?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(100)
+  defaultRatePercent?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100000)
+  serviceSurchargeAmount?: number;
   @IsOptional() @IsBoolean() inclusivePricing?: boolean;
   @IsOptional() @IsBoolean() receiptsEnabled?: boolean;
   @IsOptional() @IsBoolean() autoReporting?: boolean;
   @IsOptional() @IsBoolean() vatSupport?: boolean;
-  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => TaxJurisdictionDto) jurisdictionOverrides?: TaxJurisdictionDto[];
-  @IsOptional() @IsArray() @Type(() => Number) @IsInt({ each: true }) @Min(1, { each: true }) exemptServiceIds?: number[];
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TaxJurisdictionDto)
+  jurisdictionOverrides?: TaxJurisdictionDto[];
+  @IsOptional()
+  @IsArray()
+  @Type(() => Number)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  exemptServiceIds?: number[];
 }
 
 export class BookingRulesSettingsDto {
@@ -129,7 +177,12 @@ export class BookingRulesSettingsDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(1440) minDurationMinutes?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(2880) maxDurationMinutes?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(720) cancellationWindowHours?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100) lateCancellationFeePercent?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  lateCancellationFeePercent?: number;
   @IsOptional() @IsBoolean() instantBookingEnabled?: boolean;
   @IsOptional() @IsBoolean() requireTaskerConfirmation?: boolean;
   @IsOptional() @IsBoolean() repeatBookingEnabled?: boolean;
@@ -140,25 +193,141 @@ export class BookingRulesSettingsDto {
 
 export class ServiceRadiusSettingsDto {
   @IsOptional() @IsBoolean() enforcementEnabled?: boolean;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.1) @Max(500) defaultRadiusKm?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.1) @Max(500) minimumRadiusKm?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.1) @Max(500) maximumRadiusKm?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.1)
+  @Max(500)
+  defaultRadiusKm?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.1)
+  @Max(500)
+  minimumRadiusKm?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.1)
+  @Max(500)
+  maximumRadiusKm?: number;
   @IsOptional() @IsBoolean() dynamicRadiusAdjustment?: boolean;
   @IsOptional() @IsBoolean() distanceBasedPricing?: boolean;
-  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ServiceRegionDto) regions?: ServiceRegionDto[];
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ServiceRegionDto)
+  regions?: ServiceRegionDto[];
 }
 
 export class CommissionSettingsDto {
   @IsOptional() @IsIn(['customer_platform_fee']) chargeModel?: 'customer_platform_fee';
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Max(100) standardRatePercent?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Max(100) goldRatePercent?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Max(100) platinumRatePercent?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Max(100) diamondRatePercent?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Max(100) sameDaySurchargePercent?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Max(100) weekendSurchargePercent?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100000) minimumCommissionAmount?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(100)
+  standardRatePercent?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(100)
+  goldRatePercent?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(100)
+  platinumRatePercent?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(100)
+  diamondRatePercent?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100000)
+  standardMinTaskPrice?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100000)
+  goldMinTaskPrice?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100000)
+  platinumMinTaskPrice?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100000)
+  diamondMinTaskPrice?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(100)
+  sameDaySurchargePercent?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(100)
+  weekendSurchargePercent?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100000)
+  minimumCommissionAmount?: number;
   @IsOptional() @IsBoolean() categoryOverridesEnabled?: boolean;
-  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CommissionOverrideDto) categoryOverrides?: CommissionOverrideDto[];
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CommissionOverrideDto)
+  categoryOverrides?: CommissionOverrideDto[];
+}
+
+export class TaskerFinanceSettingsDto {
+  @ApiPropertyOptional({ example: 14, default: 14 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  earningClearanceDays?: number;
+
+  @ApiPropertyOptional({ example: 14, default: 14 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  cashDisputeClearanceDays?: number;
+
+  @ApiPropertyOptional({
+    example: 250,
+    description: 'Zero disables the debt ceiling until Finance configures a real policy.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1000000)
+  maximumOutstandingPlatformDebt?: number;
+
+  @ApiPropertyOptional({ example: true, default: false })
+  @IsOptional()
+  @IsBoolean()
+  blockCashBookingsAtDebtLimit?: boolean;
 }
 
 export class ReferralSettingsDto {
@@ -167,41 +336,85 @@ export class ReferralSettingsDto {
   @IsOptional() @IsBoolean() uniqueCodesEnabled?: boolean;
   @IsOptional() @IsBoolean() leaderboardEnabled?: boolean;
   @IsOptional() @IsBoolean() bonusStackingEnabled?: boolean;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) clientReferralBonus?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) referredClientDiscountPercent?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  clientReferralBonus?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  referredClientDiscountPercent?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) referralExpiryDays?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) maxClientReferrals?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) taskerReferralBonus?: number;
-  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) referredTaskerBonus?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  taskerReferralBonus?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  referredTaskerBonus?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) maxTaskerReferrals?: number;
 }
 
 export class UpdatePlatformSettingsDto {
   @ApiPropertyOptional({ type: GeneralSettingsDto })
-  @IsOptional() @ValidateNested() @Type(() => GeneralSettingsDto) general?: GeneralSettingsDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GeneralSettingsDto)
+  general?: GeneralSettingsDto;
 
   @ApiPropertyOptional({ type: CurrencySettingsDto })
-  @IsOptional() @ValidateNested() @Type(() => CurrencySettingsDto) currency?: CurrencySettingsDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CurrencySettingsDto)
+  currency?: CurrencySettingsDto;
 
   @ApiPropertyOptional({ type: TaxSettingsDto })
-  @IsOptional() @ValidateNested() @Type(() => TaxSettingsDto) tax?: TaxSettingsDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TaxSettingsDto)
+  tax?: TaxSettingsDto;
 
   @ApiPropertyOptional({ type: BookingRulesSettingsDto })
-  @IsOptional() @ValidateNested() @Type(() => BookingRulesSettingsDto) bookingRules?: BookingRulesSettingsDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BookingRulesSettingsDto)
+  bookingRules?: BookingRulesSettingsDto;
 
   @ApiPropertyOptional({ type: ServiceRadiusSettingsDto })
-  @IsOptional() @ValidateNested() @Type(() => ServiceRadiusSettingsDto) serviceRadius?: ServiceRadiusSettingsDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ServiceRadiusSettingsDto)
+  serviceRadius?: ServiceRadiusSettingsDto;
 
   @ApiPropertyOptional({ type: CommissionSettingsDto })
-  @IsOptional() @ValidateNested() @Type(() => CommissionSettingsDto) commission?: CommissionSettingsDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CommissionSettingsDto)
+  commission?: CommissionSettingsDto;
+
+  @ApiPropertyOptional({ type: TaskerFinanceSettingsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TaskerFinanceSettingsDto)
+  taskerFinance?: TaskerFinanceSettingsDto;
 
   @ApiPropertyOptional({ type: ReferralSettingsDto })
-  @IsOptional() @ValidateNested() @Type(() => ReferralSettingsDto) referral?: ReferralSettingsDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ReferralSettingsDto)
+  referral?: ReferralSettingsDto;
 }
 
 export class PlatformSettingsQueryDto {
   @ApiPropertyOptional({
-    example: 'general,currency,tax,bookingRules,serviceRadius,commission,referral,eliteProgram',
+    example:
+      'general,currency,tax,bookingRules,serviceRadius,commission,taskerFinance,referral,eliteProgram',
     description: 'Comma-separated sections. Omit to return all settings sections.',
   })
   @IsOptional()

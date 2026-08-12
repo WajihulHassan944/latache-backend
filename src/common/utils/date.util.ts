@@ -8,9 +8,7 @@ export const isValidDateOnly = (value: string): boolean => {
   const day = Number(dayText);
   const date = new Date(Date.UTC(year, month - 1, day));
   return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
   );
 };
 
@@ -19,11 +17,9 @@ export const dateOnlyToDate = (value: string): Date => {
   return new Date(`${value}T00:00:00.000Z`);
 };
 
-export const dateOnlyFromDate = (value: Date): string =>
-  value.toISOString().slice(0, 10);
+export const dateOnlyFromDate = (value: Date): string => value.toISOString().slice(0, 10);
 
-export const todayDateOnly = (now = new Date()): string =>
-  now.toISOString().slice(0, 10);
+export const todayDateOnly = (now = new Date()): string => now.toISOString().slice(0, 10);
 
 export const isFutureDate = (date: string, now = new Date()): boolean =>
   isValidDateOnly(date) && date > todayDateOnly(now);

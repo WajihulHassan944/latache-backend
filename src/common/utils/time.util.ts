@@ -27,7 +27,9 @@ export const parseTimeToMinutes = (value: string): number | null => {
 export const isValidTime = (value: string): boolean => parseTimeToMinutes(value) !== null;
 
 export const formatMinutesAs24Hour = (minutes: number): string => {
-  const hours = Math.floor(minutes / 60).toString().padStart(2, '0');
+  const hours = Math.floor(minutes / 60)
+    .toString()
+    .padStart(2, '0');
   const remainingMinutes = (minutes % 60).toString().padStart(2, '0');
   return `${hours}:${remainingMinutes}`;
 };
@@ -61,5 +63,7 @@ export const rangesOverlap = (left: TimeRange, right: TimeRange): boolean => {
   const rightStart = parseTimeToMinutes(right.startTime);
   const rightEnd = parseTimeToMinutes(right.endTime);
   if ([leftStart, leftEnd, rightStart, rightEnd].some((value) => value === null)) return false;
-  return (leftStart as number) < (rightEnd as number) && (rightStart as number) < (leftEnd as number);
+  return (
+    (leftStart as number) < (rightEnd as number) && (rightStart as number) < (leftEnd as number)
+  );
 };

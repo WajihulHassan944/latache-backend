@@ -39,4 +39,25 @@ describe('validateEnvironment', () => {
       }),
     ).toThrow(/at least 32 characters/);
   });
+
+  it('requires the default locale to be configured and supported', () => {
+    expect(() =>
+      validateEnvironment({
+        ...valid(),
+        SUPPORTED_LOCALES: 'en,ar,ary',
+        DEFAULT_LOCALE: 'fr',
+      }),
+    ).toThrow(/DEFAULT_LOCALE/);
+  });
+
+  it('requires a valid Redis URL when queues are enabled', () => {
+    expect(() =>
+      validateEnvironment({
+        ...valid(),
+        REDIS_ENABLED: 'true',
+        JOBS_ENABLED: 'true',
+        REDIS_URL: 'https://not-redis.example',
+      }),
+    ).toThrow(/REDIS_URL/);
+  });
 });

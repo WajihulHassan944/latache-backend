@@ -11,9 +11,12 @@ import { MAIL_TRANSPORTER } from './mail.constants';
 import type { MailTransporter } from './mail.types';
 import {
   adminWelcomeTemplate,
+  emailPlainText,
+  emailSubject,
   passwordResetOtpTemplate,
   verificationEmailTemplate,
 } from './email-templates';
+import { latacheEmailAttachments, type LatacheEmailAttachment } from './email-layout';
 
 @Injectable()
 export class MailService implements OnModuleInit, OnModuleDestroy {
@@ -45,13 +48,18 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     name: string;
     otp: number;
     device?: string;
+    locale?: string;
   }): Promise<void> {
     const expiryMinutes = this.config.get<number>('auth.otpExpiresInMinutes', 5);
     await this.send({
       to: params.to,
-      subject: 'Verify your Latache email',
+      subject: emailSubject('verification', params.locale),
       html: verificationEmailTemplate({ ...params, expiryMinutes }),
-      text: `Your Latache verification code is ${params.otp}. It expires in ${expiryMinutes} minutes.`,
+      text: emailPlainText('verification', {
+        locale: params.locale,
+        otp: params.otp,
+        expiryMinutes,
+      }),
     });
   }
 
@@ -59,16 +67,18 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     to: string;
     name: string;
     otp: number;
+    locale?: string;
   }): Promise<void> {
-    const expiryMinutes = this.config.get<number>(
-      'auth.passwordResetOtpExpiresInMinutes',
-      15,
-    );
+    const expiryMinutes = this.config.get<number>('auth.passwordResetOtpExpiresInMinutes', 15);
     await this.send({
       to: params.to,
-      subject: 'Reset your Latache password',
+      subject: emailSubject('password-reset', params.locale),
       html: passwordResetOtpTemplate({ ...params, expiryMinutes }),
-      text: `Your Latache password reset code is ${params.otp}. It expires in ${expiryMinutes} minutes.`,
+      text: emailPlainText('password-reset', {
+        locale: params.locale,
+        otp: params.otp,
+        expiryMinutes,
+      }),
     });
   }
 
@@ -77,17 +87,23 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     name: string;
     temporaryPassword: string;
     adminRole: string;
+    locale?: string;
   }): Promise<void> {
     await this.send({
       to: params.to,
-      subject: 'Your Latache administrator account',
+      subject: emailSubject('admin-welcome', params.locale),
       html: adminWelcomeTemplate({
         name: params.name,
         email: params.to,
         temporaryPassword: params.temporaryPassword,
         adminRole: params.adminRole,
+        locale: params.locale,
       }),
-      text: `Your Latache administrator account is ready. Email: ${params.to}. Temporary password: ${params.temporaryPassword}. Change it after login.`,
+      text: emailPlainText('admin-welcome', {
+        locale: params.locale,
+        email: params.to,
+        temporaryPassword: params.temporaryPassword,
+      }),
     });
   }
 
@@ -96,10 +112,12 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     subject: string;
     html: string;
     text: string;
+    attachments?: LatacheEmailAttachment[];
   }): Promise<void> {
     try {
       await this.transporter.sendMail({
         from: this.config.getOrThrow<string>('mail.from'),
+        attachments: params.attachments ?? latacheEmailAttachments(),
         ...params,
       });
     } catch (error) {

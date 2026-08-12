@@ -1,13 +1,21 @@
 import { Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ListNotificationsQueryDto, NotificationIdParamDto } from './notifications.dto';
 import { NotificationsService } from './notifications.service';
 import type { NotificationListView, NotificationView } from './notifications.types';
+import { RequestLocale } from '../localization/request-locale.decorator';
 
 @ApiTags('08 Notifications')
+@ApiHeader({
+  name: 'Accept-Language',
+  required: false,
+  example: 'ary-MA, ar;q=0.8, en;q=0.5',
+  description:
+    'Supports en, ar, and ary (Moroccan Darija). Saved preferredLanguage takes priority; English is the fallback.',
+})
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard)
 @Controller('notifications')
@@ -18,13 +26,14 @@ export class NotificationsController {
   @ApiOperation({
     summary: 'List notifications for the authenticated identity',
     description:
-      'One endpoint is shared by customers, taskers, and administrators. Results are always scoped to the authenticated user.',
+      'One endpoint is shared by customers, taskers, and administrators. Stable template keys/parameters are persisted and title/body are rendered in English, Arabic, or Moroccan Darija using the saved preferred language (before Accept-Language), with English fallback. Existing page pagination remains supported; pass nextCursor as cursor for stable high-growth chronological pagination.',
   })
   list(
     @CurrentUser() user: User,
     @Query() query: ListNotificationsQueryDto,
+    @RequestLocale() locale: string,
   ): Promise<NotificationListView> {
-    return this.notifications.list(user.id, query);
+    return this.notifications.list(user.id, query, locale);
   }
 
   @Get('unread-count')
@@ -38,8 +47,9 @@ export class NotificationsController {
   markRead(
     @CurrentUser() user: User,
     @Param() params: NotificationIdParamDto,
+    @RequestLocale() locale: string,
   ): Promise<NotificationView> {
-    return this.notifications.markRead(user.id, params.id);
+    return this.notifications.markRead(user.id, params.id, locale);
   }
 
   @Post('read-all')

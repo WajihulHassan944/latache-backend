@@ -10,10 +10,8 @@ import { PrismaService } from '../../../database/prisma.service';
 import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PAYMENT_STATUS } from '../../payments/payments.constants';
-import type {
-  AdminBookingActionDto,
-  AdminBookingsQueryDto,
-} from '../dto';
+import { RealtimeOutboxService } from '../../realtime/realtime-outbox.service';
+import type { AdminBookingActionDto, AdminBookingsQueryDto } from '../dto';
 import { fullName, money, pagination } from '../admin-dashboard.utils';
 
 const ACTIVE_BOOKING_STATUSES = [
@@ -47,9 +45,7 @@ const bookingDisplayId = (id: number): string => `B-${String(id).padStart(4, '0'
 
 const escapeCsv = (value: unknown): string => {
   const stringValue = value === null || value === undefined ? '' : String(value);
-  return /[",\n\r]/.test(stringValue)
-    ? `"${stringValue.replaceAll('"', '""')}"`
-    : stringValue;
+  return /[",\n\r]/.test(stringValue) ? `"${stringValue.replaceAll('"', '""')}"` : stringValue;
 };
 
 @Injectable()
@@ -58,6 +54,7 @@ export class AdminBookingsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly audit: AdminAuditService,
+    private readonly realtime: RealtimeOutboxService,
   ) {}
 
   async list(query: AdminBookingsQueryDto) {
@@ -122,9 +119,14 @@ export class AdminBookingsService {
     };
   }
 
-  async csv(actor: User, query: AdminBookingsQueryDto): Promise<{ body: string; truncated: boolean }> {
+  async csv(
+    actor: User,
+    query: AdminBookingsQueryDto,
+  ): Promise<{ body: string; truncated: boolean }> {
     if (actor.role !== UserRole.SuperAdmin && !actor.permissions.includes('reports.read')) {
-      throw new ForbiddenException('CSV booking export requires reports.read in addition to bookings.read');
+      throw new ForbiddenException(
+        'CSV booking export requires reports.read in addition to bookings.read',
+      );
     }
     const baseWhere = this.baseWhere(query);
     const where = this.viewWhere(baseWhere, query.view ?? 'all');
@@ -149,19 +151,23 @@ export class AdminBookingsService {
       'currency',
       'active_disputes',
     ];
-    const lines = exported.map((row) => [
-      row.bookingId,
-      row.service.name ?? '',
-      row.date,
-      row.startTime,
-      row.customer.name,
-      row.tasker.name,
-      row.status,
-      row.payment.status,
-      row.amount.amount,
-      row.amount.currency,
-      row.activeDisputes,
-    ].map(escapeCsv).join(','));
+    const lines = exported.map((row) =>
+      [
+        row.bookingId,
+        row.service.name ?? '',
+        row.date,
+        row.startTime,
+        row.customer.name,
+        row.tasker.name,
+        row.status,
+        row.payment.status,
+        row.amount.amount,
+        row.amount.currency,
+        row.activeDisputes,
+      ]
+        .map(escapeCsv)
+        .join(','),
+    );
     return { body: [header.join(','), ...lines].join('\n'), truncated };
   }
 
@@ -321,7 +327,8 @@ export class AdminBookingsService {
         serviceSurchargeAmount: money(booking.serviceSurchargeAmount),
         tipAmount: money(booking.tipAmount),
         donationAmount: money(booking.donationAmount),
-        totalChargedAmount: booking.totalChargedAmount === null ? null : money(booking.totalChargedAmount),
+        totalChargedAmount:
+          booking.totalChargedAmount === null ? null : money(booking.totalChargedAmount),
         paidAt: booking.paidAt?.toISOString() ?? null,
         stripePaymentIntentId: booking.stripePaymentIntentId,
         failureReason: booking.paymentFailureReason,
@@ -344,7 +351,8 @@ export class AdminBookingsService {
         status: complaint.status,
         priority: complaint.priority,
         resolutionType: complaint.resolutionType,
-        resolutionAmount: complaint.resolutionAmount === null ? null : money(complaint.resolutionAmount),
+        resolutionAmount:
+          complaint.resolutionAmount === null ? null : money(complaint.resolutionAmount),
         resolutionCurrency: complaint.resolutionCurrency,
         createdAt: complaint.createdAt.toISOString(),
         resolvedAt: complaint.resolvedAt?.toISOString() ?? null,
@@ -364,7 +372,11 @@ export class AdminBookingsService {
           : null,
         createdAt: event.createdAt.toISOString(),
       })),
-      availableAdminActions: this.availableActions(booking.status, booking.paymentStatus, booking.complaints),
+      availableAdminActions: this.availableActions(
+        booking.status,
+        booking.paymentStatus,
+        booking.complaints,
+      ),
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt.toISOString(),
     };
@@ -373,25 +385,39 @@ export class AdminBookingsService {
   async action(actor: User, id: number, dto: AdminBookingActionDto) {
     if (dto.action !== 'cancel') throw new ConflictException('Unsupported booking action');
     const reason = dto.reason.trim();
-    if (reason.length < 5) throw new ConflictException('A meaningful cancellation reason is required');
+    if (reason.length < 5)
+      throw new ConflictException('A meaningful cancellation reason is required');
 
     const updated = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${id} FOR UPDATE`;
       const booking = await transaction.booking.findUnique({
         where: { id },
         include: {
-          complaints: { where: { status: { in: [...ACTIVE_DISPUTE_STATUSES] } }, select: { id: true } },
+          complaints: {
+            where: { status: { in: [...ACTIVE_DISPUTE_STATUSES] } },
+            select: { id: true },
+          },
         },
       });
       if (!booking) throw new NotFoundException('Booking not found');
       if (booking.complaints.length > 0) {
-        throw new ConflictException('Resolve active booking disputes before administrative cancellation');
+        throw new ConflictException(
+          'Resolve active booking disputes before administrative cancellation',
+        );
       }
       if (!['pending', 'confirmed', 'en_route', 'arrived'].includes(booking.status)) {
-        throw new ConflictException('Only pending, accepted, en-route, or arrived bookings can be administratively cancelled');
+        throw new ConflictException(
+          'Only pending, accepted, en-route, or arrived bookings can be administratively cancelled',
+        );
       }
-      if ([PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded, PAYMENT_STATUS.Refunded].includes(booking.paymentStatus as never)) {
-        throw new ConflictException('A settled booking must be handled through dispute/refund resolution, not direct cancellation');
+      if (
+        [PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded, PAYMENT_STATUS.Refunded].includes(
+          booking.paymentStatus as never,
+        )
+      ) {
+        throw new ConflictException(
+          'A settled booking must be handled through dispute/refund resolution, not direct cancellation',
+        );
       }
 
       const row = await transaction.booking.update({
@@ -442,6 +468,18 @@ export class AdminBookingsService {
         },
         transaction,
       );
+      await this.realtime.enqueueBooking(
+        id,
+        'booking:updated',
+        {
+          bookingId: id,
+          status: 'cancelled',
+          source: 'admin',
+          cancellationReason: reason,
+          cancelledAt: row.cancelledAt?.toISOString() ?? null,
+        },
+        transaction,
+      );
       return row;
     });
 
@@ -487,7 +525,10 @@ export class AdminBookingsService {
     };
   }
 
-  private viewWhere(baseWhere: Prisma.BookingWhereInput, view: AdminBookingsQueryDto['view']): Prisma.BookingWhereInput {
+  private viewWhere(
+    baseWhere: Prisma.BookingWhereInput,
+    view: AdminBookingsQueryDto['view'],
+  ): Prisma.BookingWhereInput {
     if (!view || view === 'all') return baseWhere;
     if (view === 'pending') return { ...baseWhere, status: 'pending' };
     if (view === 'accepted') return { ...baseWhere, status: 'confirmed' };
@@ -540,7 +581,11 @@ export class AdminBookingsService {
     } satisfies Prisma.BookingSelect;
   }
 
-  private listItem(booking: any) {
+  private listItem(
+    booking: Prisma.BookingGetPayload<{
+      select: ReturnType<AdminBookingsService['listSelect']>;
+    }>,
+  ) {
     const estimatedServiceAmount =
       booking.serviceAmount === null
         ? money(Number(booking.hourlyRate) * (booking.estimatedDurationMinutes / 60))
@@ -573,12 +618,15 @@ export class AdminBookingsService {
       displayStatus: booking.status === 'confirmed' ? 'accepted' : booking.status,
       payment: { status: booking.paymentStatus },
       amount: {
-        amount: booking.totalChargedAmount === null ? estimatedTotal : money(booking.totalChargedAmount),
+        amount:
+          booking.totalChargedAmount === null ? estimatedTotal : money(booking.totalChargedAmount),
         currency: booking.paymentCurrency,
         settled: booking.totalChargedAmount !== null,
       },
       activeDisputes: booking.complaints.length,
-      highestDisputePriority: booking.complaints.some((item: { priority: string }) => item.priority === 'urgent')
+      highestDisputePriority: booking.complaints.some(
+        (item: { priority: string }) => item.priority === 'urgent',
+      )
         ? 'urgent'
         : booking.complaints.some((item: { priority: string }) => item.priority === 'high')
           ? 'high'
@@ -589,12 +637,20 @@ export class AdminBookingsService {
     };
   }
 
-  private availableActions(status: string, paymentStatus: string, complaints: Array<{ status: string }>): string[] {
-    const hasActiveDispute = complaints.some((complaint) => ACTIVE_DISPUTE_STATUSES.includes(complaint.status as never));
+  private availableActions(
+    status: string,
+    paymentStatus: string,
+    complaints: Array<{ status: string }>,
+  ): string[] {
+    const hasActiveDispute = complaints.some((complaint) =>
+      ACTIVE_DISPUTE_STATUSES.includes(complaint.status as never),
+    );
     if (
       ['pending', 'confirmed', 'en_route', 'arrived'].includes(status) &&
       !hasActiveDispute &&
-      ![PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded, PAYMENT_STATUS.Refunded].includes(paymentStatus as never)
+      ![PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded, PAYMENT_STATUS.Refunded].includes(
+        paymentStatus as never,
+      )
     ) {
       return ['cancel'];
     }

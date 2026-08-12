@@ -114,8 +114,16 @@ export class RbacController {
               module: 'finance',
               label: 'Finance',
               permissions: [
-                { key: 'finance.read', label: 'View finance', description: 'View financial summaries.' },
-                { key: 'finance.manage', label: 'Manage finance', description: 'Perform permitted finance actions.' },
+                {
+                  key: 'finance.read',
+                  label: 'View finance',
+                  description: 'View financial summaries.',
+                },
+                {
+                  key: 'finance.manage',
+                  label: 'Manage finance',
+                  description: 'Perform permitted finance actions.',
+                },
               ],
             },
           ],
@@ -149,7 +157,9 @@ export class RbacController {
   @Permissions('roles.read')
   @ApiOperation({ summary: 'Get an administrator role' })
   @ApiParam({ name: 'id', example: 'role_finance_admin' })
-  @ApiOkResponse({ description: 'Role details including permissions and assigned administrator count.' })
+  @ApiOkResponse({
+    description: 'Role details including permissions and assigned administrator count.',
+  })
   @ApiNotFoundResponse({ description: 'Role does not exist or was deleted.' })
   roleDetails(@Param('id') id: string): Promise<SuccessEnvelope<RbacRoleView>> {
     return this.rbac.roleDetails(id);
@@ -182,7 +192,9 @@ export class RbacController {
   })
   @ApiBadRequestResponse({ description: 'Unknown permission key or invalid role code.' })
   @ApiConflictResponse({ description: 'Role code already exists.' })
-  @ApiForbiddenResponse({ description: 'Only the canonical super administrator may manage RBAC roles.' })
+  @ApiForbiddenResponse({
+    description: 'Only the canonical super administrator may manage RBAC roles.',
+  })
   createRole(@Body() dto: CreateRbacRoleDto): Promise<SuccessEnvelope<RbacRoleView>> {
     return this.rbac.createRole(dto);
   }
@@ -196,7 +208,9 @@ export class RbacController {
       'The role code is immutable. The canonical super_admin role cannot be modified, system roles cannot be deactivated, and assigned custom roles cannot be deactivated.',
   })
   @ApiOkResponse({ description: 'Updated role.' })
-  @ApiBadRequestResponse({ description: 'No fields provided or the role still has assigned administrators.' })
+  @ApiBadRequestResponse({
+    description: 'No fields provided or the role still has assigned administrators.',
+  })
   @ApiForbiddenResponse({ description: 'Protected role mutation attempted.' })
   @ApiNotFoundResponse({ description: 'Role does not exist.' })
   updateRole(
@@ -225,7 +239,8 @@ export class RbacController {
           synchronizedAdminCount: 3,
           constrainedOverrideAdminCount: 1,
         },
-        message: 'Role permissions updated and assigned administrator access synchronized successfully.',
+        message:
+          'Role permissions updated and assigned administrator access synchronized successfully.',
       },
     },
   })
@@ -274,9 +289,7 @@ export class RbacController {
   @ApiParam({ name: 'id', type: Number, example: 20 })
   @ApiOkResponse({ description: 'Administrator access details.' })
   @ApiNotFoundResponse({ description: 'Administrator not found.' })
-  adminDetails(
-    @Param('id', ParseIntPipe) id: number,
-  ): Promise<SuccessEnvelope<RbacAdminView>> {
+  adminDetails(@Param('id', ParseIntPipe) id: number): Promise<SuccessEnvelope<RbacAdminView>> {
     return this.rbac.adminDetails(id);
   }
 
@@ -324,8 +337,13 @@ export class RbacController {
       },
     },
   })
-  @ApiBadRequestResponse({ description: 'Unknown permission or override is outside the selected role.' })
-  @ApiForbiddenResponse({ description: 'Missing admins.update, self-modification, super-admin modification, or privilege escalation attempted.' })
+  @ApiBadRequestResponse({
+    description: 'Unknown permission or override is outside the selected role.',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'Missing admins.update, self-modification, super-admin modification, or privilege escalation attempted.',
+  })
   @ApiNotFoundResponse({ description: 'Administrator or active role not found.' })
   assignAdminAccess(
     @CurrentUser() actor: User,

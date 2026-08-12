@@ -19,8 +19,12 @@ describe('administrator dashboard static contracts', () => {
     expect(rbac).toContain("@Patch('admins/:id/status')");
     expect(rbac).toContain("@Delete('admins/:id')");
 
-    const customerController = read('src/modules/admin-dashboard/controllers/admin-customers.controller.ts');
-    const taskerController = read('src/modules/admin-dashboard/controllers/admin-taskers.controller.ts');
+    const customerController = read(
+      'src/modules/admin-dashboard/controllers/admin-customers.controller.ts',
+    );
+    const taskerController = read(
+      'src/modules/admin-dashboard/controllers/admin-taskers.controller.ts',
+    );
     expect(customerController).not.toContain("@Controller('admin/admins')");
     expect(taskerController).not.toContain("@Controller('admin/admins')");
   });
@@ -33,7 +37,9 @@ describe('administrator dashboard static contracts', () => {
   });
 
   it('adds only the administrative audit table in the v3.7 foundation migration', () => {
-    const migration = read('prisma/migrations/20260808090000_add_admin_dashboard_foundation/migration.sql');
+    const migration = read(
+      'prisma/migrations/20260808090000_add_admin_dashboard_foundation/migration.sql',
+    );
     expect(migration).toContain('CREATE TABLE "AdminAuditLogs"');
     expect(migration).not.toMatch(/INSERT\s+INTO/i);
     expect(migration).not.toContain('ALTER TABLE "Bookings"');

@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import configuration from './config/configuration';
@@ -25,6 +25,16 @@ import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.
 import { EliteProgramModule } from './modules/elite-program/elite-program.module';
 import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { AdminFinanceModule } from './modules/admin-finance/admin-finance.module';
+import { SupportModule } from './modules/support/support.module';
+import { AdminServicesModule } from './modules/admin-services/admin-services.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
+import { TaskerFinanceModule } from './modules/tasker-finance/tasker-finance.module';
+import { LocalizationModule } from './modules/localization/localization.module';
+import { LocaleInterceptor } from './modules/localization/locale.interceptor';
+import { RedisModule } from './infrastructure/redis/redis.module';
+import { ObservabilityModule } from './infrastructure/observability/observability.module';
+import { RequestLoggingInterceptor } from './infrastructure/observability/request-logging.interceptor';
+import { PerformanceJobsModule } from './infrastructure/jobs/performance-jobs.module';
 
 @Module({
   imports: [
@@ -42,7 +52,10 @@ import { AdminFinanceModule } from './modules/admin-finance/admin-finance.module
         limit: 120,
       },
     ]),
+    ObservabilityModule,
     DatabaseModule,
+    RedisModule,
+    LocalizationModule,
     UsersModule,
     AuthModule,
     ServicesModule,
@@ -56,16 +69,23 @@ import { AdminFinanceModule } from './modules/admin-finance/admin-finance.module
     EliteProgramModule,
     PlatformSettingsModule,
     AdminFinanceModule,
+    AdminServicesModule,
+    SupportModule,
+    RealtimeModule,
+    TaskerFinanceModule,
     NotificationsModule,
     ConversationsModule,
     ReviewsModule,
     PaymentsModule,
     FavoritesModule,
     HealthModule,
+    PerformanceJobsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
+    { provide: APP_INTERCEPTOR, useClass: LocaleInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: RequestLoggingInterceptor },
   ],
 })
 export class AppModule {}

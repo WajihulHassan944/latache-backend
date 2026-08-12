@@ -2,14 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 describe('RBAC route security', () => {
-  const controller = readFileSync(
-    join(__dirname, '../controllers/rbac.controller.ts'),
-    'utf8',
-  );
-  const repository = readFileSync(
-    join(__dirname, '../repositories/rbac.repository.ts'),
-    'utf8',
-  );
+  const controller = readFileSync(join(__dirname, '../controllers/rbac.controller.ts'), 'utf8');
+  const repository = readFileSync(join(__dirname, '../repositories/rbac.repository.ts'), 'utf8');
 
   it('protects read APIs with permission checks and writes with super-admin role checks', () => {
     expect(controller).toContain("@Permissions('roles.read')");

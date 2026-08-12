@@ -1,6 +1,6 @@
 # Admin Payments, Finance, and Platform Settings
 
-Version 3.10 adds permission-aware finance operations and a single persistent platform-policy surface without duplicating Stripe, dispute, payout, Elite, or RBAC ownership.
+Version 3.14 extends the permission-aware finance operations with Tasker earning clearance and cash receivables while retaining a single persistent platform-policy surface without duplicating Stripe, dispute, payout, Elite, or RBAC ownership.
 
 ## Finance dashboard
 
@@ -8,11 +8,13 @@ Version 3.10 adds permission-aware finance operations and a single persistent pl
 
 Supported `view` values:
 
-- `overview` — collected/refunded cash, wallet liabilities, payout state, recent transactions, and active finance policy.
+- `overview` — collected/refunded payment volume, wallet liabilities, pending earning clearance, outstanding cash receivables, payout state, recent transactions, and active finance policy.
 - `transactions` — customer payment transactions plus Tasker payout requests in one chronological feed.
 - `refunds` — refund-bearing dispute resolutions and real provider state. Refund execution remains owned by `POST /api/admin/disputes/:id/actions`.
 - `payouts` — Tasker withdrawal queue and payout-method metadata.
 - `revenue` — real succeeded booking charges/refunds with daily and service breakdowns.
+- `earnings` — immutable online Tasker earning snapshots, maturity, hold, reversal, debt-offset, and release state.
+- `cash_receivables` — cash physically held by Taskers and the related platform payable state.
 
 `format=csv` exports transactions/refunds/payouts/revenue and additionally requires `reports.read`. The response includes `X-Export-Truncated` when the safe export cap is reached.
 
@@ -28,6 +30,10 @@ Actions:
 - `mark_failed`: returns reserved funds and records the failure reason.
 
 The current payout backend remains manual-provider integration. The API deliberately does not call an imaginary bank/PayPal/Orange Money payout provider.
+
+## Earning clearance controls
+
+`POST /api/admin/finance/earnings/:id/actions` supports `block`, `unblock`, and `extend_clearance` for a pending earning. The action requires `finance.manage`, writes the existing administrator audit log, and updates the same `TaskerEarning` read by Tasker wallet and the release worker. Active disputes prevent unblocking.
 
 ## Refunds
 
@@ -49,6 +55,7 @@ The PUT operation atomically merges all supplied settings sections and audit-log
 - `bookingRules`
 - `serviceRadius`
 - `commission`
+- `taskerFinance`
 - `referral`
 
 `eliteProgram` is available in the GET aggregation but is intentionally read-only there. Elite requirements and benefits remain owned by `/api/admin/elite-taskers/program` to avoid duplicate policy storage.
@@ -64,6 +71,7 @@ The following settings are wired into existing flows:
 - Global tax mode and a fixed service surcharge affect new final charges and are persisted on the Booking.
 - Booking-policy enforcement can enforce advance notice, maximum booking horizon, and duration limits.
 - Service-radius policy supplies the default/max radius used by public Tasker discovery.
+- Tasker Finance policy controls future online earning clearance, cash dispute-clearance timestamps, and the optional cash-debt restriction threshold.
 
 Existing settled bookings are never retroactively recalculated. Quotes are estimates: commission/tax policy is evaluated again when the completed task is finalized, and the rate/tax mode actually used is persisted on the Booking for audit.
 
@@ -86,13 +94,12 @@ Jurisdiction tax overrides can be stored for policy/reporting, but are not auto-
 ## Permissions
 
 - `finance.read` — finance read APIs
-- `finance.manage` — payout decisions
+- `finance.manage` — payout decisions and pending-earning hold actions
 - `reports.read` — CSV exports
 - `settings.read` — platform settings reads
 - `settings.manage` — platform settings writes
 
 Super Admin bypasses permission checks as before.
-
 
 ## Explicitly unavailable until integrated
 

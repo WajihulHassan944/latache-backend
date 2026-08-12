@@ -1,48 +1,86 @@
 import { Type } from 'class-transformer';
-import {
-  IsDateString,
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  Length,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AdminFinanceQueryDto {
   @ApiPropertyOptional({
-    enum: ['overview', 'transactions', 'refunds', 'payouts', 'revenue'],
+    enum: [
+      'overview',
+      'transactions',
+      'refunds',
+      'payouts',
+      'revenue',
+      'earnings',
+      'cash_receivables',
+    ],
     default: 'overview',
   })
   @IsOptional()
-  @IsIn(['overview', 'transactions', 'refunds', 'payouts', 'revenue'])
-  view?: 'overview' | 'transactions' | 'refunds' | 'payouts' | 'revenue';
+  @IsIn([
+    'overview',
+    'transactions',
+    'refunds',
+    'payouts',
+    'revenue',
+    'earnings',
+    'cash_receivables',
+  ])
+  view?:
+    | 'overview'
+    | 'transactions'
+    | 'refunds'
+    | 'payouts'
+    | 'revenue'
+    | 'earnings'
+    | 'cash_receivables';
 
   @ApiPropertyOptional({ example: 'pending_review' })
-  @IsOptional() @IsString() @Length(1, 64) status?: string;
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  status?: string;
 
   @ApiPropertyOptional({ example: 'booking_charge' })
-  @IsOptional() @IsString() @Length(1, 64) type?: string;
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  type?: string;
 
   @ApiPropertyOptional({ example: 'mercia' })
-  @IsOptional() @IsString() @Length(1, 120) search?: string;
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  search?: string;
 
   @ApiPropertyOptional({ example: '2026-08-01' })
-  @IsOptional() @IsDateString() from?: string;
+  @IsOptional()
+  @IsDateString()
+  from?: string;
 
   @ApiPropertyOptional({ example: '2026-08-31' })
-  @IsOptional() @IsDateString() to?: string;
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 
   @ApiPropertyOptional({ default: 1 })
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
 
   @ApiPropertyOptional({ default: 30, maximum: 100 })
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 
   @ApiPropertyOptional({ enum: ['json', 'csv'], default: 'json' })
-  @IsOptional() @IsIn(['json', 'csv']) format?: 'json' | 'csv';
+  @IsOptional()
+  @IsIn(['json', 'csv'])
+  format?: 'json' | 'csv';
 }
 
 export class AdminPayoutActionDto {
@@ -54,8 +92,14 @@ export class AdminPayoutActionDto {
     example: 'bank-transfer-482901',
     description: 'Required for mark_paid. Must be the actual external transfer reference.',
   })
-  @IsOptional() @IsString() @Length(3, 255) providerReference?: string;
+  @IsOptional()
+  @IsString()
+  @Length(3, 255)
+  providerReference?: string;
 
   @ApiPropertyOptional({ example: 'Transfer verified in bank portal.' })
-  @IsOptional() @IsString() @Length(3, 1000) note?: string;
+  @IsOptional()
+  @IsString()
+  @Length(3, 1000)
+  note?: string;
 }

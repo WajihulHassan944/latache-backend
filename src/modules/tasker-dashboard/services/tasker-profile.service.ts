@@ -14,10 +14,7 @@ import type {
   TaskerPersonalProfileView,
   TaskerSkillView,
 } from '../tasker-dashboard.contracts';
-import {
-  TASKER_BOOKING_STATUS,
-  WITHDRAWAL_STATUS,
-} from '../tasker-dashboard.constants';
+import { TASKER_BOOKING_STATUS, WITHDRAWAL_STATUS } from '../tasker-dashboard.constants';
 import type {
   ActivateTaskerSkillDto,
   UpdateTaskerBusinessProfileDto,
@@ -55,14 +52,10 @@ export class TaskerProfileService {
       data: {
         ...(dto.firstName !== undefined ? { firstName: dto.firstName } : {}),
         ...(dto.lastName !== undefined ? { lastName: dto.lastName } : {}),
-        ...(dto.phoneCountryCode !== undefined
-          ? { phoneCountryCode: dto.phoneCountryCode }
-          : {}),
+        ...(dto.phoneCountryCode !== undefined ? { phoneCountryCode: dto.phoneCountryCode } : {}),
         ...(dto.phoneNumber !== undefined ? { phoneNumber: dto.phoneNumber } : {}),
         ...(dto.bio !== undefined ? { bio: dto.bio } : {}),
-        ...(dto.profilePicture !== undefined
-          ? { profilePicture: dto.profilePicture }
-          : {}),
+        ...(dto.profilePicture !== undefined ? { profilePicture: dto.profilePicture } : {}),
       },
     });
     return this.personalView(updated);
@@ -91,27 +84,15 @@ export class TaskerProfileService {
         ...(dto.yearsOfExperience !== undefined
           ? { yearsOfExperience: dto.yearsOfExperience }
           : {}),
-        ...(dto.serviceAreaArea !== undefined
-          ? { serviceAreaArea: dto.serviceAreaArea }
-          : {}),
-        ...(dto.serviceAreaCity !== undefined
-          ? { serviceAreaCity: dto.serviceAreaCity }
-          : {}),
-        ...(dto.serviceAreaLabel !== undefined
-          ? { serviceAreaLabel: dto.serviceAreaLabel }
-          : {}),
-        ...(dto.serviceAreaLat !== undefined
-          ? { serviceAreaLat: dto.serviceAreaLat }
-          : {}),
-        ...(dto.serviceAreaLng !== undefined
-          ? { serviceAreaLng: dto.serviceAreaLng }
-          : {}),
+        ...(dto.serviceAreaArea !== undefined ? { serviceAreaArea: dto.serviceAreaArea } : {}),
+        ...(dto.serviceAreaCity !== undefined ? { serviceAreaCity: dto.serviceAreaCity } : {}),
+        ...(dto.serviceAreaLabel !== undefined ? { serviceAreaLabel: dto.serviceAreaLabel } : {}),
+        ...(dto.serviceAreaLat !== undefined ? { serviceAreaLat: dto.serviceAreaLat } : {}),
+        ...(dto.serviceAreaLng !== undefined ? { serviceAreaLng: dto.serviceAreaLng } : {}),
         ...(dto.serviceAreaRadiusKm !== undefined
           ? { serviceAreaRadiusKm: dto.serviceAreaRadiusKm }
           : {}),
-        ...(dto.isProfilePublic !== undefined
-          ? { isProfilePublic: dto.isProfilePublic }
-          : {}),
+        ...(dto.isProfilePublic !== undefined ? { isProfilePublic: dto.isProfilePublic } : {}),
       },
     });
     return this.businessView(updated, await this.listSkills(taskerId));
@@ -120,7 +101,10 @@ export class TaskerProfileService {
   async listSkills(taskerId: number): Promise<TaskerSkillView[]> {
     await this.requireTasker(taskerId);
     const [catalogue, active] = await Promise.all([
-      this.prisma.service.findMany({ orderBy: [{ name: 'asc' }, { id: 'asc' }] }),
+      this.prisma.service.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+      }),
       this.prisma.userService.findMany({ where: { userId: taskerId } }),
     ]);
     const byService = new Map(active.map((row) => [row.serviceId, row]));
@@ -138,13 +122,10 @@ export class TaskerProfileService {
     });
   }
 
-  async activateSkill(
-    taskerId: number,
-    dto: ActivateTaskerSkillDto,
-  ): Promise<TaskerSkillView> {
+  async activateSkill(taskerId: number, dto: ActivateTaskerSkillDto): Promise<TaskerSkillView> {
     await this.requireTasker(taskerId);
     const service = await this.prisma.service.findFirst({
-      where: { slug: dto.serviceSlug },
+      where: { slug: dto.serviceSlug, isActive: true },
     });
     if (!service) throw new NotFoundException('Service not found');
 
@@ -222,9 +203,7 @@ export class TaskerProfileService {
       },
     });
     if (activeBookings > 0) {
-      throw new ConflictException(
-        'This skill cannot be deactivated while active bookings use it',
-      );
+      throw new ConflictException('This skill cannot be deactivated while active bookings use it');
     }
     await this.prisma.$transaction(async (transaction) => {
       await transaction.userService.delete({
@@ -246,21 +225,17 @@ export class TaskerProfileService {
         where: {
           taskerId,
           status: {
-            in: [
-              WITHDRAWAL_STATUS.PendingReview,
-              WITHDRAWAL_STATUS.Processing,
-            ],
+            in: [WITHDRAWAL_STATUS.PendingReview, WITHDRAWAL_STATUS.Processing],
           },
         },
       }),
     ]);
     if (activeBookings > 0) {
-      throw new ConflictException('Finish or cancel active bookings before deactivating the account');
+      throw new ConflictException(
+        'Finish or cancel active bookings before deactivating the account',
+      );
     }
-    if (
-      wallet &&
-      (Number(wallet.availableBalance) > 0 || Number(wallet.pendingBalance) > 0)
-    ) {
+    if (wallet && (Number(wallet.availableBalance) > 0 || Number(wallet.pendingBalance) > 0)) {
       throw new ConflictException(
         'Withdraw or settle the remaining wallet balance before deactivating the account',
       );
@@ -331,8 +306,7 @@ export class TaskerProfileService {
         label: user.serviceAreaLabel,
         lat: user.serviceAreaLat === null ? null : Number(user.serviceAreaLat),
         lng: user.serviceAreaLng === null ? null : Number(user.serviceAreaLng),
-        radiusKm:
-          user.serviceAreaRadiusKm === null ? null : Number(user.serviceAreaRadiusKm),
+        radiusKm: user.serviceAreaRadiusKm === null ? null : Number(user.serviceAreaRadiusKm),
         city: user.serviceAreaCity,
         area: user.serviceAreaArea,
       },

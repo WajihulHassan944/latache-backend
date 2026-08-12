@@ -41,9 +41,23 @@ export class CustomerDashboardService {
       this.prisma.booking.count({ where: { customerId, status: 'completed' } }),
       this.prisma.booking.count({ where: { customerId, status: 'cancelled' } }),
       this.prisma.booking.findFirst({
-        where: { customerId, status: { in: ['pending', 'confirmed', 'en_route', 'arrived'] }, bookingDate: { gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) } },
+        where: {
+          customerId,
+          status: { in: ['pending', 'confirmed', 'en_route', 'arrived'] },
+          bookingDate: {
+            gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())),
+          },
+        },
         include: {
-          tasker: { select: { id: true, firstName: true, lastName: true, profilePicture: true, rating: true } },
+          tasker: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profilePicture: true,
+              rating: true,
+            },
+          },
           service: { select: { id: true, name: true, slug: true, icon: true } },
         },
         orderBy: [{ bookingDate: 'asc' }, { startTime: 'asc' }],
@@ -60,7 +74,12 @@ export class CustomerDashboardService {
         take: 5,
       }),
       this.prisma.paymentTransaction.findMany({
-        where: { customerId, kind: 'booking_charge', status: 'succeeded', createdAt: { gte: yearStart, lt: yearEnd } },
+        where: {
+          customerId,
+          kind: 'booking_charge',
+          status: 'succeeded',
+          createdAt: { gte: yearStart, lt: yearEnd },
+        },
         select: { amount: true, currency: true, createdAt: true },
       }),
       this.prisma.customerWallet.findUnique({ where: { customerId } }),
@@ -77,21 +96,24 @@ export class CustomerDashboardService {
       if (item) item.amount = Number((item.amount + Number(row.amount)).toFixed(2));
     }
 
-    const bookingSummary = (booking: typeof nextTask) => booking ? ({
-      id: String(booking.id),
-      status: booking.status,
-      date: dateOnlyFromDate(booking.bookingDate),
-      startTime: booking.startTime,
-      endTime: booking.endTime,
-      service: booking.service,
-      tasker: {
-        id: String(booking.tasker.id),
-        name: `${booking.tasker.firstName ?? ''} ${booking.tasker.lastName ?? ''}`.trim(),
-        profilePicture: booking.tasker.profilePicture ?? '',
-        ...('rating' in booking.tasker ? { rating: Number(booking.tasker.rating) } : {}),
-      },
-      paymentStatus: booking.paymentStatus,
-    }) : null;
+    const bookingSummary = (booking: typeof nextTask) =>
+      booking
+        ? {
+            id: String(booking.id),
+            status: booking.status,
+            date: dateOnlyFromDate(booking.bookingDate),
+            startTime: booking.startTime,
+            endTime: booking.endTime,
+            service: booking.service,
+            tasker: {
+              id: String(booking.tasker.id),
+              name: `${booking.tasker.firstName ?? ''} ${booking.tasker.lastName ?? ''}`.trim(),
+              profilePicture: booking.tasker.profilePicture ?? '',
+              ...('rating' in booking.tasker ? { rating: Number(booking.tasker.rating) } : {}),
+            },
+            paymentStatus: booking.paymentStatus,
+          }
+        : null;
 
     return {
       customer: {
@@ -102,14 +124,17 @@ export class CustomerDashboardService {
       },
       wallet: {
         availableBalance: Number(walletRecord?.availableBalance ?? 0),
-        currency: walletRecord?.currency ?? this.config.get<string>('payments.currency', 'USD').toUpperCase(),
+        currency:
+          walletRecord?.currency ??
+          this.config.get<string>('payments.currency', 'USD').toUpperCase(),
       },
       metrics: {
         activeTasks,
         completedTasks,
         favoriteTaskers: favoriteCount,
         averageRatingGiven,
-        taskCompletionPercent: finalized === 0 ? 0 : Number(((completedTasks / finalized) * 100).toFixed(1)),
+        taskCompletionPercent:
+          finalized === 0 ? 0 : Number(((completedTasks / finalized) * 100).toFixed(1)),
       },
       nextTask: bookingSummary(nextTask),
       recentBookings: recentBookings.map((booking) => ({

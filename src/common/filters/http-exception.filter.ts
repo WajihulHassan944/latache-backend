@@ -14,6 +14,16 @@ interface ErrorBody {
   [key: string]: unknown;
 }
 
+const codeForStatus = (status: number): string => {
+  if (status === HttpStatus.BAD_REQUEST) return 'BAD_REQUEST';
+  if (status === HttpStatus.UNAUTHORIZED) return 'UNAUTHORIZED';
+  if (status === HttpStatus.FORBIDDEN) return 'FORBIDDEN';
+  if (status === HttpStatus.NOT_FOUND) return 'NOT_FOUND';
+  if (status === HttpStatus.CONFLICT) return 'CONFLICT';
+  if (status === HttpStatus.TOO_MANY_REQUESTS) return 'RATE_LIMITED';
+  return status >= 500 ? 'INTERNAL_ERROR' : 'HTTP_ERROR';
+};
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -24,9 +34,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const request = context.getRequest<Request>();
 
     const status =
-      exception instanceof HttpException
-        ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+      exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
     let body: ErrorBody;
     if (exception instanceof HttpException) {
@@ -43,6 +51,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     response.status(status).json({
       statusCode: status,
+      code: typeof body.code === 'string' ? body.code : codeForStatus(status),
       ...body,
       timestamp: new Date().toISOString(),
       path: request.originalUrl,

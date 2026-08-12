@@ -76,8 +76,7 @@ export class FileComplaintDto {
   @ApiProperty({
     enum: COMPLAINT_CATEGORIES,
     example: 'poor_quality',
-    description:
-      'Shared complaint categories for Customer and Tasker booking disputes.',
+    description: 'Shared complaint categories for Customer and Tasker booking disputes.',
   })
   @IsIn(COMPLAINT_CATEGORIES)
   category!: (typeof COMPLAINT_CATEGORIES)[number];
@@ -98,7 +97,6 @@ export class FileComplaintDto {
   @Type(() => ComplaintAttachmentDto)
   attachments?: ComplaintAttachmentDto[];
 }
-
 
 export class ComplaintEvidenceDto {
   @ApiProperty({ example: 'Before-service photo' })

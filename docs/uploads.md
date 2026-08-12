@@ -14,12 +14,12 @@ CLOUDINARY_MAX_FILE_SIZE_BYTES=10485760
 
 ## Routes
 
-| Method | Route | Access | Purpose |
-|---|---|---|---|
-| POST | `/api/uploads/registration` | Public, rate-limited | Upload restricted customer/tasker signup assets before an account exists |
-| POST | `/api/uploads/single` | Active registration or verified bearer session | Upload one role-scoped asset |
-| POST | `/api/uploads/multiple` | Active registration or verified bearer session | Upload up to five role-scoped assets |
-| DELETE | `/api/uploads` | Active registration or verified bearer session | Delete an owned asset; super-admin can delete any Latache asset |
+| Method | Route                       | Access                                         | Purpose                                                                  |
+| ------ | --------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| POST   | `/api/uploads/registration` | Public, rate-limited                           | Upload restricted customer/tasker signup assets before an account exists |
+| POST   | `/api/uploads/single`       | Active registration or verified bearer session | Upload one role-scoped asset                                             |
+| POST   | `/api/uploads/multiple`     | Active registration or verified bearer session | Upload up to five role-scoped assets                                     |
+| DELETE | `/api/uploads`              | Active registration or verified bearer session | Delete an owned asset; super-admin can delete any Latache asset          |
 
 All upload endpoints use `multipart/form-data`. The file fields are `file` for single/registration uploads and `files` for multiple uploads.
 

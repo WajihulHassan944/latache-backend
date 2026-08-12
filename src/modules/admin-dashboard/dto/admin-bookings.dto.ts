@@ -1,14 +1,6 @@
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  Matches,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 import { AdminPaginationDto } from './admin-pagination.dto';
 
 export const ADMIN_BOOKING_VIEWS = [
@@ -87,17 +79,26 @@ export class AdminBookingsQueryDto extends AdminPaginationDto {
   ])
   paymentStatus?: string = 'all';
 
-  @ApiPropertyOptional({ example: '2026-08-01', description: 'UTC booking date, inclusive. Supply with to.' })
+  @ApiPropertyOptional({
+    example: '2026-08-01',
+    description: 'UTC booking date, inclusive. Supply with to.',
+  })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   from?: string;
 
-  @ApiPropertyOptional({ example: '2026-08-31', description: 'UTC booking date, inclusive. Supply with from.' })
+  @ApiPropertyOptional({
+    example: '2026-08-31',
+    description: 'UTC booking date, inclusive. Supply with from.',
+  })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   to?: string;
 
-  @ApiPropertyOptional({ enum: ['newest', 'oldest', 'amount_desc', 'amount_asc'], default: 'newest' })
+  @ApiPropertyOptional({
+    enum: ['newest', 'oldest', 'amount_desc', 'amount_asc'],
+    default: 'newest',
+  })
   @IsOptional()
   @IsIn(['newest', 'oldest', 'amount_desc', 'amount_asc'])
   sort?: 'newest' | 'oldest' | 'amount_desc' | 'amount_asc' = 'newest';
@@ -115,7 +116,8 @@ export class AdminBookingsQueryDto extends AdminPaginationDto {
 export class AdminBookingActionDto {
   @ApiProperty({
     enum: ['cancel'],
-    description: 'Admin lifecycle actions are intentionally narrow. Financial dispute outcomes belong to the dispute API.',
+    description:
+      'Admin lifecycle actions are intentionally narrow. Financial dispute outcomes belong to the dispute API.',
   })
   @IsIn(['cancel'])
   action!: 'cancel';

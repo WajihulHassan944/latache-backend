@@ -111,7 +111,6 @@ export interface NavigationView {
   actions: TaskActionView;
 }
 
-
 export interface TaskerSkillView {
   serviceId: string;
   slug: string;
@@ -174,6 +173,7 @@ export interface WalletTransactionView {
   description: string;
   bookingId: string | null;
   withdrawalId: string | null;
+  earningId: string | null;
   booking: {
     customer: PersonSummaryView;
     service: ServiceSummaryView;
@@ -200,6 +200,11 @@ export interface WalletSummaryView {
   totalWithdrawn: MoneyView;
   payoutExecutionMode: string;
   payoutPinConfigured: boolean;
+  pendingEarningsCount: number;
+  nextExpectedAvailableAt: string | null;
+  outstandingPlatformPayable: MoneyView;
+  cashBookingsRestricted: boolean;
+  cashBookingRestrictionReason: string | null;
 }
 
 export interface PayoutSecurityView {
@@ -208,6 +213,8 @@ export interface PayoutSecurityView {
 }
 
 export interface WalletTransactionsListView extends PaginationView {
+  nextCursor: string | null;
+  hasMore: boolean;
   items: WalletTransactionView[];
 }
 

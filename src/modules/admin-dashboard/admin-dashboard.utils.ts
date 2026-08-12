@@ -68,9 +68,7 @@ export const resolveAdminDateRange = (
 };
 
 export const dateFilter = (range: ResolvedAdminDateRange) =>
-  range.from && range.toExclusive
-    ? { gte: range.from, lt: range.toExclusive }
-    : undefined;
+  range.from && range.toExclusive ? { gte: range.from, lt: range.toExclusive } : undefined;
 
 export const percentage = (numerator: number, denominator: number): number =>
   denominator <= 0 ? 0 : Number(((numerator / denominator) * 100).toFixed(1));

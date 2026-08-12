@@ -3,10 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
 import { AuthModule } from '../auth/auth.module';
 import { CLOUDINARY_CLIENT } from './cloudinary.constants';
-import {
-  RegistrationUploadsController,
-  UploadsController,
-} from './uploads.controller';
+import { RegistrationUploadsController, UploadsController } from './uploads.controller';
 import { UploadsService } from './uploads.service';
 import type { CloudinaryClient } from './uploads.types';
 

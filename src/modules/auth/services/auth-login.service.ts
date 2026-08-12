@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { compare } from 'bcryptjs';
 import { AccountStatus } from '../../../common/enums/account-status.enum';
 import { UserRole } from '../../../common/enums/user-role.enum';
@@ -33,10 +29,7 @@ export class AuthLoginService {
     if (user.accountStatus === AccountStatus.Suspended) {
       throw new ForbiddenException('This account is suspended');
     }
-    if (
-      dto.expectedRole &&
-      !this.matchesExpectedRole(user.role as UserRole, dto.expectedRole)
-    ) {
+    if (dto.expectedRole && !this.matchesExpectedRole(user.role as UserRole, dto.expectedRole)) {
       throw new ForbiddenException('This account cannot access the selected portal');
     }
     if (!user.isVerified) {
@@ -57,10 +50,7 @@ export class AuthLoginService {
     );
   }
 
-  private matchesExpectedRole(
-    actualRole: UserRole,
-    expectedRole: UserRole,
-  ): boolean {
+  private matchesExpectedRole(actualRole: UserRole, expectedRole: UserRole): boolean {
     if (expectedRole === UserRole.Admin) {
       return actualRole === UserRole.Admin || actualRole === UserRole.SuperAdmin;
     }

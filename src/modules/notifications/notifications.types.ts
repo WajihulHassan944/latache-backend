@@ -10,6 +10,10 @@ export interface NotificationView {
   isRead: boolean;
   readAt: string | null;
   createdAt: string;
+  templateKey: string;
+  templateParams: unknown;
+  renderedLocale: string;
+  translationFallback: boolean;
 }
 
 export interface NotificationListView {
@@ -18,5 +22,7 @@ export interface NotificationListView {
   totalItems: number;
   totalPages: number;
   unreadCount: number;
+  nextCursor: string | null;
+  hasMore: boolean;
   items: NotificationView[];
 }

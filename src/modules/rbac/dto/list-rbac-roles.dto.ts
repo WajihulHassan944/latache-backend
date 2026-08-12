@@ -9,7 +9,10 @@ const toBoolean = ({ value }: { value: unknown }): unknown => {
 };
 
 export class ListRbacRolesDto {
-  @ApiPropertyOptional({ example: 'finance', description: 'Case-insensitive role name or code search.' })
+  @ApiPropertyOptional({
+    example: 'finance',
+    description: 'Case-insensitive role name or code search.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
@@ -21,7 +24,10 @@ export class ListRbacRolesDto {
   @IsBoolean()
   isSystem?: boolean;
 
-  @ApiPropertyOptional({ example: true, description: 'Omit to return active and inactive non-deleted roles.' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Omit to return active and inactive non-deleted roles.',
+  })
   @IsOptional()
   @Transform(toBoolean)
   @IsBoolean()

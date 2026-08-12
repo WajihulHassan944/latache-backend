@@ -179,7 +179,9 @@ export class RbacRepository {
 
   updateAdminProfile(
     id: number,
-    data: Partial<Pick<Prisma.UserUpdateInput, 'firstName' | 'lastName' | 'phoneCountryCode' | 'phoneNumber'>>,
+    data: Partial<
+      Pick<Prisma.UserUpdateInput, 'firstName' | 'lastName' | 'phoneCountryCode' | 'phoneNumber'>
+    >,
   ): Promise<AdminWithRbacRole> {
     return this.prisma.user.update({
       where: { id },

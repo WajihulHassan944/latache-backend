@@ -6,8 +6,7 @@ export const IsClockTime = (validationOptions?: ValidationOptions): PropertyDeco
     {
       name: 'isClockTime',
       validator: {
-        validate: (value: unknown): boolean =>
-          typeof value === 'string' && isValidTime(value),
+        validate: (value: unknown): boolean => typeof value === 'string' && isValidTime(value),
         defaultMessage: buildMessage(
           (eachPrefix) => `${eachPrefix}$property must be a valid 24-hour or AM/PM time`,
           validationOptions,

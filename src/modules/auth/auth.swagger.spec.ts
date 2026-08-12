@@ -48,7 +48,6 @@ describe('Auth Swagger and route surface', () => {
     expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBe(method);
   });
 
-
   it('documents request and response examples for every account role', () => {
     expect(Object.keys(loginRequestExamples)).toEqual([
       'customer',

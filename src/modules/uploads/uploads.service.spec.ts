@@ -18,10 +18,7 @@ const file: BufferedUploadFile = {
 };
 
 const createService = () => {
-  const uploadStream: CloudinaryClient['uploader']['upload_stream'] = (
-    _options,
-    callback,
-  ) => ({
+  const uploadStream: CloudinaryClient['uploader']['upload_stream'] = (_options, callback) => ({
     end: () =>
       callback(undefined, {
         public_id: 'latache/customer-profiles/customer/42/test-id',
@@ -35,6 +32,15 @@ const createService = () => {
 
   const cloudinary: CloudinaryClient = {
     config: jest.fn(),
+    api: {
+      resource: jest.fn().mockResolvedValue({
+        public_id: 'latache/customer-profiles/customer/42/test-id',
+        secure_url: 'https://res.cloudinary.com/demo/image/upload/test.png',
+        url: 'http://res.cloudinary.com/demo/image/upload/test.png',
+        resource_type: 'image',
+        bytes: 5,
+      }),
+    },
     uploader: {
       upload_stream: jest.fn(uploadStream),
       destroy: jest.fn().mockResolvedValue({ result: 'ok' }),
@@ -75,14 +81,9 @@ describe('UploadsService', () => {
   it('rejects a customer upload to a tasker-only folder', () => {
     const { service } = createService();
     expect(() =>
-      service.uploadSingle(
-        customer,
-        { folder: UploadFolder.TaskerIdentityDocument },
-        file,
-      ),
+      service.uploadSingle(customer, { folder: UploadFolder.TaskerIdentityDocument }, file),
     ).toThrow(ForbiddenException);
   });
-
 
   it('rejects spoofed file content even when the MIME type is allowed', () => {
     const { service } = createService();

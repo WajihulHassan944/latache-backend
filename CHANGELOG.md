@@ -1,4 +1,95 @@
+# v3.17.0 — Premium shared email design and Moroccan Darija
+
+- Rebuilt every transactional email on one responsive, Outlook-compatible TypeScript layout matching the supplied premium copper/cream desert design.
+- Added generated header, security-shield, and footer artwork as source-controlled CID attachments; the requested hosted Latache SVG is the canonical header logo.
+- Preserved dynamic/escaped center content for verification OTP, password-reset OTP, and administrator welcome mail, including text alternatives.
+- Added Moroccan Darija (`ary`) to centralized locale configuration, `Accept-Language` resolution, profile/registration/Admin preference Swagger contracts, notification templates, and transactional email copy.
+- Kept English as the canonical fallback and retained the scalable translation-row architecture for Darija catalogue/configuration content.
+- No Prisma migration is required because locale values and translation rows were already designed for configurable BCP-47 codes.
+
+# v3.16.0 — Redis, queues, multi-instance realtime, and performance
+
+- Added environment-driven Railway Redis infrastructure with graceful cache fallback and required-dependency health semantics.
+- Added versioned caches and post-commit invalidation for localized Services/Options, Platform Settings, Elite configuration, and short-TTL Admin aggregates.
+- Added BullMQ scheduler/worker mode for retry-safe Tasker earning release, stale-call expiration, and bounded dispatched-outbox cleanup.
+- Added the Socket.IO Redis adapter while retaining PostgreSQL's transactional outbox as durable event authority and preserving room privacy boundaries.
+- Removed outbox retention deletion from the high-frequency dispatch loop; pending/failed rows are never cleanup candidates.
+- Added request compression, safe cache headers, explicit Prisma pool limits, structured latency/error logs, and slow-query metadata without parameters.
+- Added compatible cursor pagination for notifications, conversation messages, and Tasker wallet ledger entries.
+- Added query-driven PostgreSQL indexes and `pg_trgm` GIN indexes for normalized English/Arabic Service catalogue search.
+- Extended `/api/health` with PostgreSQL, Redis, BullMQ worker/backlog, realtime outbox, cache, and baseline metric status.
+- Added additive migration `20260812223000_add_performance_indexes`.
+
+# v3.15.0 — English and Arabic dynamic-content localization
+
+- Added centralized saved-preference/`Accept-Language` locale resolution with English/canonical fallback and stable unsupported-locale errors.
+- Added resource-owned translation rows for Services, Service Options, Elite tiers, benefits, and badges without changing IDs or adding language columns.
+- Backfilled existing canonical content into English translation rows; no Arabic or operational data is fabricated.
+- Extended existing Admin/RBAC mutations and reads to manage all configured translations.
+- Added localized public platform informational content through the existing Platform Settings source.
+- Added Unicode/Arabic-normalized Service/Tasker catalogue search while preserving original text.
+- Added persisted notification template keys/parameters plus localized REST/realtime rendering.
+- Added English/Arabic TypeScript templates for verification, password reset, and administrator welcome email.
+- Added additive migration `20260812190000_add_multilingual_architecture`.
+
+# v3.14.0 — Tasker earning clearance and cash accounting
+
+- Added immutable per-booking Tasker earning snapshots after genuine online/provider settlement.
+- Added configurable pending clearance, defaulting to 14 days, with PostgreSQL row-locking and idempotent release ledgers safe across multiple Railway replicas.
+- Added dispute blocking, explicit audited Finance holds/extensions, pending-first refund reversals, and existing-wallet clawback fallback after release.
+- Added explicit Tasker cash confirmation and auditable cash platform receivables without platform-held wallet fiction.
+- Added transactional offsets of outstanding cash platform payables from mature online earnings.
+- Added configurable cash-debt ceiling/restriction policy, persisted realtime notifications, Tasker wallet views, and Admin Finance views/actions over the same records.
+- Added additive migration `20260812143000_add_tasker_earning_clearance_cash_accounting`; it does not reset or seed financial data.
+
+# v3.13.0 — Conversation documents, voice calls and video calls
+
+- Added verified single/multiple conversation attachment sharing through the existing Cloudinary upload APIs.
+- Added document formats and configurable count, per-file, and total-message size limits.
+- Added `GET /api/conversations/capabilities` for frontend capability discovery.
+- Added persisted one-to-one voice/video call lifecycle and history under booking conversations.
+- Added authenticated WebRTC signaling events over the existing `/realtime` Socket.IO namespace.
+- Added STUN/TURN configuration with temporary coturn HMAC credentials or static TURN credentials.
+- Added ring timeout, maximum duration, signaling rate limits, active-call concurrency protection, and booking-status eligibility checks.
+- Added migration `20260812100000_add_conversation_calls` without fake calls or media records.
+- Media remains peer-to-peer and is neither proxied nor recorded by the NestJS API.
+
+# v3.12.0 — API Consistency & Realtime
+
+- Audited and normalized the complete Customer/Tasker/Admin API ownership model.
+- Added authenticated Socket.IO realtime delivery for notifications, booking conversations, support chat, booking state, task timer and Tasker location.
+- Added a transactional PostgreSQL outbox so persisted realtime events are committed with domain writes and delivered at-least-once.
+- Separated booking-state rooms from private Customer↔Tasker conversation rooms so `bookings.read` does not grant chat visibility.
+- Added `GET /api/realtime/session` as the authenticated transport contract.
+- Normalized Services to `GET/POST /api/services` and added `GET /api/services/:serviceId`; removed legacy `get-services` / `add-service` route names.
+- Normalized participant dispute routes to `/api/disputes` and `/api/bookings/:bookingId/disputes`; removed complaint terminology from the HTTP surface.
+- Added participant dispute list/detail APIs that were missing from the shared Customer/Tasker contract.
+- Review creation now generates the shared persisted `review_received` notification, so recipients receive it through the standard realtime notification channel.
+- Administrative booking cancellation now emits the same `booking:updated` realtime event as participant lifecycle changes.
+- Added permission-aware Admin review moderation (`reviews.read` / `reviews.manage`) and excluded hidden reviews from public ratings/feeds.
+- Added realtime booking invalidation/events for confirmation, cancellation, navigation, location, timer, reschedule, extension, billing, completion, and dispute/evidence changes.
+- Hardened Customer billing updates with a booking row lock so a concurrent payment cannot race a tip/donation mutation.
+- Added migrations `20260810193000_add_realtime_outbox` and `20260810194500_add_review_moderation`; neither seeds operational data.
+
+# v3.11.1
+
+- Fixed Stripe refund webhook metadata access when Stripe returns `metadata: null`.
+- Fixed strict-null TypeScript errors in Support Center resolution/CSAT average calculations.
+- No API, Prisma schema, migration, or runtime flow changes.
+
 # Changelog
+
+## 3.11.0 - Service Management & Support Center
+
+- Added persisted Support Tickets and Support Ticket Messages for Customer/Tasker tickets and live-chat cases.
+- Added one permission-aware Admin Support Center queue with customer, tasker, escalated, live-chat and report views.
+- Added real support assignment, priority, escalation, resolution, reopen, CSAT and response/resolution-time reporting.
+- Added Cloudinary `support-attachments` folder policy and ownership validation.
+- Added admin Service Management aggregate views while retaining Services/ServiceOptions/UserServices as canonical catalogue/assignment tables.
+- Added safe service/sub-service soft deactivation and audit logging.
+- Extended the existing pricing engine with per-tier minimum task prices and enforced them at quote and final charge.
+- Kept commission/tax mutations in Platform Settings and financial refund/payout mutations in Dispute/Finance modules to avoid duplicate flows.
+- Added migration `20260810190000_add_services_support_center`.
 
 ## 3.10.0 — Payments, Finance & Platform Settings
 

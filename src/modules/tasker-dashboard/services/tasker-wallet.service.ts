@@ -37,6 +37,8 @@ import type {
 import { monthStart, roundMoney } from '../tasker-dashboard.utils';
 import { PayoutDataSecurityService } from './payout-data-security.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { TaskerFinanceService } from '../../tasker-finance/tasker-finance.service';
+import type { TaskerEarningsQueryDto } from '../../tasker-finance/dto/tasker-finance.dto';
 
 @Injectable()
 export class TaskerWalletService {
@@ -45,26 +47,46 @@ export class TaskerWalletService {
     private readonly config: ConfigService,
     private readonly security: PayoutDataSecurityService,
     private readonly notifications: NotificationsService,
+    private readonly taskerFinance: TaskerFinanceService,
   ) {}
 
   async summary(taskerId: number): Promise<WalletSummaryView> {
     const wallet = await this.ensureWallet(taskerId);
     const month = monthStart();
-    const [monthEarnings, paidWithdrawals] = await Promise.all([
-      this.prisma.taskerWalletLedgerEntry.aggregate({
-        where: {
-          taskerId,
-          kind: WALLET_ENTRY_KIND.Earning,
-          status: 'settled',
-          createdAt: { gte: month },
-        },
-        _sum: { amount: true },
-      }),
-      this.prisma.taskerWithdrawal.aggregate({
-        where: { taskerId, status: WITHDRAWAL_STATUS.Paid },
-        _sum: { amount: true },
-      }),
-    ]);
+    const [legacyMonthEarnings, monthEarnings, paidWithdrawals, pendingEarnings, platformAccount] =
+      await Promise.all([
+        this.prisma.taskerWalletLedgerEntry.aggregate({
+          where: {
+            taskerId,
+            kind: WALLET_ENTRY_KIND.Earning,
+            status: 'settled',
+            createdAt: { gte: month },
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.taskerEarning.aggregate({
+          where: { taskerId, settledAt: { gte: month } },
+          _sum: { taskerNetAmount: true, reversedAmount: true },
+        }),
+        this.prisma.taskerWithdrawal.aggregate({
+          where: { taskerId, status: WITHDRAWAL_STATUS.Paid },
+          _sum: { amount: true },
+        }),
+        this.prisma.taskerEarning.findMany({
+          where: {
+            taskerId,
+            status: { in: ['pending', 'partially_reversed'] },
+          },
+          select: { clearsAt: true, holdExtendedUntil: true },
+          orderBy: { clearsAt: 'asc' },
+        }),
+        this.taskerFinance.platformAccount(taskerId),
+      ]);
+    const expectedDates = pendingEarnings.map((item) =>
+      item.holdExtendedUntil && item.holdExtendedUntil > item.clearsAt
+        ? item.holdExtendedUntil
+        : item.clearsAt,
+    );
     return {
       availableBalance: {
         amount: Number(wallet.availableBalance),
@@ -75,7 +97,11 @@ export class TaskerWalletService {
         currency: wallet.currency,
       },
       totalEarningsThisMonth: {
-        amount: Number(monthEarnings._sum.amount ?? 0),
+        amount: roundMoney(
+          Number(legacyMonthEarnings._sum.amount ?? 0) +
+            Number(monthEarnings._sum.taskerNetAmount ?? 0) -
+            Number(monthEarnings._sum.reversedAmount ?? 0),
+        ),
         currency: wallet.currency,
       },
       totalWithdrawn: {
@@ -84,7 +110,20 @@ export class TaskerWalletService {
       },
       payoutExecutionMode: this.executionMode(),
       payoutPinConfigured: Boolean(wallet.payoutPinHash),
+      pendingEarningsCount: pendingEarnings.length,
+      nextExpectedAvailableAt: expectedDates[0]?.toISOString() ?? null,
+      outstandingPlatformPayable: platformAccount.outstandingPlatformPayable,
+      cashBookingsRestricted: platformAccount.cashBookingsRestricted,
+      cashBookingRestrictionReason: platformAccount.restrictionReason,
     };
+  }
+
+  listEarnings(taskerId: number, query: TaskerEarningsQueryDto) {
+    return this.taskerFinance.listTaskerEarnings(taskerId, query);
+  }
+
+  platformPayables(taskerId: number, query: TaskerEarningsQueryDto) {
+    return this.taskerFinance.taskerPlatformPayables(taskerId, query);
   }
 
   async listTransactions(
@@ -92,29 +131,41 @@ export class TaskerWalletService {
     query: ListWalletTransactionsQueryDto,
   ): Promise<WalletTransactionsListView> {
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
+    if (query.cursor) {
+      const cursorOwned = await this.prisma.taskerWalletLedgerEntry.count({
+        where: { id: query.cursor, taskerId },
+      });
+      if (cursorOwned === 0) throw new BadRequestException('Wallet transaction cursor is invalid');
+    }
     const [items, totalItems] = await Promise.all([
       this.prisma.taskerWalletLedgerEntry.findMany({
         where: { taskerId },
         include: {
           booking: {
             select: {
-              customer: { select: { id: true, firstName: true, lastName: true, profilePicture: true } },
+              customer: {
+                select: { id: true, firstName: true, lastName: true, profilePicture: true },
+              },
               service: { select: { id: true, name: true, slug: true, icon: true } },
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
-        skip: offset,
-        take: limit,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : { skip: offset }),
+        take: query.cursor ? limit + 1 : limit,
       }),
       this.prisma.taskerWalletLedgerEntry.count({ where: { taskerId } }),
     ]);
+    const hasMore = query.cursor ? items.length > limit : offset + items.length < totalItems;
+    const pageItems = items.slice(0, limit);
     return {
       page,
       limit,
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
-      items: items.map((entry) => this.serializeTransaction(entry)),
+      nextCursor: hasMore ? (pageItems.at(-1)?.id ?? null) : null,
+      hasMore,
+      items: pageItems.map((entry) => this.serializeTransaction(entry)),
     };
   }
 
@@ -124,7 +175,9 @@ export class TaskerWalletService {
       include: {
         booking: {
           select: {
-            customer: { select: { id: true, firstName: true, lastName: true, profilePicture: true } },
+            customer: {
+              select: { id: true, firstName: true, lastName: true, profilePicture: true },
+            },
             service: { select: { id: true, name: true, slug: true, icon: true } },
           },
         },
@@ -151,7 +204,8 @@ export class TaskerWalletService {
           setupSupported: false,
           withdrawalSupported: false,
           executionMode,
-          reason: 'Google Pay is a checkout wallet, not a supported payout destination in this backend.',
+          reason:
+            'Google Pay is a checkout wallet, not a supported payout destination in this backend.',
         };
       }
       return {
@@ -213,10 +267,7 @@ export class TaskerWalletService {
     return this.payoutSecurity(taskerId);
   }
 
-  async changePayoutPin(
-    taskerId: number,
-    dto: ChangePayoutPinDto,
-  ): Promise<PayoutSecurityView> {
+  async changePayoutPin(taskerId: number, dto: ChangePayoutPinDto): Promise<PayoutSecurityView> {
     if (dto.currentPin === dto.newPin) {
       throw new BadRequestException('New payout PIN must be different from the current PIN');
     }
@@ -370,10 +421,7 @@ export class TaskerWalletService {
         include: { payoutMethod: true },
       });
       if (existing) {
-        if (
-          existing.payoutMethodId !== dto.payoutMethodId ||
-          Number(existing.amount) !== amount
-        ) {
+        if (existing.payoutMethodId !== dto.payoutMethodId || Number(existing.amount) !== amount) {
           throw new ConflictException(
             'Idempotency-Key was already used with different withdrawal parameters',
           );
@@ -555,54 +603,6 @@ export class TaskerWalletService {
         throw new BadRequestException('Settlement idempotency key is required');
       }
 
-      const wallet = await this.ensureWallet(input.taskerId, transaction, currency);
-      await transaction.$queryRaw`
-        SELECT "taskerId" FROM "TaskerWallets"
-        WHERE "taskerId" = ${input.taskerId}
-        FOR UPDATE
-      `;
-      if (wallet.currency !== currency) {
-        throw new ConflictException(
-          'Settlement currency does not match the tasker wallet currency',
-        );
-      }
-
-      // Locking the wallet before checking idempotency serializes settlement
-      // callbacks for the same tasker and prevents duplicate balance credits.
-      const existing = await transaction.taskerWalletLedgerEntry.findUnique({
-        where: { idempotencyKey: input.idempotencyKey },
-      });
-      if (existing) {
-        if (
-          existing.taskerId !== input.taskerId ||
-          existing.bookingId !== input.bookingId ||
-          existing.kind !== WALLET_ENTRY_KIND.Earning ||
-          Number(existing.amount) !== amount ||
-          existing.currency !== currency ||
-          existing.externalReference !== input.externalReference
-        ) {
-          throw new ConflictException(
-            'Settlement idempotency key was already used with different parameters',
-          );
-        }
-        return existing;
-      }
-
-      const priorBookingSettlement =
-        await transaction.taskerWalletLedgerEntry.findFirst({
-          where: {
-            taskerId: input.taskerId,
-            bookingId: input.bookingId,
-            kind: WALLET_ENTRY_KIND.Earning,
-            status: 'settled',
-          },
-        });
-      if (priorBookingSettlement) {
-        throw new ConflictException(
-          'This booking has already been settled to the tasker wallet',
-        );
-      }
-
       const booking = await transaction.booking.findFirst({
         where: {
           id: input.bookingId,
@@ -611,43 +611,28 @@ export class TaskerWalletService {
         },
       });
       if (!booking) {
+        throw new ConflictException('Only a completed task can be settled to a tasker wallet');
+      }
+      const expectedNet = roundMoney(
+        Number(booking.serviceAmount ?? 0) -
+          (booking.taxInclusive ? Number(booking.taxAmount) : 0) +
+          Number(booking.tipAmount),
+      );
+      if (currency !== booking.paymentCurrency || amount !== expectedNet) {
         throw new ConflictException(
-          'Only a completed task can be settled to a tasker wallet',
+          'Settlement amount/currency does not match the immutable booking pricing snapshot',
         );
       }
-
-      await transaction.taskerWallet.update({
-        where: { taskerId: input.taskerId },
-        data: { availableBalance: { increment: amount.toFixed(2) } },
-      });
-      const created = await transaction.taskerWalletLedgerEntry.create({
-        data: {
-          taskerId: input.taskerId,
-          bookingId: input.bookingId,
-          kind: WALLET_ENTRY_KIND.Earning,
-          status: 'settled',
-          amount: amount.toFixed(2),
-          availableDelta: amount.toFixed(2),
-          pendingDelta: '0.00',
-          currency,
-          description: `Settled earning for booking #${input.bookingId}`,
-          externalReference: input.externalReference,
-          idempotencyKey: input.idempotencyKey,
-        },
-      });
-      await this.notifications.create(
-        input.taskerId,
-        {
-          category: 'wallet',
-          type: 'booking_earning_settled',
-          title: 'Payment received',
-          body: `${currency} ${amount.toFixed(2)} is now available in your wallet.`,
-          entityType: 'booking',
-          entityId: String(input.bookingId),
-        },
+      await this.taskerFinance.createPendingEarning({
+        booking,
+        grossCustomerAmount: Number(booking.totalChargedAmount ?? 0),
+        providerSettlementReference: input.externalReference,
+        settledAt: booking.paidAt ?? new Date(),
         transaction,
-      );
-      return created;
+      });
+      return transaction.taskerWalletLedgerEntry.findUniqueOrThrow({
+        where: { idempotencyKey: `booking:${input.bookingId}:pending-earning` },
+      });
     });
     return this.serializeTransaction(entry);
   }
@@ -684,9 +669,7 @@ export class TaskerWalletService {
 
       const attempts = wallet.payoutPinFailedAttempts + 1;
       const lockNow = attempts >= 5;
-      const lockedUntil = lockNow
-        ? new Date(now.getTime() + 15 * 60 * 1000)
-        : null;
+      const lockedUntil = lockNow ? new Date(now.getTime() + 15 * 60 * 1000) : null;
       await transaction.taskerWallet.update({
         where: { taskerId },
         data: {
@@ -718,10 +701,7 @@ export class TaskerWalletService {
   }
 
   private executionMode(): string {
-    return this.config.get<string>(
-      'taskerPayout.executionMode',
-      PAYOUT_EXECUTION_MODE.Disabled,
-    );
+    return this.config.get<string>('taskerPayout.executionMode', PAYOUT_EXECUTION_MODE.Disabled);
   }
 
   private async ensureWallet(
@@ -764,7 +744,6 @@ export class TaskerWalletService {
       };
     }
     if (dto.type === PAYOUT_METHOD_TYPE.OrangeMoney) {
-      const phone = `${dto.phoneCountryCode as string}${dto.phoneNumber as string}`;
       return {
         payload: {
           accountHolderName: dto.accountHolderName as string,
@@ -777,7 +756,7 @@ export class TaskerWalletService {
     if (dto.type === PAYOUT_METHOD_TYPE.Paypal) {
       const email = dto.paypalEmail as string;
       const [local, domain] = email.split('@');
-      const maskedLocal = `${(local?.[0] ?? '*')}***`;
+      const maskedLocal = `${local?.[0] ?? '*'}***`;
       return {
         payload: {
           accountHolderName: dto.accountHolderName as string,
@@ -820,6 +799,7 @@ export class TaskerWalletService {
     description: string;
     bookingId: number | null;
     withdrawalId: string | null;
+    earningId?: string | null;
     createdAt: Date;
     booking?: {
       customer: {
@@ -846,6 +826,7 @@ export class TaskerWalletService {
       description: entry.description,
       bookingId: entry.bookingId === null ? null : String(entry.bookingId),
       withdrawalId: entry.withdrawalId,
+      earningId: entry.earningId ?? null,
       booking: entry.booking
         ? {
             customer: {

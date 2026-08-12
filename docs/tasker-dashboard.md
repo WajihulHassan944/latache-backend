@@ -4,23 +4,23 @@ Version 3.5 implements only the backend capabilities required by the supplied Ta
 
 ## Screen-to-domain mapping
 
-| Design area | Backend behavior |
-|---|---|
-| Dashboard home | Real setup progress, wallet summary, completion metrics, ratings, settled earnings, monthly settled earnings, next task and recent ledger rows |
-| Task management | Booked/ongoing/history pagination and real booking state transitions |
-| Location / heading to client | Latest Tasker coordinates plus booking destination and arrival transition; no fabricated ETA or distance |
-| Arrival | Persists `arrivedAt` and notifies the customer |
-| Task timer | Persistent start/pause/resume/stop state, elapsed duration and notes |
-| Complaint | Persists a complaint linked to the booking |
-| Personal profile | Tasker-owned editable personal fields; email remains read-only because changing it requires a verified auth flow |
-| Business profile / skills | Service catalogue activation, per-service rate changes and safe deactivation |
-| Reviews | Received/given lists; Tasker can create a review only for a completed booking and edit/delete only their own review |
-| Chats | Booking-backed customer conversations and messages; empty list is returned when no real conversation exists |
-| Notifications | Persisted all/unread/category lists, unread count and read state |
-| Wallet | Ledger-derived balance, settled earnings and transaction history; zero/empty is valid |
-| Billing information | Encrypted payout methods; raw account details are never returned |
-| Withdraw flow | Payout capability check, six-digit payout PIN and idempotent withdrawal request |
-| Transaction success | No Tasker endpoint fabricates this state; UI should show success only when a future payment/payout integration records a real `paid` result |
+| Design area                  | Backend behavior                                                                                                                               |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard home               | Real setup progress, wallet summary, completion metrics, ratings, settled earnings, monthly settled earnings, next task and recent ledger rows |
+| Task management              | Booked/ongoing/history pagination and real booking state transitions                                                                           |
+| Location / heading to client | Latest Tasker coordinates plus booking destination and arrival transition; no fabricated ETA or distance                                       |
+| Arrival                      | Persists `arrivedAt` and notifies the customer                                                                                                 |
+| Task timer                   | Persistent start/pause/resume/stop state, elapsed duration and notes                                                                           |
+| Complaint                    | Persists a complaint linked to the booking                                                                                                     |
+| Personal profile             | Tasker-owned editable personal fields; email remains read-only because changing it requires a verified auth flow                               |
+| Business profile / skills    | Service catalogue activation, per-service rate changes and safe deactivation                                                                   |
+| Reviews                      | Received/given lists; Tasker can create a review only for a completed booking and edit/delete only their own review                            |
+| Chats                        | Booking-backed customer conversations and messages; empty list is returned when no real conversation exists                                    |
+| Notifications                | Persisted all/unread/category lists, unread count and read state                                                                               |
+| Wallet                       | Ledger-derived pending/available balance, earning clearance, cash platform payables and transaction history; zero/empty is valid               |
+| Billing information          | Encrypted payout methods; raw account details are never returned                                                                               |
+| Withdraw flow                | Payout capability check, six-digit payout PIN and idempotent withdrawal request                                                                |
+| Transaction success          | No Tasker endpoint fabricates this state; UI should show success only when a future payment/payout integration records a real `paid` result    |
 
 ## Shared dashboard, tasks and timer
 
@@ -44,7 +44,8 @@ POST   /api/bookings/:bookingId/timer/resume        # Tasker
 POST   /api/bookings/:bookingId/timer/stop          # Tasker
 PATCH  /api/bookings/:bookingId/timer/notes         # Tasker
 POST   /api/bookings/:bookingId/complete            # Either participant; stopped timer required
-POST   /api/bookings/:bookingId/complaints          # Either participant
+POST   /api/bookings/:bookingId/cash-payment/confirm # Tasker; completed cash bookings only
+POST   /api/bookings/:bookingId/disputes            # Either participant
 ```
 
 Profile fields shared by all roles use `GET/PATCH /api/auth/me`. Tasker-specific business profile and skill/rate configuration remain under `/api/tasker-dashboard/profile`.
@@ -64,6 +65,8 @@ The old `/api/tasker-dashboard/tasks`, `/messages`, `/notifications`, `/reviews`
 ```text
 GET    /api/tasker-dashboard/wallet
 GET    /api/tasker-dashboard/wallet/transactions
+GET    /api/tasker-dashboard/wallet/earnings
+GET    /api/tasker-dashboard/wallet/platform-payables
 GET    /api/tasker-dashboard/wallet/payout-capabilities
 GET    /api/tasker-dashboard/wallet/payout-security
 POST   /api/tasker-dashboard/wallet/payout-pin
@@ -82,9 +85,10 @@ POST   /api/tasker-dashboard/wallet/withdrawals/:id/cancel
 
 1. The wallet balance is derived from stored wallet/ledger state. A new Tasker legitimately sees zero and no transaction rows.
 2. `POST .../complete` does not credit earnings. Work completion and payment settlement are different events.
-3. `TaskerWalletService.creditBookingSettlement()` is an internal idempotent integration boundary. A future customer-payment module may call it only after a payment provider/database settlement is verified.
+3. Verified Stripe/customer-wallet settlement creates one pending `TaskerEarning`; its default 14-day clearance timestamp is persisted and it remains unavailable for withdrawal.
 4. Tasker HTTP controllers do not expose that settlement hook.
 5. Payout-provider execution is not simulated.
+6. Cash already held by a Tasker never appears as a platform wallet earning; an auditable platform payable is created instead.
 
 ### Withdrawal modes
 

@@ -1,15 +1,6 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  dateOnlyFromDate,
-  dateOnlyToDate,
-  todayDateOnly,
-} from '../../../common/utils/date.util';
+import { dateOnlyFromDate, dateOnlyToDate, todayDateOnly } from '../../../common/utils/date.util';
 import { normalizePagination } from '../../../common/utils/pagination.util';
 import { PrismaService } from '../../../database/prisma.service';
 import { Prisma } from '../../../generated/prisma/client';
@@ -34,12 +25,10 @@ import type {
   UpdateTaskerLocationDto,
   UpdateTimerNotesDto,
 } from '../dto';
-import {
-  estimatedTaskAmount,
-  safeJsonArray,
-  toIso,
-} from '../tasker-dashboard.utils';
+import { estimatedTaskAmount, safeJsonArray, toIso } from '../tasker-dashboard.utils';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { RealtimeOutboxService } from '../../realtime/realtime-outbox.service';
+import { RedisService } from '../../../infrastructure/redis/redis.service';
 
 type TaskerBookingWithRelations = Prisma.BookingGetPayload<{
   include: {
@@ -63,13 +52,12 @@ export class TaskerTasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly realtime: RealtimeOutboxService,
     private readonly config: ConfigService,
+    private readonly redis: RedisService,
   ) {}
 
-  async list(
-    taskerId: number,
-    query: ListTaskerTasksQueryDto,
-  ): Promise<TaskerTaskListView> {
+  async list(taskerId: number, query: ListTaskerTasksQueryDto): Promise<TaskerTaskListView> {
     const bucket = query.bucket ?? 'booked';
     const statuses =
       bucket === 'booked'
@@ -153,16 +141,13 @@ export class TaskerTasksService {
         },
         transaction,
       );
+      await this.enqueueBookingUpdate(bookingId, 'confirmed', 'tasker_confirmed', transaction);
       return row;
     });
     return this.serialize(updated);
   }
 
-  async cancel(
-    taskerId: number,
-    bookingId: number,
-    dto: CancelTaskDto,
-  ): Promise<TaskerTaskView> {
+  async cancel(taskerId: number, bookingId: number, dto: CancelTaskDto): Promise<TaskerTaskView> {
     const updated = await this.prisma.$transaction(async (transaction) => {
       const booking = await this.lockOwnedBooking(taskerId, bookingId, transaction);
       if (
@@ -200,6 +185,7 @@ export class TaskerTasksService {
         },
         transaction,
       );
+      await this.enqueueBookingUpdate(bookingId, 'cancelled', 'tasker_cancelled', transaction);
       return row;
     });
     return this.serialize(updated);
@@ -227,6 +213,7 @@ export class TaskerTasksService {
         },
         transaction,
       );
+      await this.enqueueBookingUpdate(bookingId, 'en_route', 'navigation_started', transaction);
     });
     return this.navigation(taskerId, bookingId);
   }
@@ -250,24 +237,55 @@ export class TaskerTasksService {
     ) {
       throw new ConflictException('Location can be updated only for an active task');
     }
-    await this.prisma.taskerTaskLocation.upsert({
-      where: { bookingId },
-      create: {
+    const redis = this.redis.commandClient();
+    if (redis) {
+      try {
+        const accepted = await redis.set(
+          `${this.config.get<string>('cache.prefix', 'latache:v1')}:rate:location-write:${taskerId}:${bookingId}`,
+          '1',
+          'PX',
+          this.config.get<number>('realtime.locationMinWriteIntervalMs', 1_000),
+          'NX',
+        );
+        if (accepted !== 'OK') return this.navigation(taskerId, bookingId);
+      } catch {
+        // Redis is an optimization only; authoritative location persistence
+        // continues when the throttle is unavailable.
+      }
+    }
+    await this.prisma.$transaction(async (transaction) => {
+      const location = await transaction.taskerTaskLocation.upsert({
+        where: { bookingId },
+        create: {
+          bookingId,
+          taskerId,
+          lat: dto.lat,
+          lng: dto.lng,
+          accuracyM: dto.accuracyM,
+          headingDeg: dto.headingDeg,
+          capturedAt: new Date(),
+        },
+        update: {
+          lat: dto.lat,
+          lng: dto.lng,
+          accuracyM: dto.accuracyM ?? null,
+          headingDeg: dto.headingDeg ?? null,
+          capturedAt: new Date(),
+        },
+      });
+      await this.realtime.enqueueBooking(
         bookingId,
-        taskerId,
-        lat: dto.lat,
-        lng: dto.lng,
-        accuracyM: dto.accuracyM,
-        headingDeg: dto.headingDeg,
-        capturedAt: new Date(),
-      },
-      update: {
-        lat: dto.lat,
-        lng: dto.lng,
-        accuracyM: dto.accuracyM ?? null,
-        headingDeg: dto.headingDeg ?? null,
-        capturedAt: new Date(),
-      },
+        'booking:location',
+        {
+          bookingId: String(bookingId),
+          lat: Number(location.lat),
+          lng: Number(location.lng),
+          accuracyM: location.accuracyM === null ? null : Number(location.accuracyM),
+          headingDeg: location.headingDeg === null ? null : Number(location.headingDeg),
+          capturedAt: location.capturedAt.toISOString(),
+        },
+        transaction,
+      );
     });
     return this.navigation(taskerId, bookingId);
   }
@@ -294,6 +312,7 @@ export class TaskerTasksService {
         },
         transaction,
       );
+      await this.enqueueBookingUpdate(bookingId, 'arrived', 'tasker_arrived', transaction);
     });
     return this.navigation(taskerId, bookingId);
   }
@@ -403,6 +422,8 @@ export class TaskerTasksService {
         },
         transaction,
       );
+      await this.enqueueBookingUpdate(bookingId, 'in_progress', 'timer_started', transaction);
+      await this.enqueueTimerUpdate(bookingId, created, transaction);
       return created;
     });
     return this.timerView(bookingId, session);
@@ -415,10 +436,12 @@ export class TaskerTasksService {
       if (current.status !== TASK_TIMER_STATUS.Running) {
         throw new ConflictException('Only a running timer can be paused');
       }
-      return transaction.taskWorkSession.update({
+      const updated = await transaction.taskWorkSession.update({
         where: { bookingId },
         data: { status: TASK_TIMER_STATUS.Paused, pausedAt: new Date() },
       });
+      await this.enqueueTimerUpdate(bookingId, updated, transaction);
+      return updated;
     });
     return this.timerView(bookingId, session);
   }
@@ -430,11 +453,8 @@ export class TaskerTasksService {
       if (current.status !== TASK_TIMER_STATUS.Paused || !current.pausedAt) {
         throw new ConflictException('Only a paused timer can be resumed');
       }
-      const pausedDelta = Math.max(
-        0,
-        Math.floor((Date.now() - current.pausedAt.getTime()) / 1000),
-      );
-      return transaction.taskWorkSession.update({
+      const pausedDelta = Math.max(0, Math.floor((Date.now() - current.pausedAt.getTime()) / 1000));
+      const updated = await transaction.taskWorkSession.update({
         where: { bookingId },
         data: {
           status: TASK_TIMER_STATUS.Running,
@@ -444,6 +464,8 @@ export class TaskerTasksService {
           },
         },
       });
+      await this.enqueueTimerUpdate(bookingId, updated, transaction);
+      return updated;
     });
     return this.timerView(bookingId, session);
   }
@@ -453,9 +475,7 @@ export class TaskerTasksService {
       await this.lockOwnedBooking(taskerId, bookingId, transaction);
       const current = await this.lockSession(bookingId, transaction);
       if (
-        ![TASK_TIMER_STATUS.Running, TASK_TIMER_STATUS.Paused].includes(
-          current.status as never,
-        )
+        ![TASK_TIMER_STATUS.Running, TASK_TIMER_STATUS.Paused].includes(current.status as never)
       ) {
         throw new ConflictException('The timer is already stopped');
       }
@@ -464,7 +484,7 @@ export class TaskerTasksService {
         current.status === TASK_TIMER_STATUS.Paused && current.pausedAt
           ? Math.max(0, Math.floor((now.getTime() - current.pausedAt.getTime()) / 1000))
           : 0;
-      return transaction.taskWorkSession.update({
+      const updated = await transaction.taskWorkSession.update({
         where: { bookingId },
         data: {
           status: TASK_TIMER_STATUS.Stopped,
@@ -473,6 +493,8 @@ export class TaskerTasksService {
           accumulatedPausedSecs: { increment: pausedDelta },
         },
       });
+      await this.enqueueTimerUpdate(bookingId, updated, transaction);
+      return updated;
     });
     return this.timerView(bookingId, session);
   }
@@ -485,9 +507,13 @@ export class TaskerTasksService {
     await this.requireOwnedBookingId(taskerId, bookingId);
     const session = await this.prisma.taskWorkSession.findUnique({ where: { bookingId } });
     if (!session) throw new NotFoundException('Task timer has not been started');
-    const updated = await this.prisma.taskWorkSession.update({
-      where: { bookingId },
-      data: { notes: dto.notes },
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      const row = await transaction.taskWorkSession.update({
+        where: { bookingId },
+        data: { notes: dto.notes },
+      });
+      await this.enqueueTimerUpdate(bookingId, row, transaction);
+      return row;
     });
     return this.timerView(bookingId, updated);
   }
@@ -537,6 +563,7 @@ export class TaskerTasksService {
         },
         transaction,
       );
+      await this.enqueueBookingUpdate(bookingId, 'completed', 'tasker_completed', transaction);
       return row;
     });
     return this.serialize(updated);
@@ -558,6 +585,41 @@ export class TaskerTasksService {
       completedTasks: completed,
       taskCompletionPercent: terminal === 0 ? 0 : Math.round((completed / terminal) * 100),
     };
+  }
+
+  private enqueueBookingUpdate(
+    bookingId: number,
+    status: string,
+    reason: string,
+    transaction?: Prisma.TransactionClient,
+  ) {
+    return this.realtime.enqueueBooking(
+      bookingId,
+      'booking:updated',
+      { bookingId: String(bookingId), status, reason },
+      transaction,
+    );
+  }
+
+  private enqueueTimerUpdate(
+    bookingId: number,
+    session: {
+      status: string;
+      startedAt: Date;
+      pausedAt: Date | null;
+      accumulatedPausedSecs: number;
+      stoppedAt: Date | null;
+      notes: string | null;
+    },
+    transaction?: Prisma.TransactionClient,
+  ) {
+    const view = this.timerView(bookingId, session);
+    return this.realtime.enqueueBooking(
+      bookingId,
+      'booking:timer',
+      view as unknown as Prisma.InputJsonValue,
+      transaction,
+    );
   }
 
   private includeRelations() {
@@ -606,10 +668,7 @@ export class TaskerTasksService {
     return transaction.booking.findUniqueOrThrow({ where: { id: bookingId } });
   }
 
-  private async lockSession(
-    bookingId: number,
-    transaction: Prisma.TransactionClient,
-  ) {
+  private async lockSession(bookingId: number, transaction: Prisma.TransactionClient) {
     const rows = await transaction.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "TaskWorkSessions" WHERE "bookingId" = ${bookingId} FOR UPDATE
     `;
@@ -619,16 +678,14 @@ export class TaskerTasksService {
 
   private timerView(
     bookingId: number,
-    session:
-      | {
-          status: string;
-          startedAt: Date;
-          pausedAt: Date | null;
-          accumulatedPausedSecs: number;
-          stoppedAt: Date | null;
-          notes: string | null;
-        }
-      | null,
+    session: {
+      status: string;
+      startedAt: Date;
+      pausedAt: Date | null;
+      accumulatedPausedSecs: number;
+      stoppedAt: Date | null;
+      notes: string | null;
+    } | null,
   ): TaskTimerView {
     if (!session) {
       return {
@@ -712,26 +769,19 @@ export class TaskerTasksService {
   private actions(status: string, timerStatus: string | null): TaskActionView {
     return {
       confirm: status === TASKER_BOOKING_STATUS.Pending,
-      cancel:
-        !TERMINAL_TASK_STATUSES.has(status) && status !== TASKER_BOOKING_STATUS.InProgress,
+      cancel: !TERMINAL_TASK_STATUSES.has(status) && status !== TASKER_BOOKING_STATUS.InProgress,
       startNavigation: status === TASKER_BOOKING_STATUS.Confirmed,
       markArrived: status === TASKER_BOOKING_STATUS.EnRoute,
-      startTimer:
-        status === TASKER_BOOKING_STATUS.Arrived && timerStatus === null,
+      startTimer: status === TASKER_BOOKING_STATUS.Arrived && timerStatus === null,
       pauseTimer:
-        status === TASKER_BOOKING_STATUS.InProgress &&
-        timerStatus === TASK_TIMER_STATUS.Running,
+        status === TASKER_BOOKING_STATUS.InProgress && timerStatus === TASK_TIMER_STATUS.Running,
       resumeTimer:
-        status === TASKER_BOOKING_STATUS.InProgress &&
-        timerStatus === TASK_TIMER_STATUS.Paused,
+        status === TASKER_BOOKING_STATUS.InProgress && timerStatus === TASK_TIMER_STATUS.Paused,
       stopTimer:
         status === TASKER_BOOKING_STATUS.InProgress &&
-        [TASK_TIMER_STATUS.Running, TASK_TIMER_STATUS.Paused].includes(
-          timerStatus as never,
-        ),
+        [TASK_TIMER_STATUS.Running, TASK_TIMER_STATUS.Paused].includes(timerStatus as never),
       complete:
-        status === TASKER_BOOKING_STATUS.InProgress &&
-        timerStatus === TASK_TIMER_STATUS.Stopped,
+        status === TASKER_BOOKING_STATUS.InProgress && timerStatus === TASK_TIMER_STATUS.Stopped,
       messageCustomer: status !== TASKER_BOOKING_STATUS.Cancelled,
       reviewCustomer: status === TASKER_BOOKING_STATUS.Completed,
     };

@@ -49,8 +49,7 @@ export const PAYOUT_METHOD_TYPE = {
   GooglePay: 'google_pay',
 } as const;
 
-export type PayoutMethodType =
-  (typeof PAYOUT_METHOD_TYPE)[keyof typeof PAYOUT_METHOD_TYPE];
+export type PayoutMethodType = (typeof PAYOUT_METHOD_TYPE)[keyof typeof PAYOUT_METHOD_TYPE];
 
 export const PAYOUT_EXECUTION_MODE = {
   Disabled: 'disabled',

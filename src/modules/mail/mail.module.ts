@@ -22,16 +22,11 @@ import { asMailTransporter, type MailTransporter } from './mail.types';
           secure: config.get<boolean>('mail.secure', false),
           auth: user && password ? { user, pass: password } : undefined,
           tls: {
-            rejectUnauthorized: config.get<boolean>(
-              'mail.tlsRejectUnauthorized',
-              true,
-            ),
+            rejectUnauthorized: config.get<boolean>('mail.tlsRejectUnauthorized', true),
           },
         };
 
-        return asMailTransporter(
-          nodemailer.createTransport(transportOptions),
-        );
+        return asMailTransporter(nodemailer.createTransport(transportOptions));
       },
     },
     MailService,

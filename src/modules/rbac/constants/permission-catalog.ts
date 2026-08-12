@@ -17,105 +17,232 @@ export const PERMISSION_CATALOG = [
     module: 'admins',
     label: 'Administrator Management',
     permissions: [
-      { key: 'admins.read', label: 'View administrators', description: 'View administrator accounts and access assignments.' },
-      { key: 'admins.create', label: 'Create administrators', description: 'Create administrator accounts.' },
-      { key: 'admins.update', label: 'Update administrators', description: 'Update administrator profiles and access assignments.' },
-      { key: 'admins.suspend', label: 'Suspend administrators', description: 'Suspend or reactivate administrator accounts.' },
-      { key: 'admins.delete', label: 'Delete administrators', description: 'Deactivate or delete administrator accounts when policy allows.' },
+      {
+        key: 'admins.read',
+        label: 'View administrators',
+        description: 'View administrator accounts and access assignments.',
+      },
+      {
+        key: 'admins.create',
+        label: 'Create administrators',
+        description: 'Create administrator accounts.',
+      },
+      {
+        key: 'admins.update',
+        label: 'Update administrators',
+        description: 'Update administrator profiles and access assignments.',
+      },
+      {
+        key: 'admins.suspend',
+        label: 'Suspend administrators',
+        description: 'Suspend or reactivate administrator accounts.',
+      },
+      {
+        key: 'admins.delete',
+        label: 'Delete administrators',
+        description: 'Deactivate or delete administrator accounts when policy allows.',
+      },
     ],
   },
   {
     module: 'roles',
     label: 'Roles and Permissions',
     permissions: [
-      { key: 'roles.read', label: 'View roles', description: 'View RBAC roles and the permission catalogue.' },
-      { key: 'roles.manage', label: 'Manage roles', description: 'Create and modify RBAC roles. Sensitive writes remain super-admin only.' },
+      {
+        key: 'roles.read',
+        label: 'View roles',
+        description: 'View RBAC roles and the permission catalogue.',
+      },
+      {
+        key: 'roles.manage',
+        label: 'Manage roles',
+        description: 'Create and modify RBAC roles. Sensitive writes remain super-admin only.',
+      },
     ],
   },
   {
     module: 'customers',
     label: 'Customer Management',
     permissions: [
-      { key: 'customers.read', label: 'View customers', description: 'View customer accounts and profiles.' },
-      { key: 'customers.manage', label: 'Manage customers', description: 'Update customer account lifecycle and profile data.' },
+      {
+        key: 'customers.read',
+        label: 'View customers',
+        description: 'View customer accounts and profiles.',
+      },
+      {
+        key: 'customers.manage',
+        label: 'Manage customers',
+        description: 'Update customer account lifecycle and profile data.',
+      },
     ],
   },
   {
     module: 'taskers',
     label: 'Tasker Management',
     permissions: [
-      { key: 'taskers.read', label: 'View taskers', description: 'View tasker profiles and onboarding applications.' },
-      { key: 'taskers.manage', label: 'Manage taskers', description: 'Approve, reject, suspend, or update tasker accounts.' },
+      {
+        key: 'taskers.read',
+        label: 'View taskers',
+        description: 'View tasker profiles and onboarding applications.',
+      },
+      {
+        key: 'taskers.manage',
+        label: 'Manage taskers',
+        description: 'Approve, reject, suspend, or update tasker accounts.',
+      },
     ],
   },
   {
     module: 'elite',
     label: 'Elite Tasker Program',
     permissions: [
-      { key: 'elite.read', label: 'View Elite program', description: 'View Elite members, applications, performance, reports, badges, and benefits.' },
-      { key: 'elite.manage', label: 'Manage Elite program', description: 'Approve tier changes and manage Elite tiers, benefits, and badges.' },
+      {
+        key: 'elite.read',
+        label: 'View Elite program',
+        description:
+          'View Elite members, applications, performance, reports, badges, and benefits.',
+      },
+      {
+        key: 'elite.manage',
+        label: 'Manage Elite program',
+        description: 'Approve tier changes and manage Elite tiers, benefits, and badges.',
+      },
     ],
   },
   {
     module: 'bookings',
     label: 'Booking Management',
     permissions: [
-      { key: 'bookings.read', label: 'View bookings', description: 'View customer and tasker bookings.' },
-      { key: 'bookings.manage', label: 'Manage bookings', description: 'Update booking lifecycle and resolve booking issues.' },
+      {
+        key: 'bookings.read',
+        label: 'View bookings',
+        description: 'View customer and tasker bookings.',
+      },
+      {
+        key: 'bookings.manage',
+        label: 'Manage bookings',
+        description: 'Update booking lifecycle and resolve booking issues.',
+      },
     ],
   },
   {
     module: 'services',
     label: 'Service Management',
     permissions: [
-      { key: 'services.read', label: 'View services', description: 'View the Latache service catalogue.' },
-      { key: 'services.manage', label: 'Manage services', description: 'Create and update service catalogue entries.' },
+      {
+        key: 'services.read',
+        label: 'View services',
+        description: 'View the Latache service catalogue.',
+      },
+      {
+        key: 'services.manage',
+        label: 'Manage services',
+        description: 'Create and update service catalogue entries.',
+      },
+    ],
+  },
+  {
+    module: 'reviews',
+    label: 'Review Moderation',
+    permissions: [
+      {
+        key: 'reviews.read',
+        label: 'View reviews',
+        description: 'View review content and moderation state.',
+      },
+      {
+        key: 'reviews.manage',
+        label: 'Moderate reviews',
+        description: 'Hide or restore reviews without rewriting author content.',
+      },
     ],
   },
   {
     module: 'finance',
     label: 'Finance',
     permissions: [
-      { key: 'finance.read', label: 'View finance', description: 'View financial summaries, transactions, and reconciliation data.' },
-      { key: 'finance.manage', label: 'Manage finance', description: 'Perform permitted finance operations and reconciliation actions.' },
+      {
+        key: 'finance.read',
+        label: 'View finance',
+        description: 'View financial summaries, transactions, and reconciliation data.',
+      },
+      {
+        key: 'finance.manage',
+        label: 'Manage finance',
+        description: 'Perform permitted finance operations and reconciliation actions.',
+      },
     ],
   },
   {
     module: 'reports',
     label: 'Reports',
     permissions: [
-      { key: 'reports.read', label: 'View reports', description: 'View and export authorized operational and financial reports.' },
+      {
+        key: 'reports.read',
+        label: 'View reports',
+        description: 'View and export authorized operational and financial reports.',
+      },
     ],
   },
   {
     module: 'support',
     label: 'Support',
     permissions: [
-      { key: 'support.read', label: 'View support cases', description: 'View support requests and conversations.' },
-      { key: 'support.manage', label: 'Manage support cases', description: 'Respond to and resolve support requests.' },
+      {
+        key: 'support.read',
+        label: 'View support cases',
+        description: 'View support requests and conversations.',
+      },
+      {
+        key: 'support.manage',
+        label: 'Manage support cases',
+        description: 'Respond to and resolve support requests.',
+      },
     ],
   },
   {
     module: 'content',
     label: 'Content',
     permissions: [
-      { key: 'content.read', label: 'View content', description: 'View editable platform content.' },
-      { key: 'content.manage', label: 'Manage content', description: 'Create, update, publish, or unpublish platform content.' },
+      {
+        key: 'content.read',
+        label: 'View content',
+        description: 'View editable platform content.',
+      },
+      {
+        key: 'content.manage',
+        label: 'Manage content',
+        description: 'Create, update, publish, or unpublish platform content.',
+      },
     ],
   },
   {
     module: 'settings',
     label: 'Platform Settings',
     permissions: [
-      { key: 'settings.read', label: 'View platform settings', description: 'View platform identity, currency, tax, booking, radius, commission, referral, and linked Elite policy.' },
-      { key: 'settings.manage', label: 'Manage platform settings', description: 'Update supported platform policy. Unsupported integrations remain non-activatable.' },
+      {
+        key: 'settings.read',
+        label: 'View platform settings',
+        description:
+          'View platform identity, currency, tax, booking, radius, commission, referral, and linked Elite policy.',
+      },
+      {
+        key: 'settings.manage',
+        label: 'Manage platform settings',
+        description:
+          'Update supported platform policy. Unsupported integrations remain non-activatable.',
+      },
     ],
   },
   {
     module: 'analytics',
     label: 'Analytics',
     permissions: [
-      { key: 'analytics.read', label: 'View analytics', description: 'View dashboards, metrics, and analytical reports.' },
+      {
+        key: 'analytics.read',
+        label: 'View analytics',
+        description: 'View dashboards, metrics, and analytical reports.',
+      },
     ],
   },
 ] as const satisfies readonly PermissionCatalogModule[];
@@ -153,14 +280,26 @@ export const SYSTEM_RBAC_ROLES: readonly SystemRbacRoleDefinition[] = [
     code: AdminRole.SupportAdmin,
     name: 'Support Administrator',
     description: 'Customer, tasker, booking, and support case visibility.',
-    permissions: ['support.read', 'support.manage', 'customers.read', 'taskers.read', 'bookings.read'],
+    permissions: [
+      'support.read',
+      'support.manage',
+      'customers.read',
+      'taskers.read',
+      'bookings.read',
+    ],
     isSystem: true,
   },
   {
     code: AdminRole.ContentAdmin,
     name: 'Content Administrator',
     description: 'Content and service catalogue management.',
-    permissions: ['content.read', 'content.manage', 'services.read'],
+    permissions: [
+      'content.read',
+      'content.manage',
+      'services.read',
+      'reviews.read',
+      'reviews.manage',
+    ],
     isSystem: true,
   },
   {
@@ -178,6 +317,8 @@ export const SYSTEM_RBAC_ROLES: readonly SystemRbacRoleDefinition[] = [
       'bookings.manage',
       'services.read',
       'services.manage',
+      'reviews.read',
+      'reviews.manage',
       'settings.read',
     ],
     isSystem: true,
@@ -202,9 +343,9 @@ export const DEFAULT_ADMIN_PERMISSIONS = Object.fromEntries(
   SYSTEM_RBAC_ROLES.map((role) => [role.code, [...role.permissions]]),
 ) as Readonly<Record<AdminRole, string[]>>;
 
-export const CREATABLE_ADMIN_ROLES = SYSTEM_RBAC_ROLES
-  .filter((role) => role.code !== AdminRole.SuperAdmin)
-  .map((role) => role.code);
+export const CREATABLE_ADMIN_ROLES = SYSTEM_RBAC_ROLES.filter(
+  (role) => role.code !== AdminRole.SuperAdmin,
+).map((role) => role.code);
 
 export const permissionKeys = (): string[] => [...ADMIN_PERMISSIONS];
 

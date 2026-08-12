@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Patch,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiConflictResponse,
@@ -21,10 +12,7 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import type { User } from '../../../generated/prisma/client';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import type {
-  TaskerBusinessProfileView,
-  TaskerSkillView,
-} from '../tasker-dashboard.contracts';
+import type { TaskerBusinessProfileView, TaskerSkillView } from '../tasker-dashboard.contracts';
 import {
   ActivateTaskerSkillDto,
   NumericIdParamDto,
@@ -59,7 +47,9 @@ export class TaskerProfileController {
   }
 
   @Get('skills')
-  @ApiOperation({ summary: 'Get the complete service catalogue with tasker skill activation state' })
+  @ApiOperation({
+    summary: 'Get the complete service catalogue with tasker skill activation state',
+  })
   skills(@CurrentUser() user: User): Promise<TaskerSkillView[]> {
     return this.profile.listSkills(user.id);
   }

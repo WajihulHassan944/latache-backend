@@ -22,6 +22,7 @@ import { success, type SuccessEnvelope } from '../auth-response';
 import type { CreateAdminDto, RegisterCustomerDto, RegisterTaskerDto } from '../dto';
 import { AuthRepository } from '../repositories/auth.repository';
 import { AuthTokenService, type AuthTokens, type SessionMetadata } from './auth-token.service';
+import { LocaleService } from '../../localization/locale.service';
 
 export interface RegistrationData {
   user: PublicUser;
@@ -38,13 +39,18 @@ export class AuthRegistrationService {
     private readonly config: ConfigService,
     private readonly rbac: RbacAccessService,
     private readonly audit: AdminAuditService,
+    private readonly locales: LocaleService,
   ) {}
 
   async registerCustomer(
     dto: RegisterCustomerDto,
     metadata: SessionMetadata,
+    requestedLocale?: string,
   ): Promise<SuccessEnvelope<RegistrationData>> {
     this.assertConsent(dto.acceptedTermsAndPrivacyPolicy);
+    const preferredLanguage = dto.preferredLanguage
+      ? this.locales.requireSupported(dto.preferredLanguage)
+      : null;
     const otp = generateNumericCode(6);
     const now = new Date();
     const password = await hash(dto.password, this.bcryptRounds());
@@ -68,6 +74,7 @@ export class AuthRegistrationService {
         otpAttempts: 0,
         acceptedTermsAt: now,
         acceptedPrivacyAt: now,
+        preferredLanguage,
       },
       metadata,
     );
@@ -77,6 +84,7 @@ export class AuthRegistrationService {
       name: dto.firstName,
       otp,
       device: metadata.device,
+      locale: preferredLanguage ?? requestedLocale ?? this.locales.defaultLocale,
     });
 
     return success(
@@ -92,8 +100,12 @@ export class AuthRegistrationService {
   async registerTasker(
     dto: RegisterTaskerDto,
     metadata: SessionMetadata,
+    requestedLocale?: string,
   ): Promise<SuccessEnvelope<RegistrationData>> {
     this.assertConsent(dto.acceptedTermsAndPrivacyPolicy);
+    const preferredLanguage = dto.preferredLanguage
+      ? this.locales.requireSupported(dto.preferredLanguage)
+      : null;
     this.validateTaskerAvailability(dto);
 
     const serviceIds = [...new Set(dto.serviceIds)];
@@ -110,73 +122,77 @@ export class AuthRegistrationService {
     const password = await hash(dto.password, this.bcryptRounds());
 
     try {
-      const result = await this.repository.transaction(async (transaction: Prisma.TransactionClient) => {
-        await this.assertEmailAvailable(dto.email, transaction);
-        const user = await this.repository.createUser(
-          {
-            firstName: dto.firstName,
-            lastName: dto.lastName,
-            email: dto.email,
-            phoneCountryCode: dto.phoneCountryCode,
-            phoneNumber: dto.phoneNumber,
-            password,
-            zipCode: dto.zipCode,
-            role: UserRole.Tasker,
-            accountStatus: AccountStatus.PendingVerification,
-            isVerified: false,
-            isAdmin: false,
-            authType: 'local',
-            otp,
-            otpExpires: this.otpExpiry(),
-            otpAttempts: 0,
-            acceptedTermsAt: now,
-            acceptedPrivacyAt: now,
-            yearsOfExperience: dto.yearsOfExperience,
-            hourlyRate: dto.hourlyRate,
-            aboutMe: dto.aboutMe,
-            bio: dto.aboutMe,
-            idType: dto.identityDocuments.governmentIdType,
-            docType: dto.identityDocuments.governmentIdType,
-            identityDocument: dto.identityDocuments as unknown as Prisma.InputJsonValue,
-            serviceAreaLabel: dto.serviceArea.label,
-            serviceAreaLat: dto.serviceArea.lat,
-            serviceAreaLng: dto.serviceArea.lng,
-            serviceAreaRadiusKm: dto.serviceArea.radiusKm,
-            serviceAreaCity: dto.serviceArea.city,
-            serviceAreaArea: dto.serviceArea.area,
-            onboardingStatus: 'submitted',
-            submittedAt: now,
-          },
-          transaction,
-        );
+      const result = await this.repository.transaction(
+        async (transaction: Prisma.TransactionClient) => {
+          await this.assertEmailAvailable(dto.email, transaction);
+          const user = await this.repository.createUser(
+            {
+              firstName: dto.firstName,
+              lastName: dto.lastName,
+              email: dto.email,
+              phoneCountryCode: dto.phoneCountryCode,
+              phoneNumber: dto.phoneNumber,
+              password,
+              zipCode: dto.zipCode,
+              role: UserRole.Tasker,
+              accountStatus: AccountStatus.PendingVerification,
+              isVerified: false,
+              isAdmin: false,
+              authType: 'local',
+              otp,
+              otpExpires: this.otpExpiry(),
+              otpAttempts: 0,
+              acceptedTermsAt: now,
+              acceptedPrivacyAt: now,
+              yearsOfExperience: dto.yearsOfExperience,
+              hourlyRate: dto.hourlyRate,
+              aboutMe: dto.aboutMe,
+              bio: dto.aboutMe,
+              idType: dto.identityDocuments.governmentIdType,
+              docType: dto.identityDocuments.governmentIdType,
+              identityDocument: dto.identityDocuments as unknown as Prisma.InputJsonValue,
+              serviceAreaLabel: dto.serviceArea.label,
+              serviceAreaLat: dto.serviceArea.lat,
+              serviceAreaLng: dto.serviceArea.lng,
+              serviceAreaRadiusKm: dto.serviceArea.radiusKm,
+              serviceAreaCity: dto.serviceArea.city,
+              serviceAreaArea: dto.serviceArea.area,
+              onboardingStatus: 'submitted',
+              submittedAt: now,
+              preferredLanguage,
+            },
+            transaction,
+          );
 
-        await transaction.userService.createMany({
-          data: serviceIds.map((serviceId) => ({
-            userId: user.id,
-            serviceId,
-            hourlyRate: dto.hourlyRate,
-          })),
-        });
-        await transaction.userAvailability.createMany({
-          data: dto.availability.map((slot) => ({
-            userId: user.id,
-            date: this.dateOnly(slot.date),
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-          })),
-        });
+          await transaction.userService.createMany({
+            data: serviceIds.map((serviceId) => ({
+              userId: user.id,
+              serviceId,
+              hourlyRate: dto.hourlyRate,
+            })),
+          });
+          await transaction.userAvailability.createMany({
+            data: dto.availability.map((slot) => ({
+              userId: user.id,
+              date: this.dateOnly(slot.date),
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+            })),
+          });
 
-        return {
-          user,
-          tokens: await this.tokens.issue(user, metadata, transaction),
-        };
-      });
+          return {
+            user,
+            tokens: await this.tokens.issue(user, metadata, transaction),
+          };
+        },
+      );
 
       await this.mail.sendVerificationEmail({
         to: result.user.email,
         name: dto.firstName,
         otp,
         device: metadata.device,
+        locale: preferredLanguage ?? requestedLocale ?? this.locales.defaultLocale,
       });
 
       return success(
@@ -197,6 +213,9 @@ export class AuthRegistrationService {
     actor: User,
     dto: CreateAdminDto,
   ): Promise<SuccessEnvelope<{ user: PublicUser }>> {
+    const preferredLanguage = dto.preferredLanguage
+      ? this.locales.requireSupported(dto.preferredLanguage)
+      : null;
     const role = await this.rbac.requireActiveRoleByCode(dto.adminRole);
     if (role.code === AdminRole.SuperAdmin) {
       throw new BadRequestException('Additional super administrators cannot be created');
@@ -224,6 +243,7 @@ export class AuthRegistrationService {
         isAdmin: true,
         authType: 'local',
         createdById: actor.id,
+        preferredLanguage,
       });
 
       await this.audit.record({
@@ -244,6 +264,7 @@ export class AuthRegistrationService {
         name: user.firstName || user.email,
         temporaryPassword: dto.password,
         adminRole: role.code,
+        locale: preferredLanguage ?? this.locales.defaultLocale,
       });
 
       return success({ user: serializeUser(user) }, 'Administrator account created successfully.');
@@ -252,7 +273,6 @@ export class AuthRegistrationService {
       throw error;
     }
   }
-
 
   private assertDelegatedAdminCreationAccess(actor: User, targetPermissions: string[]): void {
     if (actor.role === UserRole.SuperAdmin) return;
@@ -288,10 +308,7 @@ export class AuthRegistrationService {
     const seen = new Set<string>();
     const today = dateOnlyToDate(todayDateOnly());
 
-    const byDate = new Map<
-      string,
-      Array<{ startTime: string; endTime: string }>
-    >();
+    const byDate = new Map<string, Array<{ startTime: string; endTime: string }>>();
 
     for (const slot of dto.availability) {
       const date = this.dateOnly(slot.date);
@@ -318,9 +335,7 @@ export class AuthRegistrationService {
         const previous = slots[index - 1];
         const current = slots[index];
         if (previous && current && current.startTime < previous.endTime) {
-          throw new BadRequestException(
-            `Availability slots overlap on ${date}`,
-          );
+          throw new BadRequestException(`Availability slots overlap on ${date}`);
         }
       }
     }
@@ -328,9 +343,7 @@ export class AuthRegistrationService {
 
   private assertConsent(accepted: boolean): void {
     if (!accepted) {
-      throw new BadRequestException(
-        'Terms and Conditions and Privacy Policy must be accepted',
-      );
+      throw new BadRequestException('Terms and Conditions and Privacy Policy must be accepted');
     }
   }
 

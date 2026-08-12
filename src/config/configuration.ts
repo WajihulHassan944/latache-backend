@@ -18,8 +18,17 @@ const asNonNegativeNumber = (value: string | undefined, fallback: number): numbe
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
+const asStringList = (value: string | undefined, fallback: readonly string[] = []): string[] =>
+  (value ?? fallback.join(','))
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
 export default () => {
   const nodeEnvironment = process.env.NODE_ENV ?? 'local';
+  const supportedLocales = asStringList(process.env.SUPPORTED_LOCALES, ['en', 'ar', 'ary']).map(
+    (locale) => locale.toLowerCase(),
+  );
   return {
     app: {
       environment: nodeEnvironment,
@@ -31,32 +40,121 @@ export default () => {
         .split(',')
         .map((origin) => origin.trim())
         .filter(Boolean),
-      swaggerEnabled: asBoolean(
-        process.env.SWAGGER_ENABLED,
-        nodeEnvironment !== 'production',
-      ),
+      swaggerEnabled: asBoolean(process.env.SWAGGER_ENABLED, nodeEnvironment !== 'production'),
       trustProxy: asBoolean(process.env.TRUST_PROXY, false),
+      serviceMode: process.env.SERVICE_MODE ?? 'all',
+      compressionEnabled: asBoolean(process.env.HTTP_COMPRESSION_ENABLED, true),
+      compressionThresholdBytes: asPositiveInteger(
+        process.env.HTTP_COMPRESSION_THRESHOLD_BYTES,
+        1_024,
+      ),
     },
     database: {
       url: process.env.DATABASE_URL,
       logging: asBoolean(process.env.DB_LOGGING, false),
-      transactionMaxWaitMs: asPositiveInteger(
-        process.env.DB_TRANSACTION_MAX_WAIT_MS,
-        15_000,
+      transactionMaxWaitMs: asPositiveInteger(process.env.DB_TRANSACTION_MAX_WAIT_MS, 15_000),
+      transactionTimeoutMs: asPositiveInteger(process.env.DB_TRANSACTION_TIMEOUT_MS, 30_000),
+      poolMaxPerInstance: asPositiveInteger(process.env.DB_POOL_MAX_PER_INSTANCE, 10),
+      poolIdleTimeoutMs: asPositiveInteger(process.env.DB_POOL_IDLE_TIMEOUT_MS, 30_000),
+      poolConnectionTimeoutMs: asPositiveInteger(process.env.DB_POOL_CONNECTION_TIMEOUT_MS, 5_000),
+      slowQueryMs: asPositiveInteger(process.env.DB_SLOW_QUERY_MS, 750),
+    },
+    redis: {
+      url: process.env.REDIS_URL,
+      enabled: asBoolean(process.env.REDIS_ENABLED, Boolean(process.env.REDIS_URL)),
+      required: asBoolean(process.env.REDIS_REQUIRED, false),
+      connectTimeoutMs: asPositiveInteger(process.env.REDIS_CONNECT_TIMEOUT_MS, 2_000),
+    },
+    cache: {
+      enabled: asBoolean(process.env.CACHE_ENABLED, true),
+      prefix: process.env.CACHE_KEY_PREFIX ?? 'latache:v1',
+      servicesTtlSeconds: asPositiveInteger(process.env.CACHE_SERVICES_TTL_SECONDS, 300),
+      settingsTtlSeconds: asPositiveInteger(process.env.CACHE_SETTINGS_TTL_SECONDS, 300),
+      eliteTtlSeconds: asPositiveInteger(process.env.CACHE_ELITE_TTL_SECONDS, 120),
+      adminAnalyticsTtlSeconds: asPositiveInteger(
+        process.env.CACHE_ADMIN_ANALYTICS_TTL_SECONDS,
+        30,
       ),
-      transactionTimeoutMs: asPositiveInteger(
-        process.env.DB_TRANSACTION_TIMEOUT_MS,
-        30_000,
+    },
+    jobs: {
+      enabled: asBoolean(process.env.JOBS_ENABLED, false),
+      workerEnabled: asBoolean(process.env.JOB_WORKER_ENABLED, false),
+      schedulerEnabled: asBoolean(process.env.JOB_SCHEDULER_ENABLED, false),
+      maintenanceQueueName: process.env.JOB_MAINTENANCE_QUEUE_NAME ?? 'latache-maintenance-v1',
+      workerConcurrency: asPositiveInteger(process.env.JOB_WORKER_CONCURRENCY, 4),
+      attempts: asPositiveInteger(process.env.JOB_ATTEMPTS, 5),
+      lockDurationMs: asPositiveInteger(process.env.JOB_LOCK_DURATION_MS, 60_000),
+      healthTimeoutMs: asPositiveInteger(process.env.JOB_HEALTH_TIMEOUT_MS, 2_000),
+      outboxCleanupIntervalMs: asPositiveInteger(
+        process.env.REALTIME_OUTBOX_CLEANUP_INTERVAL_MS,
+        3_600_000,
+      ),
+      outboxCleanupBatchSize: asPositiveInteger(
+        process.env.REALTIME_OUTBOX_CLEANUP_BATCH_SIZE,
+        1_000,
+      ),
+    },
+    observability: {
+      slowRequestMs: asPositiveInteger(process.env.SLOW_REQUEST_MS, 1_000),
+    },
+    localization: {
+      supportedLocales,
+      defaultLocale: (process.env.DEFAULT_LOCALE ?? 'en').trim().toLowerCase(),
+    },
+    realtime: {
+      enabled: asBoolean(process.env.REALTIME_ENABLED, true),
+      outboxPollMs: asPositiveInteger(process.env.REALTIME_OUTBOX_POLL_MS, 500),
+      outboxBatchSize: asPositiveInteger(process.env.REALTIME_OUTBOX_BATCH_SIZE, 100),
+      outboxLockMs: asPositiveInteger(process.env.REALTIME_OUTBOX_LOCK_MS, 30_000),
+      outboxRetentionHours: asPositiveInteger(process.env.REALTIME_OUTBOX_RETENTION_HOURS, 24),
+      sessionSweepMs: asPositiveInteger(process.env.REALTIME_SESSION_SWEEP_MS, 30_000),
+      typingThrottleMs: asPositiveInteger(process.env.REALTIME_TYPING_THROTTLE_MS, 300),
+      locationMinWriteIntervalMs: asPositiveInteger(
+        process.env.REALTIME_LOCATION_MIN_WRITE_INTERVAL_MS,
+        1_000,
+      ),
+    },
+    chat: {
+      attachmentMaxFiles: asPositiveInteger(process.env.CHAT_ATTACHMENT_MAX_FILES, 5),
+      attachmentMaxFileSizeBytes: asPositiveInteger(
+        process.env.CHAT_ATTACHMENT_MAX_FILE_SIZE_BYTES,
+        10 * 1024 * 1024,
+      ),
+      attachmentMaxTotalSizeBytes: asPositiveInteger(
+        process.env.CHAT_ATTACHMENT_MAX_TOTAL_SIZE_BYTES,
+        25 * 1024 * 1024,
+      ),
+      callsEnabled: asBoolean(process.env.CHAT_CALLS_ENABLED, true),
+      callRingTimeoutSeconds: asPositiveInteger(process.env.CHAT_CALL_RING_TIMEOUT_SECONDS, 45),
+      callMaxDurationSeconds: asPositiveInteger(
+        process.env.CHAT_CALL_MAX_DURATION_SECONDS,
+        4 * 60 * 60,
+      ),
+      callSweepMs: asPositiveInteger(process.env.CHAT_CALL_SWEEP_MS, 5_000),
+      callSignalMaxPerMinute: asPositiveInteger(process.env.CHAT_CALL_SIGNAL_MAX_PER_MINUTE, 300),
+      callAllowedBookingStatuses: asStringList(process.env.CHAT_CALL_ALLOWED_BOOKING_STATUSES, [
+        'confirmed',
+        'en_route',
+        'arrived',
+        'in_progress',
+      ]),
+    },
+    webrtc: {
+      stunUrls: asStringList(process.env.WEBRTC_STUN_URLS),
+      turnUrls: asStringList(process.env.WEBRTC_TURN_URLS),
+      turnUsername: process.env.WEBRTC_TURN_USERNAME,
+      turnCredential: process.env.WEBRTC_TURN_CREDENTIAL,
+      turnSharedSecret: process.env.WEBRTC_TURN_SHARED_SECRET,
+      turnCredentialTtlSeconds: asPositiveInteger(
+        process.env.WEBRTC_TURN_CREDENTIAL_TTL_SECONDS,
+        3_600,
       ),
     },
     auth: {
       jwtSecret: process.env.JWT_SECRET,
       adminJwtSecret: process.env.JWT_SECRET_ADMIN,
       accessTokenExpiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
-      refreshTokenExpiresInDays: asPositiveInteger(
-        process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS,
-        30,
-      ),
+      refreshTokenExpiresInDays: asPositiveInteger(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS, 30),
       bcryptRounds: asPositiveInteger(process.env.BCRYPT_ROUNDS, 12),
       otpExpiresInMinutes: asPositiveInteger(process.env.OTP_EXPIRES_IN_MINUTES, 5),
       passwordResetOtpExpiresInMinutes: asPositiveInteger(
@@ -77,10 +175,14 @@ export default () => {
       currency: (process.env.TASKER_WALLET_CURRENCY ?? 'USD').trim().toUpperCase(),
       executionMode: process.env.TASKER_PAYOUT_EXECUTION_MODE ?? 'disabled',
       encryptionKey: process.env.PAYOUT_DATA_ENCRYPTION_KEY,
-      minimumWithdrawalAmount: asPositiveNumber(
-        process.env.TASKER_MIN_WITHDRAWAL_AMOUNT,
-        1,
-      ),
+      minimumWithdrawalAmount: asPositiveNumber(process.env.TASKER_MIN_WITHDRAWAL_AMOUNT, 1),
+    },
+    taskerFinance: {
+      workerEnabled: asBoolean(process.env.TASKER_EARNINGS_WORKER_ENABLED, true),
+      workerPollMs: asPositiveInteger(process.env.TASKER_EARNINGS_WORKER_POLL_MS, 60_000),
+      workerBatchSize: asPositiveInteger(process.env.TASKER_EARNINGS_WORKER_BATCH_SIZE, 100),
+      defaultClearanceDays: asPositiveInteger(process.env.TASKER_EARNINGS_CLEARANCE_DAYS, 14),
+      defaultCashDisputeDays: asPositiveInteger(process.env.TASKER_CASH_DISPUTE_CLEARANCE_DAYS, 14),
     },
     cloudinary: {
       cloudName: process.env.CLOUDINARY_CLOUD_NAME,
@@ -99,10 +201,7 @@ export default () => {
       user: process.env.SMTP_USER,
       password: process.env.SMTP_PASSWORD,
       from: process.env.SMTP_FROM,
-      tlsRejectUnauthorized: asBoolean(
-        process.env.SMTP_TLS_REJECT_UNAUTHORIZED,
-        true,
-      ),
+      tlsRejectUnauthorized: asBoolean(process.env.SMTP_TLS_REJECT_UNAUTHORIZED, true),
       verifyOnBootstrap: asBoolean(process.env.SMTP_VERIFY_ON_BOOTSTRAP, false),
     },
   };

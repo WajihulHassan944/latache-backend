@@ -48,12 +48,10 @@ import type {
 const singleUploadResponseExample = {
   success: true,
   data: {
-    publicId:
-      'latache/customer-profiles/customer/42/2647a81d-b126-4cb8-a26f-ef4685f3118a',
+    publicId: 'latache/customer-profiles/customer/42/2647a81d-b126-4cb8-a26f-ef4685f3118a',
     secureUrl:
       'https://res.cloudinary.com/demo/image/upload/v1775555555/latache/customer-profiles/customer/42/2647a81d-b126-4cb8-a26f-ef4685f3118a.webp',
-    url:
-      'http://res.cloudinary.com/demo/image/upload/v1775555555/latache/customer-profiles/customer/42/2647a81d-b126-4cb8-a26f-ef4685f3118a.webp',
+    url: 'http://res.cloudinary.com/demo/image/upload/v1775555555/latache/customer-profiles/customer/42/2647a81d-b126-4cb8-a26f-ef4685f3118a.webp',
     resourceType: 'image',
     format: 'webp',
     bytes: 165238,
@@ -117,7 +115,9 @@ export class RegistrationUploadsController {
   @ApiUnsupportedMediaTypeResponse({
     description: 'The file MIME type is not allowed for the selected folder.',
   })
-  @ApiServiceUnavailableResponse({ description: 'Cloudinary rejected or could not process the upload.' })
+  @ApiServiceUnavailableResponse({
+    description: 'Cloudinary rejected or could not process the upload.',
+  })
   uploadRegistrationFile(
     @Body() dto: RegistrationUploadDto,
     @UploadedFile() file: BufferedUploadFile | undefined,
@@ -154,7 +154,9 @@ export class UploadsController {
   @ApiUnsupportedMediaTypeResponse({
     description: 'The file MIME type is not allowed for the selected folder.',
   })
-  @ApiServiceUnavailableResponse({ description: 'Cloudinary rejected or could not process the upload.' })
+  @ApiServiceUnavailableResponse({
+    description: 'Cloudinary rejected or could not process the upload.',
+  })
   uploadSingle(
     @CurrentUser() user: User,
     @Body() dto: UploadFileDto,
@@ -199,12 +201,18 @@ export class UploadsController {
       },
     },
   })
-  @ApiBadRequestResponse({ description: 'No files were provided or more than five were submitted.' })
+  @ApiBadRequestResponse({
+    description: 'No files were provided or more than five were submitted.',
+  })
   @ApiUnauthorizedResponse({ description: 'Bearer token or active session is missing or invalid.' })
   @ApiForbiddenResponse({ description: 'The authenticated role cannot use the selected folder.' })
   @ApiPayloadTooLargeResponse({ description: 'One of the files exceeds the upload limit.' })
-  @ApiUnsupportedMediaTypeResponse({ description: 'One of the files has an unsupported MIME type.' })
-  @ApiServiceUnavailableResponse({ description: 'Cloudinary rejected or could not process the batch.' })
+  @ApiUnsupportedMediaTypeResponse({
+    description: 'One of the files has an unsupported MIME type.',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Cloudinary rejected or could not process the batch.',
+  })
   uploadMultiple(
     @CurrentUser() user: User,
     @Body() dto: UploadFileDto,
@@ -225,8 +233,7 @@ export class UploadsController {
       example: {
         success: true,
         data: {
-          publicId:
-            'latache/customer-profiles/customer/42/2647a81d-b126-4cb8-a26f-ef4685f3118a',
+          publicId: 'latache/customer-profiles/customer/42/2647a81d-b126-4cb8-a26f-ef4685f3118a',
           resourceType: 'image',
           result: 'ok',
         },

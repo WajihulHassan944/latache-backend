@@ -32,12 +32,12 @@ export class AuthService {
     private readonly sessions: AuthSessionService,
   ) {}
 
-  registerCustomer(dto: RegisterCustomerDto, metadata: SessionMetadata) {
-    return this.registration.registerCustomer(dto, metadata);
+  registerCustomer(dto: RegisterCustomerDto, metadata: SessionMetadata, locale?: string) {
+    return this.registration.registerCustomer(dto, metadata, locale);
   }
 
-  registerTasker(dto: RegisterTaskerDto, metadata: SessionMetadata) {
-    return this.registration.registerTasker(dto, metadata);
+  registerTasker(dto: RegisterTaskerDto, metadata: SessionMetadata, locale?: string) {
+    return this.registration.registerTasker(dto, metadata, locale);
   }
 
   createAdmin(actor: User, dto: CreateAdminDto) {
@@ -56,12 +56,12 @@ export class AuthService {
     return this.passwords.verifyEmail(userId, dto);
   }
 
-  resendVerification(dto: ResendVerificationEmailDto) {
-    return this.passwords.resendVerification(dto);
+  resendVerification(dto: ResendVerificationEmailDto, locale?: string) {
+    return this.passwords.resendVerification(dto, locale);
   }
 
-  forgotPassword(dto: ForgotPasswordDto) {
-    return this.passwords.forgotPassword(dto);
+  forgotPassword(dto: ForgotPasswordDto, locale?: string) {
+    return this.passwords.forgotPassword(dto, locale);
   }
 
   verifyResetOtp(dto: VerifyResetOtpDto) {

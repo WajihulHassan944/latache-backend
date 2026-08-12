@@ -61,66 +61,69 @@ export class AuthTokenService {
   async refresh(refreshToken: string, metadata: SessionMetadata = {}): Promise<AuthTokens> {
     const tokenHash = hashOpaqueToken(refreshToken);
 
-    const outcome = await this.prisma.$transaction(async (transaction: Prisma.TransactionClient) => {
-      const stored = await this.sessions.lockByHash(tokenHash, transaction);
-      if (!stored) return { kind: 'invalid' as const };
+    const outcome = await this.prisma.$transaction(
+      async (transaction: Prisma.TransactionClient) => {
+        const stored = await this.sessions.lockByHash(tokenHash, transaction);
+        if (!stored) return { kind: 'invalid' as const };
 
-      if (stored.revokedAt) {
-        await this.sessions.revokeAll(stored.userId, transaction);
-        return { kind: 'reused' as const };
-      }
-      if (stored.expiresAt.getTime() <= Date.now()) {
+        if (stored.revokedAt) {
+          await this.sessions.revokeAll(stored.userId, transaction);
+          return { kind: 'reused' as const };
+        }
+        if (stored.expiresAt.getTime() <= Date.now()) {
+          await transaction.refreshToken.update({
+            where: { id: stored.id },
+            data: { revokedAt: new Date() },
+          });
+          return { kind: 'expired' as const };
+        }
+
+        const user = await this.users.findUserByIdForUpdate(stored.userId, transaction);
+        if (!user || !this.canUseTokens(user)) {
+          if (user) await this.sessions.revokeAll(user.id, transaction);
+          return { kind: 'account' as const };
+        }
+
+        const replacement = generateOpaqueToken();
+        const replacementHash = hashOpaqueToken(replacement);
+        const replacementSession = await this.sessions.create(
+          {
+            userId: user.id,
+            tokenHash: replacementHash,
+            device: metadata.device ?? stored.device,
+            ipAddress: metadata.ipAddress?.slice(0, 64) ?? stored.ipAddress,
+            userAgent: metadata.userAgent?.slice(0, 512) ?? stored.userAgent,
+            lastUsedAt: new Date(),
+            expiresAt: this.refreshExpiry(),
+          },
+          transaction,
+        );
+
         await transaction.refreshToken.update({
           where: { id: stored.id },
-          data: { revokedAt: new Date() },
+          data: {
+            revokedAt: new Date(),
+            replacedByTokenHash: replacementHash,
+            lastUsedAt: new Date(),
+          },
         });
-        return { kind: 'expired' as const };
-      }
 
-      const user = await this.users.findUserByIdForUpdate(stored.userId, transaction);
-      if (!user || !this.canUseTokens(user)) {
-        if (user) await this.sessions.revokeAll(user.id, transaction);
-        return { kind: 'account' as const };
-      }
-
-      const replacement = generateOpaqueToken();
-      const replacementHash = hashOpaqueToken(replacement);
-      const replacementSession = await this.sessions.create(
-        {
-          userId: user.id,
-          tokenHash: replacementHash,
-          device: metadata.device ?? stored.device,
-          ipAddress: metadata.ipAddress?.slice(0, 64) ?? stored.ipAddress,
-          userAgent: metadata.userAgent?.slice(0, 512) ?? stored.userAgent,
-          lastUsedAt: new Date(),
-          expiresAt: this.refreshExpiry(),
-        },
-        transaction,
-      );
-
-      await transaction.refreshToken.update({
-        where: { id: stored.id },
-        data: {
-          revokedAt: new Date(),
-          replacedByTokenHash: replacementHash,
-          lastUsedAt: new Date(),
-        },
-      });
-
-      return {
-        kind: 'success' as const,
-        tokens: {
-          accessToken: await this.signAccessToken(user, replacementSession.id),
-          refreshToken: replacement,
-          tokenType: 'Bearer' as const,
-        },
-      };
-    });
+        return {
+          kind: 'success' as const,
+          tokens: {
+            accessToken: await this.signAccessToken(user, replacementSession.id),
+            refreshToken: replacement,
+            tokenType: 'Bearer' as const,
+          },
+        };
+      },
+    );
 
     if (outcome.kind === 'invalid') throw new UnauthorizedException('Refresh token is invalid');
     if (outcome.kind === 'reused') throw new UnauthorizedException('Refresh token reuse detected');
     if (outcome.kind === 'expired') throw new UnauthorizedException('Refresh token has expired');
-    if (outcome.kind === 'account') throw new UnauthorizedException('Account cannot use this session');
+    if (outcome.kind === 'account')
+      throw new UnauthorizedException('Account cannot use this session');
     return outcome.tokens;
   }
 
@@ -130,8 +133,8 @@ export class AuthTokenService {
     // token expires cannot complete POST /auth/verify-email.
     return Boolean(
       !user.deletedAt &&
-      user.accountStatus !== AccountStatus.Suspended &&
-      user.accountStatus !== AccountStatus.Deactivated,
+        user.accountStatus !== AccountStatus.Suspended &&
+        user.accountStatus !== AccountStatus.Deactivated,
     );
   }
 
@@ -158,8 +161,10 @@ export class AuthTokenService {
 
   private accessSecret(role: UserRole): string {
     if (ADMINISTRATIVE_ROLES.includes(role)) {
-      return this.config.get<string>('auth.adminJwtSecret') ??
-        this.config.getOrThrow<string>('auth.jwtSecret');
+      return (
+        this.config.get<string>('auth.adminJwtSecret') ??
+        this.config.getOrThrow<string>('auth.jwtSecret')
+      );
     }
     return this.config.getOrThrow<string>('auth.jwtSecret');
   }

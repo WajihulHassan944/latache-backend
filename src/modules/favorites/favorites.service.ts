@@ -89,7 +89,11 @@ export class FavoritesService {
       const favorite = await this.prisma.favoriteTasker.create({
         data: { customerId, taskerId },
       });
-      return { id: favorite.id, taskerId: String(taskerId), createdAt: favorite.createdAt.toISOString() };
+      return {
+        id: favorite.id,
+        taskerId: String(taskerId),
+        createdAt: favorite.createdAt.toISOString(),
+      };
     } catch (error) {
       if (hasPrismaErrorCode(error, 'P2002')) {
         throw new ConflictException('Tasker is already in favorites');

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, type User } from '../../../generated/prisma/client';
+import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { PAYMENT_STATUS } from '../../payments/payments.constants';
@@ -87,7 +87,9 @@ export class AdminAnalyticsService {
       this.prisma.user.count({ where: { role: UserRole.Customer, deletedAt: null } }),
       this.prisma.user.count({ where: { role: UserRole.Tasker, deletedAt: null } }),
       this.prisma.booking.count({ where: { status: { in: activeBookingStatuses } } }),
-      this.prisma.booking.count({ where: { status: 'completed', ...(createdAt ? { taskCompletedAt: createdAt } : {}) } }),
+      this.prisma.booking.count({
+        where: { status: 'completed', ...(createdAt ? { taskCompletedAt: createdAt } : {}) },
+      }),
       this.prisma.user.count({
         where: {
           role: UserRole.Tasker,
@@ -97,7 +99,9 @@ export class AdminAnalyticsService {
           onboardingStatus: { in: ['submitted', 'pending_review'] },
         },
       }),
-      this.prisma.user.count({ where: { role: UserRole.Tasker, deletedAt: null, isElite: true, accountStatus: 'active' } }),
+      this.prisma.user.count({
+        where: { role: UserRole.Tasker, deletedAt: null, isElite: true, accountStatus: 'active' },
+      }),
       this.prisma.booking.groupBy({
         by: ['status'],
         where: createdAt ? { createdAt } : undefined,
@@ -149,8 +153,14 @@ export class AdminAnalyticsService {
         paymentStatus: booking.paymentStatus,
         amount: booking.totalChargedAmount === null ? null : money(booking.totalChargedAmount),
         currency: booking.paymentCurrency,
-        customer: { id: String(booking.customer.id), name: fullName(booking.customer.firstName, booking.customer.lastName) },
-        tasker: { id: String(booking.tasker.id), name: fullName(booking.tasker.firstName, booking.tasker.lastName) },
+        customer: {
+          id: String(booking.customer.id),
+          name: fullName(booking.customer.firstName, booking.customer.lastName),
+        },
+        tasker: {
+          id: String(booking.tasker.id),
+          name: fullName(booking.tasker.firstName, booking.tasker.lastName),
+        },
         service: booking.service,
         createdAt: booking.createdAt.toISOString(),
       })),
@@ -185,7 +195,9 @@ export class AdminAnalyticsService {
         grossRevenue: money(aggregate._sum.totalChargedAmount),
         platformFees: money(aggregate._sum.platformFeeAmount),
         serviceRevenue: money(aggregate._sum.serviceAmount),
-        taskerEarnings: money(Number(aggregate._sum.serviceAmount ?? 0) + Number(aggregate._sum.tipAmount ?? 0)),
+        taskerEarnings: money(
+          Number(aggregate._sum.serviceAmount ?? 0) + Number(aggregate._sum.tipAmount ?? 0),
+        ),
         tips: money(aggregate._sum.tipAmount),
         donations: money(aggregate._sum.donationAmount),
         averageBookingValue: money(aggregate._avg.totalChargedAmount),
@@ -202,24 +214,29 @@ export class AdminAnalyticsService {
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
-    const [totalCustomers, activeThisMonth, newThisMonth, newInPeriod, statusRows, growth] = await Promise.all([
-      this.prisma.user.count({ where: { role: UserRole.Customer, deletedAt: null } }),
-      this.prisma.user.count({
-        where: { role: UserRole.Customer, deletedAt: null, lastLoginAt: { gte: monthStart } },
-      }),
-      this.prisma.user.count({
-        where: { role: UserRole.Customer, deletedAt: null, createdAt: { gte: monthStart } },
-      }),
-      this.prisma.user.count({
-        where: { role: UserRole.Customer, deletedAt: null, ...(periodCreated ? { createdAt: periodCreated } : {}) },
-      }),
-      this.prisma.user.groupBy({
-        by: ['accountStatus'],
-        where: { role: UserRole.Customer, deletedAt: null },
-        _count: { _all: true },
-      }),
-      this.customerGrowth(range),
-    ]);
+    const [totalCustomers, activeThisMonth, newThisMonth, newInPeriod, statusRows, growth] =
+      await Promise.all([
+        this.prisma.user.count({ where: { role: UserRole.Customer, deletedAt: null } }),
+        this.prisma.user.count({
+          where: { role: UserRole.Customer, deletedAt: null, lastLoginAt: { gte: monthStart } },
+        }),
+        this.prisma.user.count({
+          where: { role: UserRole.Customer, deletedAt: null, createdAt: { gte: monthStart } },
+        }),
+        this.prisma.user.count({
+          where: {
+            role: UserRole.Customer,
+            deletedAt: null,
+            ...(periodCreated ? { createdAt: periodCreated } : {}),
+          },
+        }),
+        this.prisma.user.groupBy({
+          by: ['accountStatus'],
+          where: { role: UserRole.Customer, deletedAt: null },
+          _count: { _all: true },
+        }),
+        this.customerGrowth(range),
+      ]);
 
     let retentionRate = 0;
     if (range.from && range.toExclusive) {
@@ -249,7 +266,10 @@ export class AdminAnalyticsService {
         newInPeriod,
         retentionRate,
       },
-      statusBreakdown: statusRows.map((row) => ({ status: row.accountStatus, count: row._count._all })),
+      statusBreakdown: statusRows.map((row) => ({
+        status: row.accountStatus,
+        count: row._count._all,
+      })),
       growth,
       retentionDefinition:
         range.from && range.toExclusive
@@ -260,32 +280,32 @@ export class AdminAnalyticsService {
 
   async taskers(query: AdminDateRangeQueryDto) {
     const range = resolveAdminDateRange(query);
-    const createdAt = dateFilter(range);
     const bookingDate = dateFilter(range);
 
-    const [totalTaskers, pendingVerification, rating, bookingStatus, growth, responseRows] = await Promise.all([
-      this.prisma.user.count({ where: { role: UserRole.Tasker, deletedAt: null } }),
-      this.prisma.user.count({
-        where: {
-          role: UserRole.Tasker,
-          deletedAt: null,
-          isVerified: true,
-          accountStatus: 'pending_approval',
-          onboardingStatus: { in: ['submitted', 'pending_review'] },
-        },
-      }),
-      this.prisma.user.aggregate({
-        where: { role: UserRole.Tasker, deletedAt: null, accountStatus: 'active' },
-        _avg: { rating: true },
-      }),
-      this.prisma.booking.groupBy({
-        by: ['status'],
-        where: bookingDate ? { createdAt: bookingDate } : undefined,
-        _count: { _all: true },
-      }),
-      this.taskerGrowth(range),
-      this.averageTaskerResponseMinutes(range),
-    ]);
+    const [totalTaskers, pendingVerification, rating, bookingStatus, growth, responseRows] =
+      await Promise.all([
+        this.prisma.user.count({ where: { role: UserRole.Tasker, deletedAt: null } }),
+        this.prisma.user.count({
+          where: {
+            role: UserRole.Tasker,
+            deletedAt: null,
+            isVerified: true,
+            accountStatus: 'pending_approval',
+            onboardingStatus: { in: ['submitted', 'pending_review'] },
+          },
+        }),
+        this.prisma.user.aggregate({
+          where: { role: UserRole.Tasker, deletedAt: null, accountStatus: 'active' },
+          _avg: { rating: true },
+        }),
+        this.prisma.booking.groupBy({
+          by: ['status'],
+          where: bookingDate ? { createdAt: bookingDate } : undefined,
+          _count: { _all: true },
+        }),
+        this.taskerGrowth(range),
+        this.averageTaskerResponseMinutes(range),
+      ]);
 
     const completed = bookingStatus.find((row) => row.status === 'completed')?._count._all ?? 0;
     const cancelled = bookingStatus.find((row) => row.status === 'cancelled')?._count._all ?? 0;
@@ -307,27 +327,47 @@ export class AdminAnalyticsService {
     const range = resolveAdminDateRange(query);
     const createdAt = dateFilter(range);
 
-    const [totalElite, activeElite, inactiveElite, activeInPeriod, topEarnings] = await Promise.all([
-      this.prisma.user.count({ where: { role: UserRole.Tasker, deletedAt: null, isElite: true } }),
-      this.prisma.user.count({ where: { role: UserRole.Tasker, deletedAt: null, isElite: true, accountStatus: 'active' } }),
-      this.prisma.user.count({ where: { role: UserRole.Tasker, deletedAt: null, isElite: true, accountStatus: { in: ['suspended', 'deactivated'] } } }),
-      this.prisma.booking.findMany({
-        where: {
-          status: 'completed',
-          tasker: { isElite: true, deletedAt: null },
-          ...(createdAt ? { taskCompletedAt: createdAt } : {}),
-        },
-        select: { taskerId: true },
-        distinct: ['taskerId'],
-      }),
-      this.topTaskerEarnings(range, true),
-    ]);
+    const [totalElite, activeElite, inactiveElite, activeInPeriod, topEarnings] = await Promise.all(
+      [
+        this.prisma.user.count({
+          where: { role: UserRole.Tasker, deletedAt: null, isElite: true },
+        }),
+        this.prisma.user.count({
+          where: { role: UserRole.Tasker, deletedAt: null, isElite: true, accountStatus: 'active' },
+        }),
+        this.prisma.user.count({
+          where: {
+            role: UserRole.Tasker,
+            deletedAt: null,
+            isElite: true,
+            accountStatus: { in: ['suspended', 'deactivated'] },
+          },
+        }),
+        this.prisma.booking.findMany({
+          where: {
+            status: 'completed',
+            tasker: { isElite: true, deletedAt: null },
+            ...(createdAt ? { taskCompletedAt: createdAt } : {}),
+          },
+          select: { taskerId: true },
+          distinct: ['taskerId'],
+        }),
+        this.topTaskerEarnings(range, true),
+      ],
+    );
 
     const taskerIds = topEarnings.map((row) => row.taskerId);
     const taskers = taskerIds.length
       ? await this.prisma.user.findMany({
           where: { id: { in: taskerIds } },
-          select: { id: true, firstName: true, lastName: true, rating: true, completedTasks: true, profilePicture: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            rating: true,
+            completedTasks: true,
+            profilePicture: true,
+          },
         })
       : [];
     const byId = new Map(taskers.map((tasker) => [tasker.id, tasker]));
@@ -362,7 +402,10 @@ export class AdminAnalyticsService {
     const [total, active, statusRows, paidAggregate, services] = await Promise.all([
       this.prisma.booking.count({ where }),
       this.prisma.booking.count({
-        where: { ...(where ?? {}), status: { in: ['pending', 'confirmed', 'en_route', 'arrived', 'in_progress'] } },
+        where: {
+          ...(where ?? {}),
+          status: { in: ['pending', 'confirmed', 'en_route', 'arrived', 'in_progress'] },
+        },
       }),
       this.prisma.booking.groupBy({ by: ['status'], where, _count: { _all: true } }),
       this.prisma.booking.aggregate({
@@ -390,14 +433,27 @@ export class AdminAnalyticsService {
   async performance(query: AdminDateRangeQueryDto) {
     const range = resolveAdminDateRange(query);
     const bookingDate = dateFilter(range);
-    const [statusRows, avgRating, activeDisputes, disputesByCategory, trend, responseMinutes] = await Promise.all([
-      this.prisma.booking.groupBy({ by: ['status'], where: bookingDate ? { createdAt: bookingDate } : undefined, _count: { _all: true } }),
-      this.prisma.user.aggregate({ where: { role: UserRole.Tasker, deletedAt: null, accountStatus: 'active' }, _avg: { rating: true } }),
-      this.prisma.taskComplaint.count({ where: { status: { notIn: ['resolved', 'closed'] }, ...(bookingDate ? { createdAt: bookingDate } : {}) } }),
-      this.disputesByCategory(range),
-      this.completionAndRatingTrend(range),
-      this.averageTaskerResponseMinutes(range),
-    ]);
+    const [statusRows, avgRating, activeDisputes, disputesByCategory, trend, responseMinutes] =
+      await Promise.all([
+        this.prisma.booking.groupBy({
+          by: ['status'],
+          where: bookingDate ? { createdAt: bookingDate } : undefined,
+          _count: { _all: true },
+        }),
+        this.prisma.user.aggregate({
+          where: { role: UserRole.Tasker, deletedAt: null, accountStatus: 'active' },
+          _avg: { rating: true },
+        }),
+        this.prisma.taskComplaint.count({
+          where: {
+            status: { notIn: ['resolved', 'closed'] },
+            ...(bookingDate ? { createdAt: bookingDate } : {}),
+          },
+        }),
+        this.disputesByCategory(range),
+        this.completionAndRatingTrend(range),
+        this.averageTaskerResponseMinutes(range),
+      ]);
     const completed = statusRows.find((row) => row.status === 'completed')?._count._all ?? 0;
     const cancelled = statusRows.find((row) => row.status === 'cancelled')?._count._all ?? 0;
 
@@ -420,26 +476,37 @@ export class AdminAnalyticsService {
     const withdrawalCreatedAt = dateFilter(range);
     const paidAt = dateFilter(range);
 
-    const [earnings, payouts, platform, paidWithdrawalAverage, series, topEarners] = await Promise.all([
-      this.prisma.taskerWalletLedgerEntry.aggregate({
-        where: { kind: 'earning', status: 'settled', ...(ledgerCreatedAt ? { createdAt: ledgerCreatedAt } : {}) },
-        _sum: { amount: true },
-      }),
-      this.prisma.taskerWithdrawal.aggregate({
-        where: { status: 'paid', ...(withdrawalCreatedAt ? { processedAt: withdrawalCreatedAt } : {}) },
-        _sum: { amount: true },
-      }),
-      this.prisma.booking.aggregate({
-        where: { paymentStatus: PAYMENT_STATUS.Paid, ...(paidAt ? { paidAt } : {}) },
-        _sum: { platformFeeAmount: true },
-      }),
-      this.prisma.taskerWithdrawal.aggregate({
-        where: { status: 'paid', ...(withdrawalCreatedAt ? { processedAt: withdrawalCreatedAt } : {}) },
-        _avg: { amount: true },
-      }),
-      this.earningsSeries(range),
-      this.topTaskerEarnings(range, false),
-    ]);
+    const [earnings, payouts, platform, paidWithdrawalAverage, series, topEarners] =
+      await Promise.all([
+        this.prisma.taskerWalletLedgerEntry.aggregate({
+          where: {
+            kind: 'earning',
+            status: 'settled',
+            ...(ledgerCreatedAt ? { createdAt: ledgerCreatedAt } : {}),
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.taskerWithdrawal.aggregate({
+          where: {
+            status: 'paid',
+            ...(withdrawalCreatedAt ? { processedAt: withdrawalCreatedAt } : {}),
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.booking.aggregate({
+          where: { paymentStatus: PAYMENT_STATUS.Paid, ...(paidAt ? { paidAt } : {}) },
+          _sum: { platformFeeAmount: true },
+        }),
+        this.prisma.taskerWithdrawal.aggregate({
+          where: {
+            status: 'paid',
+            ...(withdrawalCreatedAt ? { processedAt: withdrawalCreatedAt } : {}),
+          },
+          _avg: { amount: true },
+        }),
+        this.earningsSeries(range),
+        this.topTaskerEarnings(range, false),
+      ]);
 
     const ids = topEarners.map((row) => row.taskerId);
     const taskers = ids.length
@@ -482,11 +549,29 @@ export class AdminAnalyticsService {
     const includePayments = categories === 'all' || categories === 'payments';
     const includeAdmin = categories === 'all' || categories === 'admin';
 
-    const [users, bookings, payments, withdrawals, audits, userCount, bookingCount, paymentCount, withdrawalCount, auditCount] = await Promise.all([
+    const [
+      users,
+      bookings,
+      payments,
+      withdrawals,
+      audits,
+      userCount,
+      bookingCount,
+      paymentCount,
+      withdrawalCount,
+      auditCount,
+    ] = await Promise.all([
       includeUsers
         ? this.prisma.user.findMany({
             where: { deletedAt: null },
-            select: { id: true, role: true, firstName: true, lastName: true, createdAt: true, onboardingStatus: true },
+            select: {
+              id: true,
+              role: true,
+              firstName: true,
+              lastName: true,
+              createdAt: true,
+              onboardingStatus: true,
+            },
             orderBy: { createdAt: 'desc' },
             take,
           })
@@ -508,14 +593,32 @@ export class AdminAnalyticsService {
         : Promise.resolve([]),
       includePayments
         ? this.prisma.paymentTransaction.findMany({
-            select: { id: true, customerId: true, bookingId: true, kind: true, status: true, amount: true, currency: true, createdAt: true, updatedAt: true },
+            select: {
+              id: true,
+              customerId: true,
+              bookingId: true,
+              kind: true,
+              status: true,
+              amount: true,
+              currency: true,
+              createdAt: true,
+              updatedAt: true,
+            },
             orderBy: { updatedAt: 'desc' },
             take,
           })
         : Promise.resolve([]),
       includePayments
         ? this.prisma.taskerWithdrawal.findMany({
-            select: { id: true, taskerId: true, amount: true, currency: true, status: true, requestedAt: true, processedAt: true },
+            select: {
+              id: true,
+              taskerId: true,
+              amount: true,
+              currency: true,
+              status: true,
+              requestedAt: true,
+              processedAt: true,
+            },
             orderBy: { requestedAt: 'desc' },
             take,
           })
@@ -524,7 +627,9 @@ export class AdminAnalyticsService {
         ? this.prisma.adminAuditLog.findMany({
             include: {
               actor: { select: { id: true, firstName: true, lastName: true, email: true } },
-              targetUser: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
+              targetUser: {
+                select: { id: true, firstName: true, lastName: true, email: true, role: true },
+              },
             },
             orderBy: { createdAt: 'desc' },
             take,
@@ -542,7 +647,12 @@ export class AdminAnalyticsService {
       items.push({
         id: `user:${user.id}:${user.createdAt.getTime()}`,
         category: 'users',
-        type: user.role === UserRole.Tasker ? 'tasker_registered' : user.role === UserRole.Customer ? 'customer_registered' : 'administrator_created',
+        type:
+          user.role === UserRole.Tasker
+            ? 'tasker_registered'
+            : user.role === UserRole.Customer
+              ? 'customer_registered'
+              : 'administrator_created',
         title: `${user.role === UserRole.Tasker ? 'Tasker' : user.role === UserRole.Customer ? 'Customer' : 'Administrator'} account created`,
         actor: { type: 'user', id: String(user.id), name: fullName(user.firstName, user.lastName) },
         entity: { type: 'user', id: String(user.id) },
@@ -554,13 +664,23 @@ export class AdminAnalyticsService {
       items.push({
         id: `booking:${booking.id}:${booking.updatedAt.getTime()}`,
         category: 'bookings',
-        type: booking.createdAt.getTime() === booking.updatedAt.getTime() ? 'booking_created' : 'booking_updated',
+        type:
+          booking.createdAt.getTime() === booking.updatedAt.getTime()
+            ? 'booking_created'
+            : 'booking_updated',
         title: `Booking #${booking.id} is ${booking.status.replaceAll('_', ' ')}`,
-        actor: { type: 'customer', id: String(booking.customer.id), name: fullName(booking.customer.firstName, booking.customer.lastName) },
+        actor: {
+          type: 'customer',
+          id: String(booking.customer.id),
+          name: fullName(booking.customer.firstName, booking.customer.lastName),
+        },
         entity: { type: 'booking', id: String(booking.id) },
         metadata: {
           status: booking.status,
-          tasker: { id: String(booking.tasker.id), name: fullName(booking.tasker.firstName, booking.tasker.lastName) },
+          tasker: {
+            id: String(booking.tasker.id),
+            name: fullName(booking.tasker.firstName, booking.tasker.lastName),
+          },
           service: booking.service.name,
         },
         occurredAt: booking.updatedAt.toISOString(),
@@ -574,7 +694,11 @@ export class AdminAnalyticsService {
         title: `${payment.kind.replaceAll('_', ' ')} ${payment.status}`,
         actor: { type: 'customer', id: String(payment.customerId) },
         entity: { type: 'payment', id: payment.id },
-        metadata: { bookingId: payment.bookingId ? String(payment.bookingId) : null, amount: money(payment.amount), currency: payment.currency },
+        metadata: {
+          bookingId: payment.bookingId ? String(payment.bookingId) : null,
+          amount: money(payment.amount),
+          currency: payment.currency,
+        },
         occurredAt: payment.updatedAt.toISOString(),
       });
     }
@@ -597,11 +721,21 @@ export class AdminAnalyticsService {
         type: audit.action,
         title: audit.action.replaceAll('_', ' '),
         actor: audit.actor
-          ? { type: 'administrator', id: String(audit.actor.id), name: fullName(audit.actor.firstName, audit.actor.lastName), email: audit.actor.email }
+          ? {
+              type: 'administrator',
+              id: String(audit.actor.id),
+              name: fullName(audit.actor.firstName, audit.actor.lastName),
+              email: audit.actor.email,
+            }
           : { type: 'system', id: null },
         entity: { type: audit.entityType, id: audit.entityId },
         target: audit.targetUser
-          ? { id: String(audit.targetUser.id), name: fullName(audit.targetUser.firstName, audit.targetUser.lastName), email: audit.targetUser.email, role: audit.targetUser.role }
+          ? {
+              id: String(audit.targetUser.id),
+              name: fullName(audit.targetUser.firstName, audit.targetUser.lastName),
+              email: audit.targetUser.email,
+              role: audit.targetUser.role,
+            }
           : null,
         reason: audit.reason,
         metadata: audit.metadata,
@@ -742,7 +876,9 @@ export class AdminAnalyticsService {
     }));
   }
 
-  private async averageTaskerResponseMinutes(range: ResolvedAdminDateRange): Promise<number | null> {
+  private async averageTaskerResponseMinutes(
+    range: ResolvedAdminDateRange,
+  ): Promise<number | null> {
     const condition = this.sqlDateCondition(Prisma.sql`b."createdAt"`, range);
     const rows = await this.prisma.$queryRaw<NumericRow[]>(Prisma.sql`
       SELECT AVG(EXTRACT(EPOCH FROM (b."confirmedAt" - b."createdAt")) / 60.0) AS value
@@ -782,24 +918,36 @@ export class AdminAnalyticsService {
     `);
     return rows.map((row) => ({
       bucket: row.bucket.toISOString(),
-      completionRate: percentage(Number(row.completed), Number(row.completed) + Number(row.cancelled)),
-      averageRating: row.averageRating === null ? null : Number(Number(row.averageRating).toFixed(2)),
+      completionRate: percentage(
+        Number(row.completed),
+        Number(row.completed) + Number(row.cancelled),
+      ),
+      averageRating:
+        row.averageRating === null ? null : Number(Number(row.averageRating).toFixed(2)),
     }));
   }
 
   private async earningsSeries(range: ResolvedAdminDateRange) {
     const bucket = this.bucket(Prisma.sql`l."createdAt"`, range);
     const condition = this.sqlDateCondition(Prisma.sql`l."createdAt"`, range);
-    const rows = await this.prisma.$queryRaw<Array<{ bucket: Date; taskerEarnings: number | string | Prisma.Decimal }>>(Prisma.sql`
+    const rows = await this.prisma.$queryRaw<
+      Array<{ bucket: Date; taskerEarnings: number | string | Prisma.Decimal }>
+    >(Prisma.sql`
       SELECT ${bucket} AS bucket, COALESCE(SUM(l."amount"), 0) AS "taskerEarnings"
       FROM "TaskerWalletLedger" l
       WHERE l."kind" = 'earning' AND l."status" = 'settled' ${condition}
       GROUP BY 1 ORDER BY 1 ASC
     `);
-    return rows.map((row) => ({ bucket: row.bucket.toISOString(), taskerEarnings: money(row.taskerEarnings) }));
+    return rows.map((row) => ({
+      bucket: row.bucket.toISOString(),
+      taskerEarnings: money(row.taskerEarnings),
+    }));
   }
 
-  private async topTaskerEarnings(range: ResolvedAdminDateRange, eliteOnly: boolean): Promise<TopTaskerEarningsRow[]> {
+  private async topTaskerEarnings(
+    range: ResolvedAdminDateRange,
+    eliteOnly: boolean,
+  ): Promise<TopTaskerEarningsRow[]> {
     const condition = this.sqlDateCondition(Prisma.sql`l."createdAt"`, range);
     const elite = eliteOnly ? Prisma.sql`AND u."isElite" = TRUE` : Prisma.sql``;
     return this.prisma.$queryRaw<TopTaskerEarningsRow[]>(Prisma.sql`

@@ -9,107 +9,120 @@ datasource db {
 }
 
 model User {
-  id                       Int                @id @default(autoincrement())
-  firstName                String?            @default("") @db.VarChar(255)
-  lastName                 String?            @default("") @db.VarChar(255)
-  email                    String             @unique(map: "Users_email_key") @db.VarChar(255)
-  phoneCountryCode         String?            @default("") @db.VarChar(8)
-  phoneNumber              String?            @default("") @db.VarChar(255)
-  otp                      Int?
-  otpExpires               DateTime?          @db.Timestamptz(6)
-  otpAttempts              Int                @default(0)
-  password                 String?            @db.VarChar(255)
-  zipCode                  String?            @db.VarChar(255)
-  passwordResetCode        Int?
-  passwordResetCodeExpires DateTime?          @db.Timestamptz(6)
-  passwordResetAttempts    Int                @default(0)
-  profilePicture           String?            @default("") @db.VarChar(255)
-  role                     String             @default("") @db.VarChar(255)
-  accountStatus            String             @default("active") @db.VarChar(32)
-  adminRole                String?            @db.VarChar(64)
-  permissions              String[]           @default([]) @db.VarChar(100)
-  rbacRoleId               String?            @db.VarChar(40)
-  inheritsRolePermissions  Boolean            @default(true)
-  mustChangePassword       Boolean            @default(false)
-  lastLoginAt              DateTime?          @db.Timestamptz(6)
-  acceptedTermsAt          DateTime?          @db.Timestamptz(6)
-  acceptedPrivacyAt        DateTime?          @db.Timestamptz(6)
-  createdById              Int?
-  deletedAt                DateTime?          @db.Timestamptz(6)
-  bio                      String?            @db.Text
-  isVerified               Boolean            @default(false)
-  isAdmin                  Boolean            @default(false)
-  isProfilePublic          Boolean            @default(false)
-  isDocVerified            Boolean            @default(false)
-  authType                 String?            @default("") @db.VarChar(255)
-  docType                  String?            @default("") @db.VarChar(255)
-  dateOfBirth              String?            @default("") @db.VarChar(255)
-  yearsOfExperience        Int?
-  hourlyRate               Decimal?           @db.Decimal(10, 2)
-  idType                   String?            @db.VarChar(255)
-  identityDocument         Json?              @db.JsonB
-  serviceAreaLabel         String?            @db.VarChar(255)
-  serviceAreaLat           Decimal?           @db.Decimal(9, 6)
-  serviceAreaLng           Decimal?           @db.Decimal(9, 6)
-  serviceAreaRadiusKm      Decimal?           @db.Decimal(6, 2)
-  serviceAreaCity          String?            @db.VarChar(255)
-  serviceAreaArea          String?            @db.VarChar(255)
-  onboardingStatus         String?            @db.VarChar(255)
-  submittedAt              DateTime?          @db.Timestamptz(6)
-  rating                   Decimal            @default(0) @db.Decimal(2, 1)
-  reviewsCount             Int                @default(0)
-  completedTasks           Int                @default(0)
-  vehicles                 String[]           @default([]) @db.VarChar(255)
-  workImages               String[]           @default([]) @db.VarChar(255)
-  isElite                  Boolean            @default(false)
-  eliteTierId              String?            @db.VarChar(40)
-  eliteSince               DateTime?          @db.Timestamptz(6)
-  aboutMe                  String?            @db.Text
-  skills                   String[]           @default([]) @db.VarChar(255)
-  stripeCustomerId         String?            @unique(map: "Users_stripeCustomerId_key") @db.VarChar(255)
-  defaultStripePaymentMethodId String?         @db.VarChar(255)
-  createdAt                DateTime           @default(now()) @db.Timestamptz(6)
-  updatedAt                DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+  id                           Int       @id @default(autoincrement())
+  firstName                    String?   @default("") @db.VarChar(255)
+  lastName                     String?   @default("") @db.VarChar(255)
+  email                        String    @unique(map: "Users_email_key") @db.VarChar(255)
+  phoneCountryCode             String?   @default("") @db.VarChar(8)
+  phoneNumber                  String?   @default("") @db.VarChar(255)
+  preferredLanguage            String?   @db.VarChar(10)
+  otp                          Int?
+  otpExpires                   DateTime? @db.Timestamptz(6)
+  otpAttempts                  Int       @default(0)
+  password                     String?   @db.VarChar(255)
+  zipCode                      String?   @db.VarChar(255)
+  passwordResetCode            Int?
+  passwordResetCodeExpires     DateTime? @db.Timestamptz(6)
+  passwordResetAttempts        Int       @default(0)
+  profilePicture               String?   @default("") @db.VarChar(255)
+  role                         String    @default("") @db.VarChar(255)
+  accountStatus                String    @default("active") @db.VarChar(32)
+  adminRole                    String?   @db.VarChar(64)
+  permissions                  String[]  @default([]) @db.VarChar(100)
+  rbacRoleId                   String?   @db.VarChar(40)
+  inheritsRolePermissions      Boolean   @default(true)
+  mustChangePassword           Boolean   @default(false)
+  lastLoginAt                  DateTime? @db.Timestamptz(6)
+  acceptedTermsAt              DateTime? @db.Timestamptz(6)
+  acceptedPrivacyAt            DateTime? @db.Timestamptz(6)
+  createdById                  Int?
+  deletedAt                    DateTime? @db.Timestamptz(6)
+  bio                          String?   @db.Text
+  isVerified                   Boolean   @default(false)
+  isAdmin                      Boolean   @default(false)
+  isProfilePublic              Boolean   @default(false)
+  isDocVerified                Boolean   @default(false)
+  authType                     String?   @default("") @db.VarChar(255)
+  docType                      String?   @default("") @db.VarChar(255)
+  dateOfBirth                  String?   @default("") @db.VarChar(255)
+  yearsOfExperience            Int?
+  hourlyRate                   Decimal?  @db.Decimal(10, 2)
+  idType                       String?   @db.VarChar(255)
+  identityDocument             Json?     @db.JsonB
+  serviceAreaLabel             String?   @db.VarChar(255)
+  serviceAreaLat               Decimal?  @db.Decimal(9, 6)
+  serviceAreaLng               Decimal?  @db.Decimal(9, 6)
+  serviceAreaRadiusKm          Decimal?  @db.Decimal(6, 2)
+  serviceAreaCity              String?   @db.VarChar(255)
+  serviceAreaArea              String?   @db.VarChar(255)
+  onboardingStatus             String?   @db.VarChar(255)
+  submittedAt                  DateTime? @db.Timestamptz(6)
+  rating                       Decimal   @default(0) @db.Decimal(2, 1)
+  reviewsCount                 Int       @default(0)
+  completedTasks               Int       @default(0)
+  vehicles                     String[]  @default([]) @db.VarChar(255)
+  workImages                   String[]  @default([]) @db.VarChar(255)
+  isElite                      Boolean   @default(false)
+  eliteTierId                  String?   @db.VarChar(40)
+  eliteSince                   DateTime? @db.Timestamptz(6)
+  aboutMe                      String?   @db.Text
+  skills                       String[]  @default([]) @db.VarChar(255)
+  stripeCustomerId             String?   @unique(map: "Users_stripeCustomerId_key") @db.VarChar(255)
+  defaultStripePaymentMethodId String?   @db.VarChar(255)
+  createdAt                    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                    DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  refreshTokens         RefreshToken[]
-  userServices          UserService[]
-  availability          UserAvailability[]
-  bookingsAsCustomer    Booking[]               @relation("CustomerBookings")
-  bookingsAsTasker      Booking[]               @relation("TaskerBookings")
-  createdBy             User?                   @relation("AdminCreator", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  createdAdmins         User[]                  @relation("AdminCreator")
-  rbacRole              RbacRole?               @relation(fields: [rbacRoleId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Users_rbacRoleId_fkey")
-  taskerWallet          TaskerWallet?
-  payoutMethods         TaskerPayoutMethod[]
-  walletLedgerEntries   TaskerWalletLedgerEntry[]
-  withdrawalRequests    TaskerWithdrawal[]
-  taskWorkSessions      TaskWorkSession[]
-  taskLocations         TaskerTaskLocation[]
-  taskComplaintsFiled          TaskComplaint[]         @relation("TaskComplaintFiledBy")
-  disputesAssigned             TaskComplaint[]         @relation("DisputeAssignedAdmin")
-  disputesResolved             TaskComplaint[]         @relation("DisputeResolvedBy")
-  disputeEvidenceUploaded      DisputeEvidence[]       @relation("DisputeEvidenceUploader")
-  disputeEvidenceReviewed      DisputeEvidence[]       @relation("DisputeEvidenceReviewer")
-  disputeEvidenceRequestsMade  DisputeEvidenceRequest[] @relation("DisputeEvidenceRequester")
-  disputeResolutions           DisputeResolution[]     @relation("DisputeResolutionActor")
-  taskMessagesSent             TaskMessage[]           @relation("TaskMessageSender")
-  notifications         TaskNotification[]
-  reviewsWritten        Review[]                @relation("ReviewsWritten")
-  reviewsReceived       Review[]                @relation("ReviewsReceived")
-  favoriteTaskers       FavoriteTasker[]        @relation("CustomerFavoriteTaskers")
-  favoritedByCustomers  FavoriteTasker[]        @relation("FavoritedTasker")
-  customerWallet        CustomerWallet?
-  customerWalletLedger  CustomerWalletLedgerEntry[]
-  paymentTransactions   PaymentTransaction[]
-  adminAuditActions     AdminAuditLog[]            @relation("AdminAuditActor")
-  adminAuditTargets     AdminAuditLog[]            @relation("AdminAuditTarget")
-  eliteTier              EliteTier?                @relation("EliteTierMembers", fields: [eliteTierId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Users_eliteTierId_fkey")
-  eliteRequests          EliteMembershipRequest[]  @relation("EliteRequestTasker")
-  eliteDecisions         EliteMembershipRequest[]  @relation("EliteRequestDecider")
-  eliteTransitions       EliteTierTransition[]      @relation("EliteTransitionTasker")
-  eliteTransitionsActed  EliteTierTransition[]      @relation("EliteTransitionActor")
-  eliteBadges            EliteTaskerBadge[]         @relation("EliteBadgeTasker")
-  eliteBadgesAwarded     EliteTaskerBadge[]         @relation("EliteBadgeAwarder")
+  refreshTokens               RefreshToken[]
+  userServices                UserService[]
+  availability                UserAvailability[]
+  bookingsAsCustomer          Booking[]                   @relation("CustomerBookings")
+  bookingsAsTasker            Booking[]                   @relation("TaskerBookings")
+  createdBy                   User?                       @relation("AdminCreator", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdAdmins               User[]                      @relation("AdminCreator")
+  rbacRole                    RbacRole?                   @relation(fields: [rbacRoleId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Users_rbacRoleId_fkey")
+  taskerWallet                TaskerWallet?
+  payoutMethods               TaskerPayoutMethod[]
+  walletLedgerEntries         TaskerWalletLedgerEntry[]
+  taskerEarnings              TaskerEarning[]             @relation("TaskerEarningsTasker")
+  platformAccount             TaskerPlatformAccount?
+  platformReceivables         TaskerPlatformReceivable[]  @relation("TaskerPlatformReceivablesTasker")
+  platformLedgerEntries       TaskerPlatformLedgerEntry[] @relation("TaskerPlatformLedgerTasker")
+  cashPaymentsConfirmed       TaskerPlatformReceivable[]  @relation("TaskerPlatformReceivableConfirmer")
+  withdrawalRequests          TaskerWithdrawal[]
+  taskWorkSessions            TaskWorkSession[]
+  taskLocations               TaskerTaskLocation[]
+  taskComplaintsFiled         TaskComplaint[]             @relation("TaskComplaintFiledBy")
+  disputesAssigned            TaskComplaint[]             @relation("DisputeAssignedAdmin")
+  disputesResolved            TaskComplaint[]             @relation("DisputeResolvedBy")
+  disputeEvidenceUploaded     DisputeEvidence[]           @relation("DisputeEvidenceUploader")
+  disputeEvidenceReviewed     DisputeEvidence[]           @relation("DisputeEvidenceReviewer")
+  disputeEvidenceRequestsMade DisputeEvidenceRequest[]    @relation("DisputeEvidenceRequester")
+  disputeResolutions          DisputeResolution[]         @relation("DisputeResolutionActor")
+  taskMessagesSent            TaskMessage[]               @relation("TaskMessageSender")
+  conversationCallsInitiated  ConversationCall[]          @relation("ConversationCallInitiator")
+  conversationCallsReceived   ConversationCall[]          @relation("ConversationCallRecipient")
+  conversationCallsEnded      ConversationCall[]          @relation("ConversationCallEndedBy")
+  notifications               TaskNotification[]
+  reviewsWritten              Review[]                    @relation("ReviewsWritten")
+  reviewsReceived             Review[]                    @relation("ReviewsReceived")
+  reviewsModerated            Review[]                    @relation("ReviewsModerated")
+  favoriteTaskers             FavoriteTasker[]            @relation("CustomerFavoriteTaskers")
+  favoritedByCustomers        FavoriteTasker[]            @relation("FavoritedTasker")
+  customerWallet              CustomerWallet?
+  customerWalletLedger        CustomerWalletLedgerEntry[]
+  paymentTransactions         PaymentTransaction[]
+  adminAuditActions           AdminAuditLog[]             @relation("AdminAuditActor")
+  adminAuditTargets           AdminAuditLog[]             @relation("AdminAuditTarget")
+  eliteTier                   EliteTier?                  @relation("EliteTierMembers", fields: [eliteTierId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Users_eliteTierId_fkey")
+  eliteRequests               EliteMembershipRequest[]    @relation("EliteRequestTasker")
+  eliteDecisions              EliteMembershipRequest[]    @relation("EliteRequestDecider")
+  eliteTransitions            EliteTierTransition[]       @relation("EliteTransitionTasker")
+  eliteTransitionsActed       EliteTierTransition[]       @relation("EliteTransitionActor")
+  eliteBadges                 EliteTaskerBadge[]          @relation("EliteBadgeTasker")
+  eliteBadgesAwarded          EliteTaskerBadge[]          @relation("EliteBadgeAwarder")
+  supportTickets              SupportTicket[]             @relation("SupportTicketRequester")
+  supportTicketsAssigned      SupportTicket[]             @relation("SupportTicketAssignee")
+  supportMessagesSent         SupportTicketMessage[]      @relation("SupportTicketMessageSender")
 
   @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
   @@index([role, accountStatus], map: "users_role_status_idx")
@@ -119,46 +132,61 @@ model User {
   @@map("Users")
 }
 
-
-
 model EliteTier {
-  id           String    @id @default(cuid()) @db.VarChar(40)
-  code         String    @unique(map: "EliteTiers_code_key") @db.VarChar(32)
-  name         String    @db.VarChar(80)
-  rank         Int       @unique(map: "EliteTiers_rank_key")
-  description  String?   @db.VarChar(500)
-  requirements Json?     @db.JsonB
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt    DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  id           String   @id @default(cuid()) @db.VarChar(40)
+  code         String   @unique(map: "EliteTiers_code_key") @db.VarChar(32)
+  name         String   @db.VarChar(80)
+  rank         Int      @unique(map: "EliteTiers_rank_key")
+  description  String?  @db.VarChar(500)
+  requirements Json?    @db.JsonB
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  members  User[]         @relation("EliteTierMembers")
-  benefits EliteBenefit[]
-  badges   EliteBadge[]
+  members      User[]                 @relation("EliteTierMembers")
+  benefits     EliteBenefit[]
+  badges       EliteBadge[]
+  translations EliteTierTranslation[]
 
   @@index([isActive, rank], map: "elite_tiers_active_rank_idx")
   @@map("EliteTiers")
 }
 
-model EliteMembershipRequest {
-  id              String    @id @default(cuid()) @db.VarChar(40)
-  taskerId        Int
-  kind            String    @db.VarChar(32)
-  fromTierCode    String?   @db.VarChar(32)
-  toTierCode      String?   @db.VarChar(32)
-  status          String    @default("pending") @db.VarChar(32)
-  reason          String?   @db.VarChar(1000)
-  decisionReason  String?   @db.VarChar(1000)
-  metricsSnapshot Json?     @db.JsonB
-  requirementsSnapshot Json? @db.JsonB
-  decidedById     Int?
-  decidedAt       DateTime? @db.Timestamptz(6)
-  cancelledAt     DateTime? @db.Timestamptz(6)
-  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+model EliteTierTranslation {
+  id          String   @id @default(cuid()) @db.VarChar(40)
+  tierId      String   @db.VarChar(40)
+  locale      String   @db.VarChar(10)
+  name        String   @db.VarChar(80)
+  description String?  @db.VarChar(500)
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  tasker    User                 @relation("EliteRequestTasker", fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "EliteMembershipRequests_taskerId_fkey")
-  decidedBy User?                @relation("EliteRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "EliteMembershipRequests_decidedById_fkey")
+  tier EliteTier @relation(fields: [tierId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "EliteTierTranslations_tierId_fkey")
+
+  @@unique([tierId, locale], map: "elite_tier_translations_tier_locale_unique")
+  @@index([locale, name], map: "elite_tier_translations_locale_name_idx")
+  @@map("EliteTierTranslations")
+}
+
+model EliteMembershipRequest {
+  id                   String    @id @default(cuid()) @db.VarChar(40)
+  taskerId             Int
+  kind                 String    @db.VarChar(32)
+  fromTierCode         String?   @db.VarChar(32)
+  toTierCode           String?   @db.VarChar(32)
+  status               String    @default("pending") @db.VarChar(32)
+  reason               String?   @db.VarChar(1000)
+  decisionReason       String?   @db.VarChar(1000)
+  metricsSnapshot      Json?     @db.JsonB
+  requirementsSnapshot Json?     @db.JsonB
+  decidedById          Int?
+  decidedAt            DateTime? @db.Timestamptz(6)
+  cancelledAt          DateTime? @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  tasker     User                 @relation("EliteRequestTasker", fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "EliteMembershipRequests_taskerId_fkey")
+  decidedBy  User?                @relation("EliteRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "EliteMembershipRequests_decidedById_fkey")
   transition EliteTierTransition?
 
   @@index([taskerId, status, createdAt], map: "elite_requests_tasker_status_created_idx")
@@ -200,11 +228,29 @@ model EliteBenefit {
   createdAt    DateTime @default(now()) @db.Timestamptz(6)
   updatedAt    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  tier EliteTier @relation(fields: [tierId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "EliteBenefits_tierId_fkey")
+  tier         EliteTier                 @relation(fields: [tierId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "EliteBenefits_tierId_fkey")
+  translations EliteBenefitTranslation[]
 
   @@unique([tierId, code], map: "elite_benefits_tier_code_unique")
   @@index([tierId, isActive, sortOrder], map: "elite_benefits_tier_active_sort_idx")
   @@map("EliteBenefits")
+}
+
+model EliteBenefitTranslation {
+  id           String   @id @default(cuid()) @db.VarChar(40)
+  benefitId    String   @db.VarChar(40)
+  locale       String   @db.VarChar(10)
+  name         String   @db.VarChar(120)
+  description  String?  @db.VarChar(500)
+  displayValue String?  @db.VarChar(120)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  benefit EliteBenefit @relation(fields: [benefitId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "EliteBenefitTranslations_benefitId_fkey")
+
+  @@unique([benefitId, locale], map: "elite_benefit_translations_benefit_locale_unique")
+  @@index([locale, name], map: "elite_benefit_translations_locale_name_idx")
+  @@map("EliteBenefitTranslations")
 }
 
 model EliteBadge {
@@ -219,11 +265,28 @@ model EliteBadge {
   createdAt   DateTime @default(now()) @db.Timestamptz(6)
   updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  tier        EliteTier?        @relation(fields: [tierId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "EliteBadges_tierId_fkey")
-  assignments EliteTaskerBadge[]
+  tier         EliteTier?              @relation(fields: [tierId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "EliteBadges_tierId_fkey")
+  assignments  EliteTaskerBadge[]
+  translations EliteBadgeTranslation[]
 
   @@index([tierId, isActive], map: "elite_badges_tier_active_idx")
   @@map("EliteBadges")
+}
+
+model EliteBadgeTranslation {
+  id          String   @id @default(cuid()) @db.VarChar(40)
+  badgeId     String   @db.VarChar(40)
+  locale      String   @db.VarChar(10)
+  name        String   @db.VarChar(120)
+  description String?  @db.VarChar(500)
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  badge EliteBadge @relation(fields: [badgeId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "EliteBadgeTranslations_badgeId_fkey")
+
+  @@unique([badgeId, locale], map: "elite_badge_translations_badge_locale_unique")
+  @@index([locale, name], map: "elite_badge_translations_locale_name_idx")
+  @@map("EliteBadgeTranslations")
 }
 
 model EliteTaskerBadge {
@@ -244,7 +307,6 @@ model EliteTaskerBadge {
   @@index([badgeId, revokedAt], map: "elite_tasker_badges_badge_revoked_idx")
   @@map("EliteTaskerBadges")
 }
-
 
 model PlatformSetting {
   key         String   @id @db.VarChar(64)
@@ -276,6 +338,7 @@ model AdminAuditLog {
   @@index([targetUserId, createdAt], map: "admin_audit_target_created_idx")
   @@index([entityType, entityId, createdAt], map: "admin_audit_entity_created_idx")
   @@index([action, createdAt], map: "admin_audit_action_created_idx")
+  @@index([createdAt, id], map: "admin_audit_created_cursor_idx")
   @@map("AdminAuditLogs")
 }
 
@@ -298,19 +361,43 @@ model RbacRole {
 }
 
 model Service {
-  id          Int           @id @default(autoincrement())
-  name        String?       @db.VarChar(255)
-  description String?       @db.VarChar(255)
-  slug        String?       @db.VarChar(255)
-  icon        String?       @db.VarChar(255)
-  createdAt   DateTime      @db.Timestamptz(6)
-  updatedAt   DateTime      @updatedAt @db.Timestamptz(6)
+  id          Int      @id @default(autoincrement())
+  name        String?  @db.VarChar(255)
+  description String?  @db.Text
+  slug        String?  @db.VarChar(255)
+  icon        String?  @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
 
   userServices UserService[]
   bookings     Booking[]
   options      ServiceOption[]
+  translations ServiceTranslation[]
 
+  @@index([isActive, sortOrder], map: "services_active_sort_idx")
   @@map("Services")
+}
+
+model ServiceTranslation {
+  id                    String   @id @default(cuid()) @db.VarChar(40)
+  serviceId             Int
+  locale                String   @db.VarChar(10)
+  name                  String   @db.VarChar(255)
+  description           String?  @db.Text
+  normalizedName        String   @db.VarChar(255)
+  normalizedDescription String?  @db.Text
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ServiceTranslations_serviceId_fkey")
+
+  @@unique([serviceId, locale], map: "service_translations_service_locale_unique")
+  @@index([locale, normalizedName], map: "service_translations_locale_name_idx")
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin, map: "service_translations_normalized_name_trgm_idx")
+  @@index([normalizedDescription(ops: raw("gin_trgm_ops"))], type: Gin, map: "service_translations_normalized_description_trgm_idx")
+  @@map("ServiceTranslations")
 }
 
 model RefreshToken {
@@ -368,71 +455,76 @@ model UserAvailability {
 }
 
 model Booking {
-  id               Int      @id @default(autoincrement())
-  customerId       Int
-  taskerId         Int
-  serviceId        Int
-  serviceOptionId  Int?
-  availabilityId   Int      @unique(map: "Bookings_availabilityId_key")
-  hourlyRate       Decimal  @db.Decimal(10, 2)
-  bookingDate      DateTime @db.Date
-  startTime        String   @db.VarChar(255)
-  endTime          String   @db.VarChar(255)
-  venueAddress     String   @db.VarChar(255)
-  apartmentSuite   String?  @db.VarChar(255)
-  description      String   @db.Text
-  attachments      Json?    @db.JsonB
-  locationLabel    String   @db.VarChar(255)
-  locationLat      Decimal  @db.Decimal(9, 6)
-  locationLng      Decimal  @db.Decimal(9, 6)
-  locationCity     String?  @db.VarChar(255)
-  locationArea     String?  @db.VarChar(255)
-  status             String    @default("pending") @db.VarChar(255)
-  confirmedAt        DateTime? @db.Timestamptz(6)
-  enRouteAt          DateTime? @db.Timestamptz(6)
-  arrivedAt          DateTime? @db.Timestamptz(6)
-  taskStartedAt      DateTime? @db.Timestamptz(6)
-  taskCompletedAt    DateTime? @db.Timestamptz(6)
-  cancelledAt        DateTime? @db.Timestamptz(6)
-  cancelledByRole    String?   @db.VarChar(32)
-  cancellationReason String?   @db.VarChar(1000)
-  rescheduledAt       DateTime? @db.Timestamptz(6)
-  estimatedDurationMinutes Int   @default(120)
-  extensionMinutes    Int        @default(0)
-  paymentSource       String     @default("stripe") @db.VarChar(32)
-  paymentStatus       String     @default("payment_method_required") @db.VarChar(48)
-  paymentCurrency     String     @default("USD") @db.VarChar(3)
-  stripePaymentMethodId String?  @db.VarChar(255)
-  stripePaymentIntentId String?  @unique(map: "Bookings_stripePaymentIntentId_key") @db.VarChar(255)
-  serviceAmount       Decimal?   @db.Decimal(14, 2)
-  platformFeeAmount   Decimal    @default(0) @db.Decimal(14, 2)
-  commissionRatePercent Decimal  @default(0) @db.Decimal(7, 4)
-  taxAmount           Decimal    @default(0) @db.Decimal(14, 2)
-  taxRatePercent      Decimal    @default(0) @db.Decimal(7, 4)
-  taxInclusive        Boolean    @default(false)
-  serviceSurchargeAmount Decimal @default(0) @db.Decimal(14, 2)
-  tipAmount           Decimal    @default(0) @db.Decimal(14, 2)
-  donationAmount      Decimal    @default(0) @db.Decimal(14, 2)
-  donationDropoffRequested Boolean @default(false)
-  totalChargedAmount  Decimal?   @db.Decimal(14, 2)
-  paymentFailureReason String?   @db.VarChar(1000)
-  paidAt              DateTime?  @db.Timestamptz(6)
-  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  id                       Int       @id @default(autoincrement())
+  customerId               Int
+  taskerId                 Int
+  serviceId                Int
+  serviceOptionId          Int?
+  availabilityId           Int       @unique(map: "Bookings_availabilityId_key")
+  hourlyRate               Decimal   @db.Decimal(10, 2)
+  bookingDate              DateTime  @db.Date
+  startTime                String    @db.VarChar(255)
+  endTime                  String    @db.VarChar(255)
+  venueAddress             String    @db.VarChar(255)
+  apartmentSuite           String?   @db.VarChar(255)
+  description              String    @db.Text
+  attachments              Json?     @db.JsonB
+  locationLabel            String    @db.VarChar(255)
+  locationLat              Decimal   @db.Decimal(9, 6)
+  locationLng              Decimal   @db.Decimal(9, 6)
+  locationCity             String?   @db.VarChar(255)
+  locationArea             String?   @db.VarChar(255)
+  status                   String    @default("pending") @db.VarChar(255)
+  confirmedAt              DateTime? @db.Timestamptz(6)
+  enRouteAt                DateTime? @db.Timestamptz(6)
+  arrivedAt                DateTime? @db.Timestamptz(6)
+  taskStartedAt            DateTime? @db.Timestamptz(6)
+  taskCompletedAt          DateTime? @db.Timestamptz(6)
+  cancelledAt              DateTime? @db.Timestamptz(6)
+  cancelledByRole          String?   @db.VarChar(32)
+  cancellationReason       String?   @db.VarChar(1000)
+  rescheduledAt            DateTime? @db.Timestamptz(6)
+  estimatedDurationMinutes Int       @default(120)
+  extensionMinutes         Int       @default(0)
+  paymentSource            String    @default("stripe") @db.VarChar(32)
+  paymentStatus            String    @default("payment_method_required") @db.VarChar(48)
+  paymentCurrency          String    @default("USD") @db.VarChar(3)
+  stripePaymentMethodId    String?   @db.VarChar(255)
+  stripePaymentIntentId    String?   @unique(map: "Bookings_stripePaymentIntentId_key") @db.VarChar(255)
+  serviceAmount            Decimal?  @db.Decimal(14, 2)
+  platformFeeAmount        Decimal   @default(0) @db.Decimal(14, 2)
+  commissionRatePercent    Decimal   @default(0) @db.Decimal(7, 4)
+  taxAmount                Decimal   @default(0) @db.Decimal(14, 2)
+  taxRatePercent           Decimal   @default(0) @db.Decimal(7, 4)
+  taxInclusive             Boolean   @default(false)
+  serviceSurchargeAmount   Decimal   @default(0) @db.Decimal(14, 2)
+  tipAmount                Decimal   @default(0) @db.Decimal(14, 2)
+  donationAmount           Decimal   @default(0) @db.Decimal(14, 2)
+  donationDropoffRequested Boolean   @default(false)
+  totalChargedAmount       Decimal?  @db.Decimal(14, 2)
+  paymentFailureReason     String?   @db.VarChar(1000)
+  paidAt                   DateTime? @db.Timestamptz(6)
+  createdAt                DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  customer         User                    @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_customerId_fkey")
-  tasker           User                    @relation("TaskerBookings", fields: [taskerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_taskerId_fkey")
-  service          Service                 @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_serviceId_fkey")
-  serviceOption    ServiceOption?          @relation(fields: [serviceOptionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Bookings_serviceOptionId_fkey")
-  availability     UserAvailability        @relation(fields: [availabilityId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_availabilityId_fkey")
-  workSession      TaskWorkSession?
-  latestLocation   TaskerTaskLocation?
-  complaints       TaskComplaint[]
-  messages         TaskMessage[]
-  reviews          Review[]
-  walletLedger     TaskerWalletLedgerEntry[]
+  customer             User                        @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_customerId_fkey")
+  tasker               User                        @relation("TaskerBookings", fields: [taskerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_taskerId_fkey")
+  service              Service                     @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_serviceId_fkey")
+  serviceOption        ServiceOption?              @relation(fields: [serviceOptionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Bookings_serviceOptionId_fkey")
+  availability         UserAvailability            @relation(fields: [availabilityId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_availabilityId_fkey")
+  workSession          TaskWorkSession?
+  latestLocation       TaskerTaskLocation?
+  complaints           TaskComplaint[]
+  messages             TaskMessage[]
+  conversationCalls    ConversationCall[]
+  reviews              Review[]
+  walletLedger         TaskerWalletLedgerEntry[]
+  taskerEarning        TaskerEarning?
+  platformReceivable   TaskerPlatformReceivable?
+  platformLedger       TaskerPlatformLedgerEntry[]
   customerWalletLedger CustomerWalletLedgerEntry[]
-  paymentTransactions PaymentTransaction[]
+  paymentTransactions  PaymentTransaction[]
+  supportTickets       SupportTicket[]
 
   @@index([customerId, bookingDate], map: "bookings_customer_date_idx")
   @@index([taskerId, bookingDate], map: "bookings_tasker_date_idx")
@@ -440,9 +532,10 @@ model Booking {
   @@index([customerId, status, bookingDate], map: "bookings_customer_status_date_idx")
   @@index([paymentStatus, updatedAt], map: "bookings_payment_status_updated_idx")
   @@index([serviceOptionId], map: "bookings_service_option_idx")
+  @@index([status, bookingDate, id], map: "bookings_admin_status_date_cursor_idx")
+  @@index([serviceId, status, bookingDate], map: "bookings_service_status_date_idx")
   @@map("Bookings")
 }
-
 
 model ServiceOption {
   id          Int      @id @default(autoincrement())
@@ -455,12 +548,33 @@ model ServiceOption {
   createdAt   DateTime @default(now()) @db.Timestamptz(6)
   updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  service  Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ServiceOptions_serviceId_fkey")
-  bookings Booking[]
+  service      Service                    @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ServiceOptions_serviceId_fkey")
+  bookings     Booking[]
+  translations ServiceOptionTranslation[]
 
   @@unique([serviceId, slug], map: "service_options_service_slug_unique")
   @@index([serviceId, isActive, sortOrder], map: "service_options_service_active_sort_idx")
   @@map("ServiceOptions")
+}
+
+model ServiceOptionTranslation {
+  id                    String   @id @default(cuid()) @db.VarChar(40)
+  serviceOptionId       Int
+  locale                String   @db.VarChar(10)
+  name                  String   @db.VarChar(255)
+  description           String?  @db.VarChar(500)
+  normalizedName        String   @db.VarChar(255)
+  normalizedDescription String?  @db.VarChar(500)
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  serviceOption ServiceOption @relation(fields: [serviceOptionId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ServiceOptionTranslations_serviceOptionId_fkey")
+
+  @@unique([serviceOptionId, locale], map: "service_option_translations_option_locale_unique")
+  @@index([locale, normalizedName], map: "service_option_translations_locale_name_idx")
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin, map: "service_option_translations_normalized_name_trgm_idx")
+  @@index([normalizedDescription(ops: raw("gin_trgm_ops"))], type: Gin, map: "service_option_translations_normalized_description_trgm_idx")
+  @@map("ServiceOptionTranslations")
 }
 
 model FavoriteTasker {
@@ -513,26 +627,27 @@ model CustomerWalletLedgerEntry {
 }
 
 model PaymentTransaction {
-  id                String    @id @default(cuid()) @db.VarChar(40)
+  id                String   @id @default(cuid()) @db.VarChar(40)
   customerId        Int
   bookingId         Int?
-  kind              String    @db.VarChar(48)
-  provider          String    @default("stripe") @db.VarChar(32)
-  providerReference String?   @unique(map: "PaymentTransactions_providerReference_key") @db.VarChar(255)
-  status            String    @db.VarChar(48)
-  amount            Decimal   @db.Decimal(14, 2)
-  currency          String    @db.VarChar(3)
-  failureReason     String?   @db.VarChar(1000)
-  idempotencyKey    String    @unique(map: "PaymentTransactions_idempotencyKey_key") @db.VarChar(180)
-  metadata          Json?     @db.JsonB
-  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  kind              String   @db.VarChar(48)
+  provider          String   @default("stripe") @db.VarChar(32)
+  providerReference String?  @unique(map: "PaymentTransactions_providerReference_key") @db.VarChar(255)
+  status            String   @db.VarChar(48)
+  amount            Decimal  @db.Decimal(14, 2)
+  currency          String   @db.VarChar(3)
+  failureReason     String?  @db.VarChar(1000)
+  idempotencyKey    String   @unique(map: "PaymentTransactions_idempotencyKey_key") @db.VarChar(180)
+  metadata          Json?    @db.JsonB
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   customer User     @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "PaymentTransactions_customerId_fkey")
   booking  Booking? @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "PaymentTransactions_bookingId_fkey")
 
   @@index([customerId, createdAt], map: "payment_transactions_customer_created_idx")
   @@index([bookingId, status], map: "payment_transactions_booking_status_idx")
+  @@index([status, createdAt, id], map: "payment_transactions_status_created_cursor_idx")
   @@map("PaymentTransactions")
 }
 
@@ -544,7 +659,6 @@ model StripeWebhookEvent {
   @@index([processedAt], map: "stripe_webhook_events_processed_idx")
   @@map("StripeWebhookEvents")
 }
-
 
 model TaskWorkSession {
   id                    String    @id @default(cuid()) @db.VarChar(40)
@@ -586,30 +700,30 @@ model TaskerTaskLocation {
 }
 
 model TaskComplaint {
-  id                     String    @id @default(cuid()) @db.VarChar(40)
-  bookingId              Int
-  filedById              Int
-  category               String    @db.VarChar(64)
-  description            String    @db.Text
-  attachments            Json?     @db.JsonB
-  status                 String    @default("open") @db.VarChar(32)
-  priority               String    @default("normal") @db.VarChar(16)
-  assignedAdminId        Int?
-  evidenceReviewStatus   String    @default("not_required") @db.VarChar(32)
-  evidenceReviewedAt     DateTime? @db.Timestamptz(6)
-  evidenceReviewNotes    String?   @db.Text
-  awaitingResponseFrom   String?   @db.VarChar(32)
-  responseDueAt          DateTime? @db.Timestamptz(6)
-  escalatedAt            DateTime? @db.Timestamptz(6)
-  escalationReason       String?   @db.VarChar(1000)
-  resolvedAt             DateTime? @db.Timestamptz(6)
-  resolvedById           Int?
-  resolutionType         String?   @db.VarChar(48)
-  resolutionSummary      String?   @db.Text
-  resolutionAmount       Decimal?  @db.Decimal(14, 2)
-  resolutionCurrency     String?   @db.VarChar(3)
-  createdAt              DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt              DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  id                   String    @id @default(cuid()) @db.VarChar(40)
+  bookingId            Int
+  filedById            Int
+  category             String    @db.VarChar(64)
+  description          String    @db.Text
+  attachments          Json?     @db.JsonB
+  status               String    @default("open") @db.VarChar(32)
+  priority             String    @default("normal") @db.VarChar(16)
+  assignedAdminId      Int?
+  evidenceReviewStatus String    @default("not_required") @db.VarChar(32)
+  evidenceReviewedAt   DateTime? @db.Timestamptz(6)
+  evidenceReviewNotes  String?   @db.Text
+  awaitingResponseFrom String?   @db.VarChar(32)
+  responseDueAt        DateTime? @db.Timestamptz(6)
+  escalatedAt          DateTime? @db.Timestamptz(6)
+  escalationReason     String?   @db.VarChar(1000)
+  resolvedAt           DateTime? @db.Timestamptz(6)
+  resolvedById         Int?
+  resolutionType       String?   @db.VarChar(48)
+  resolutionSummary    String?   @db.Text
+  resolutionAmount     Decimal?  @db.Decimal(14, 2)
+  resolutionCurrency   String?   @db.VarChar(3)
+  createdAt            DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   booking          Booking                  @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskComplaints_bookingId_fkey")
   filedBy          User                     @relation("TaskComplaintFiledBy", fields: [filedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskComplaints_filedById_fkey")
@@ -643,7 +757,7 @@ model DisputeEvidence {
   reviewedById   Int?
   createdAt      DateTime  @default(now()) @db.Timestamptz(6)
 
-  complaint TaskComplaint @relation(fields: [complaintId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "DisputeEvidence_complaintId_fkey")
+  complaint  TaskComplaint @relation(fields: [complaintId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "DisputeEvidence_complaintId_fkey")
   uploadedBy User?         @relation("DisputeEvidenceUploader", fields: [uploadedById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "DisputeEvidence_uploadedById_fkey")
   reviewedBy User?         @relation("DisputeEvidenceReviewer", fields: [reviewedById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "DisputeEvidence_reviewedById_fkey")
 
@@ -672,23 +786,23 @@ model DisputeEvidenceRequest {
 }
 
 model DisputeResolution {
-  id                  String    @id @default(cuid()) @db.VarChar(40)
-  complaintId         String    @db.VarChar(40)
-  actorId             Int
-  status              String    @default("draft") @db.VarChar(32)
-  actionType          String    @db.VarChar(48)
-  refundAmount        Decimal?  @db.Decimal(14, 2)
-  currency            String?   @db.VarChar(3)
-  warningTarget       String?   @db.VarChar(32)
-  notifyParties       Boolean   @default(true)
-  summary             String    @db.Text
-  refundTransactionId String?   @unique(map: "DisputeResolutions_refundTransactionId_key") @db.VarChar(40)
-  providerRefundId    String?   @db.VarChar(255)
-  providerRefundStatus String?  @db.VarChar(48)
-  failureReason       String?   @db.VarChar(1000)
-  appliedAt           DateTime? @db.Timestamptz(6)
-  createdAt           DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  id                   String    @id @default(cuid()) @db.VarChar(40)
+  complaintId          String    @db.VarChar(40)
+  actorId              Int
+  status               String    @default("draft") @db.VarChar(32)
+  actionType           String    @db.VarChar(48)
+  refundAmount         Decimal?  @db.Decimal(14, 2)
+  currency             String?   @db.VarChar(3)
+  warningTarget        String?   @db.VarChar(32)
+  notifyParties        Boolean   @default(true)
+  summary              String    @db.Text
+  refundTransactionId  String?   @unique(map: "DisputeResolutions_refundTransactionId_key") @db.VarChar(40)
+  providerRefundId     String?   @db.VarChar(255)
+  providerRefundStatus String?   @db.VarChar(48)
+  failureReason        String?   @db.VarChar(1000)
+  appliedAt            DateTime? @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   complaint TaskComplaint @relation(fields: [complaintId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "DisputeResolutions_complaintId_fkey")
   actor     User          @relation("DisputeResolutionActor", fields: [actorId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "DisputeResolutions_actorId_fkey")
@@ -712,61 +826,167 @@ model TaskMessage {
   sender  User    @relation("TaskMessageSender", fields: [senderId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskMessages_senderId_fkey")
 
   @@index([bookingId, createdAt], map: "task_messages_booking_created_idx")
+  @@index([bookingId, createdAt, id], map: "task_messages_booking_cursor_idx")
   @@index([senderId, createdAt], map: "task_messages_sender_created_idx")
   @@map("TaskMessages")
 }
 
+model ConversationCall {
+  id              String    @id @default(cuid()) @db.VarChar(40)
+  bookingId       Int
+  initiatorId     Int
+  recipientId     Int
+  endedById       Int?
+  type            String    @db.VarChar(16)
+  status          String    @default("ringing") @db.VarChar(24)
+  clientRequestId String    @db.VarChar(80)
+  expiresAt       DateTime  @db.Timestamptz(6)
+  answeredAt      DateTime? @db.Timestamptz(6)
+  endedAt         DateTime? @db.Timestamptz(6)
+  endReason       String?   @db.VarChar(120)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ConversationCalls_bookingId_fkey")
+  initiator User    @relation("ConversationCallInitiator", fields: [initiatorId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "ConversationCalls_initiatorId_fkey")
+  recipient User    @relation("ConversationCallRecipient", fields: [recipientId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "ConversationCalls_recipientId_fkey")
+  endedBy   User?   @relation("ConversationCallEndedBy", fields: [endedById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "ConversationCalls_endedById_fkey")
+
+  @@unique([initiatorId, clientRequestId], map: "conversation_calls_initiator_request_unique")
+  @@index([bookingId, createdAt], map: "conversation_calls_booking_created_idx")
+  @@index([bookingId, createdAt, id], map: "conversation_calls_booking_cursor_idx")
+  @@index([recipientId, status, createdAt], map: "conversation_calls_recipient_status_created_idx")
+  @@index([initiatorId, status, createdAt], map: "conversation_calls_initiator_status_created_idx")
+  @@index([status, expiresAt], map: "conversation_calls_status_expires_idx")
+  @@map("ConversationCalls")
+}
+
 model TaskNotification {
-  id         String    @id @default(cuid()) @db.VarChar(40)
-  userId     Int
-  category   String    @db.VarChar(32)
-  type       String    @db.VarChar(64)
-  title      String    @db.VarChar(160)
-  body       String    @db.VarChar(500)
-  entityType String?   @db.VarChar(64)
-  entityId   String?   @db.VarChar(64)
-  metadata   Json?     @db.JsonB
-  readAt     DateTime? @db.Timestamptz(6)
-  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  id             String    @id @default(cuid()) @db.VarChar(40)
+  userId         Int
+  category       String    @db.VarChar(32)
+  type           String    @db.VarChar(64)
+  title          String    @db.VarChar(160)
+  body           String    @db.VarChar(500)
+  entityType     String?   @db.VarChar(64)
+  entityId       String?   @db.VarChar(64)
+  metadata       Json?     @db.JsonB
+  templateKey    String?   @db.VarChar(100)
+  templateParams Json?     @db.JsonB
+  renderedLocale String?   @db.VarChar(10)
+  readAt         DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "TaskNotifications_userId_fkey")
 
   @@index([userId, readAt, createdAt], map: "task_notifications_user_read_created_idx")
   @@index([userId, category, createdAt], map: "task_notifications_user_category_idx")
+  @@index([userId, createdAt, id], map: "task_notifications_user_cursor_idx")
   @@map("TaskNotifications")
 }
 
 model Review {
-  id         String   @id @default(cuid()) @db.VarChar(40)
-  bookingId  Int
-  reviewerId Int
-  revieweeId Int
-  rating     Int
-  comment    String?  @db.VarChar(2000)
-  createdAt  DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  id               String    @id @default(cuid()) @db.VarChar(40)
+  bookingId        Int
+  reviewerId       Int
+  revieweeId       Int
+  rating           Int
+  comment          String?   @db.VarChar(2000)
+  moderationStatus String    @default("visible") @db.VarChar(32)
+  moderationReason String?   @db.VarChar(1000)
+  moderatedAt      DateTime? @db.Timestamptz(6)
+  moderatedById    Int?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  booking  Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "Reviews_bookingId_fkey")
-  reviewer User    @relation("ReviewsWritten", fields: [reviewerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "Reviews_reviewerId_fkey")
-  reviewee User    @relation("ReviewsReceived", fields: [revieweeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "Reviews_revieweeId_fkey")
+  booking     Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "Reviews_bookingId_fkey")
+  reviewer    User    @relation("ReviewsWritten", fields: [reviewerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "Reviews_reviewerId_fkey")
+  reviewee    User    @relation("ReviewsReceived", fields: [revieweeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "Reviews_revieweeId_fkey")
+  moderatedBy User?   @relation("ReviewsModerated", fields: [moderatedById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Reviews_moderatedById_fkey")
 
   @@unique([bookingId, reviewerId], map: "reviews_booking_reviewer_unique")
+  @@index([moderationStatus, createdAt], map: "reviews_moderation_created_idx")
+  @@index([moderatedById, moderatedAt], map: "reviews_moderator_moderated_idx")
   @@index([revieweeId, createdAt], map: "reviews_reviewee_created_idx")
   @@index([reviewerId, createdAt], map: "reviews_reviewer_created_idx")
   @@map("Reviews")
 }
 
+model SupportTicket {
+  id                Int       @id @default(autoincrement())
+  userId            Int
+  channel           String    @default("ticket") @db.VarChar(32)
+  subject           String    @db.VarChar(200)
+  category          String    @db.VarChar(64)
+  priority          String    @default("normal") @db.VarChar(16)
+  status            String    @default("open") @db.VarChar(32)
+  description       String?   @db.Text
+  attachments       Json?     @db.JsonB
+  bookingId         Int?
+  referenceType     String?   @db.VarChar(64)
+  referenceId       String?   @db.VarChar(120)
+  assignedAdminId   Int?
+  firstResponseAt   DateTime? @db.Timestamptz(6)
+  waitingSince      DateTime? @db.Timestamptz(6)
+  escalatedAt       DateTime? @db.Timestamptz(6)
+  escalationReason  String?   @db.VarChar(1000)
+  resolvedAt        DateTime? @db.Timestamptz(6)
+  resolutionSummary String?   @db.Text
+  closedAt          DateTime? @db.Timestamptz(6)
+  reopenedCount     Int       @default(0)
+  satisfactionScore Int?
+  feedbackComment   String?   @db.VarChar(1000)
+  feedbackAt        DateTime? @db.Timestamptz(6)
+  lastMessageAt     DateTime  @default(now()) @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user          User                   @relation("SupportTicketRequester", fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "SupportTickets_userId_fkey")
+  assignedAdmin User?                  @relation("SupportTicketAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "SupportTickets_assignedAdminId_fkey")
+  booking       Booking?               @relation(fields: [bookingId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "SupportTickets_bookingId_fkey")
+  messages      SupportTicketMessage[]
+
+  @@index([userId, status, updatedAt], map: "support_tickets_user_status_updated_idx")
+  @@index([assignedAdminId, status, updatedAt], map: "support_tickets_assignee_status_updated_idx")
+  @@index([channel, status, lastMessageAt], map: "support_tickets_channel_status_message_idx")
+  @@index([status, priority, createdAt], map: "support_tickets_status_priority_created_idx")
+  @@index([bookingId], map: "support_tickets_booking_idx")
+  @@index([referenceType, referenceId], map: "support_tickets_reference_idx")
+  @@map("SupportTickets")
+}
+
+model SupportTicketMessage {
+  id             String    @id @default(cuid()) @db.VarChar(40)
+  ticketId       Int
+  senderId       Int
+  senderRole     String    @db.VarChar(32)
+  body           String?   @db.Text
+  attachments    Json?     @db.JsonB
+  isInternalNote Boolean   @default(false)
+  readAt         DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "SupportTicketMessages_ticketId_fkey")
+  sender User          @relation("SupportTicketMessageSender", fields: [senderId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "SupportTicketMessages_senderId_fkey")
+
+  @@index([ticketId, createdAt], map: "support_ticket_messages_ticket_created_idx")
+  @@index([ticketId, createdAt, id], map: "support_ticket_messages_ticket_cursor_idx")
+  @@index([senderId, createdAt], map: "support_ticket_messages_sender_created_idx")
+  @@index([ticketId, isInternalNote, readAt], map: "support_ticket_messages_visibility_read_idx")
+  @@map("SupportTicketMessages")
+}
+
 model TaskerWallet {
-  taskerId        Int      @id
-  currency        String   @default("USD") @db.VarChar(3)
-  availableBalance Decimal @default(0) @db.Decimal(14, 2)
-  pendingBalance         Decimal   @default(0) @db.Decimal(14, 2)
+  taskerId                Int       @id
+  currency                String    @default("USD") @db.VarChar(3)
+  availableBalance        Decimal   @default(0) @db.Decimal(14, 2)
+  pendingBalance          Decimal   @default(0) @db.Decimal(14, 2)
   payoutPinHash           String?   @db.VarChar(255)
   payoutPinFailedAttempts Int       @default(0)
   payoutPinLockedUntil    DateTime? @db.Timestamptz(6)
   payoutPinUpdatedAt      DateTime? @db.Timestamptz(6)
   createdAt               DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedAt               DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   tasker User @relation(fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWallets_taskerId_fkey")
 
@@ -812,37 +1032,186 @@ model TaskerWithdrawal {
   createdAt         DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  tasker       User                    @relation(fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWithdrawals_taskerId_fkey")
-  payoutMethod TaskerPayoutMethod      @relation(fields: [payoutMethodId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWithdrawals_payoutMethodId_fkey")
+  tasker        User                      @relation(fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWithdrawals_taskerId_fkey")
+  payoutMethod  TaskerPayoutMethod        @relation(fields: [payoutMethodId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWithdrawals_payoutMethodId_fkey")
   ledgerEntries TaskerWalletLedgerEntry[]
 
   @@unique([taskerId, idempotencyKey], map: "tasker_withdrawals_tasker_idempotency_unique")
   @@index([taskerId, status, requestedAt], map: "tasker_withdrawals_tasker_status_requested_idx")
+  @@index([status, requestedAt, id], map: "tasker_withdrawals_status_requested_cursor_idx")
   @@map("TaskerWithdrawals")
 }
 
 model TaskerWalletLedgerEntry {
-  id                String            @id @default(cuid()) @db.VarChar(40)
+  id                String   @id @default(cuid()) @db.VarChar(40)
   taskerId          Int
   bookingId         Int?
-  withdrawalId      String?           @db.VarChar(40)
-  kind              String            @db.VarChar(48)
-  status            String            @db.VarChar(32)
-  amount            Decimal           @db.Decimal(14, 2)
-  availableDelta    Decimal           @db.Decimal(14, 2)
-  pendingDelta      Decimal           @db.Decimal(14, 2)
-  currency          String            @db.VarChar(3)
-  description       String            @db.VarChar(500)
-  externalReference String?           @db.VarChar(255)
-  idempotencyKey    String            @unique(map: "TaskerWalletLedger_idempotencyKey_key") @db.VarChar(160)
-  createdAt         DateTime          @default(now()) @db.Timestamptz(6)
+  withdrawalId      String?  @db.VarChar(40)
+  earningId         String?  @db.VarChar(40)
+  kind              String   @db.VarChar(48)
+  status            String   @db.VarChar(32)
+  amount            Decimal  @db.Decimal(14, 2)
+  availableDelta    Decimal  @db.Decimal(14, 2)
+  pendingDelta      Decimal  @db.Decimal(14, 2)
+  currency          String   @db.VarChar(3)
+  description       String   @db.VarChar(500)
+  externalReference String?  @db.VarChar(255)
+  idempotencyKey    String   @unique(map: "TaskerWalletLedger_idempotencyKey_key") @db.VarChar(160)
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
 
-  tasker      User              @relation(fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWalletLedger_taskerId_fkey")
-  booking     Booking?          @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWalletLedger_bookingId_fkey")
-  withdrawal  TaskerWithdrawal? @relation(fields: [withdrawalId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWalletLedger_withdrawalId_fkey")
+  tasker     User              @relation(fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWalletLedger_taskerId_fkey")
+  booking    Booking?          @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWalletLedger_bookingId_fkey")
+  withdrawal TaskerWithdrawal? @relation(fields: [withdrawalId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWalletLedger_withdrawalId_fkey")
+  earning    TaskerEarning?    @relation(fields: [earningId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerWalletLedger_earningId_fkey")
 
   @@index([taskerId, createdAt], map: "tasker_wallet_ledger_tasker_created_idx")
+  @@index([taskerId, createdAt, id], map: "tasker_wallet_ledger_tasker_cursor_idx")
   @@index([bookingId], map: "tasker_wallet_ledger_booking_idx")
   @@index([withdrawalId], map: "tasker_wallet_ledger_withdrawal_idx")
+  @@index([earningId], map: "tasker_wallet_ledger_earning_idx")
   @@map("TaskerWalletLedger")
+}
+
+model TaskerEarning {
+  id                          String    @id @default(cuid()) @db.VarChar(40)
+  bookingId                   Int       @unique(map: "TaskerEarnings_bookingId_key")
+  taskerId                    Int
+  paymentSource               String    @db.VarChar(32)
+  grossCustomerAmount         Decimal   @db.Decimal(14, 2)
+  serviceAmount               Decimal   @db.Decimal(14, 2)
+  platformCommissionAmount    Decimal   @db.Decimal(14, 2)
+  taxAmount                   Decimal   @db.Decimal(14, 2)
+  serviceSurchargeAmount      Decimal   @db.Decimal(14, 2)
+  tipAmount                   Decimal   @db.Decimal(14, 2)
+  donationAmount              Decimal   @db.Decimal(14, 2)
+  taskerNetAmount             Decimal   @db.Decimal(14, 2)
+  reversedAmount              Decimal   @default(0) @db.Decimal(14, 2)
+  debtOffsetAmount            Decimal   @default(0) @db.Decimal(14, 2)
+  releasedToAvailableAmount   Decimal   @default(0) @db.Decimal(14, 2)
+  currency                    String    @db.VarChar(3)
+  status                      String    @default("pending") @db.VarChar(32)
+  isBlocked                   Boolean   @default(false)
+  blockReason                 String?   @db.VarChar(1000)
+  blockedAt                   DateTime? @db.Timestamptz(6)
+  holdExtendedUntil           DateTime? @db.Timestamptz(6)
+  reversalReason              String?   @db.VarChar(1000)
+  providerSettlementReference String    @db.VarChar(255)
+  settledAt                   DateTime  @db.Timestamptz(6)
+  clearsAt                    DateTime  @db.Timestamptz(6)
+  releasedAt                  DateTime? @db.Timestamptz(6)
+  reversedAt                  DateTime? @db.Timestamptz(6)
+  createdAt                   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  booking        Booking                     @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerEarnings_bookingId_fkey")
+  tasker         User                        @relation("TaskerEarningsTasker", fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerEarnings_taskerId_fkey")
+  walletLedger   TaskerWalletLedgerEntry[]
+  platformLedger TaskerPlatformLedgerEntry[]
+
+  @@index([status, isBlocked, clearsAt], map: "tasker_earnings_release_queue_idx")
+  @@index([taskerId, status, clearsAt], map: "tasker_earnings_tasker_status_clears_idx")
+  @@index([providerSettlementReference], map: "tasker_earnings_provider_reference_idx")
+  @@map("TaskerEarnings")
+}
+
+model TaskerPlatformAccount {
+  taskerId               Int       @id
+  currency               String    @default("USD") @db.VarChar(3)
+  outstandingPayable     Decimal   @default(0) @db.Decimal(14, 2)
+  cashBookingsRestricted Boolean   @default(false)
+  restrictionReason      String?   @db.VarChar(500)
+  restrictionUpdatedAt   DateTime? @db.Timestamptz(6)
+  createdAt              DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  tasker User @relation(fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerPlatformAccounts_taskerId_fkey")
+
+  @@index([cashBookingsRestricted, outstandingPayable], map: "tasker_platform_accounts_restriction_idx")
+  @@map("TaskerPlatformAccounts")
+}
+
+model TaskerPlatformReceivable {
+  id                         String    @id @default(cuid()) @db.VarChar(40)
+  bookingId                  Int       @unique(map: "TaskerPlatformReceivables_bookingId_key")
+  taskerId                   Int
+  confirmedById              Int
+  confirmationIdempotencyKey String    @unique(map: "TaskerPlatformReceivables_confirmation_key") @db.VarChar(180)
+  cashCollectedAmount        Decimal   @db.Decimal(14, 2)
+  serviceAmount              Decimal   @db.Decimal(14, 2)
+  platformCommissionAmount   Decimal   @db.Decimal(14, 2)
+  taxAmount                  Decimal   @db.Decimal(14, 2)
+  serviceSurchargeAmount     Decimal   @db.Decimal(14, 2)
+  tipAmount                  Decimal   @db.Decimal(14, 2)
+  donationAmount             Decimal   @db.Decimal(14, 2)
+  taskerEconomicEarning      Decimal   @db.Decimal(14, 2)
+  originalPayableAmount      Decimal   @db.Decimal(14, 2)
+  outstandingAmount          Decimal   @db.Decimal(14, 2)
+  settledAmount              Decimal   @default(0) @db.Decimal(14, 2)
+  reversedAmount             Decimal   @default(0) @db.Decimal(14, 2)
+  currency                   String    @db.VarChar(3)
+  status                     String    @default("outstanding") @db.VarChar(32)
+  isDisputed                 Boolean   @default(false)
+  disputeBlockReason         String?   @db.VarChar(1000)
+  disputeBlockedAt           DateTime? @db.Timestamptz(6)
+  disputeClearsAt            DateTime  @db.Timestamptz(6)
+  confirmedAt                DateTime  @db.Timestamptz(6)
+  clearedAt                  DateTime? @db.Timestamptz(6)
+  settledAt                  DateTime? @db.Timestamptz(6)
+  createdAt                  DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  booking       Booking                     @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerPlatformReceivables_bookingId_fkey")
+  tasker        User                        @relation("TaskerPlatformReceivablesTasker", fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerPlatformReceivables_taskerId_fkey")
+  confirmedBy   User                        @relation("TaskerPlatformReceivableConfirmer", fields: [confirmedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerPlatformReceivables_confirmedById_fkey")
+  ledgerEntries TaskerPlatformLedgerEntry[]
+
+  @@index([taskerId, status, createdAt], map: "tasker_platform_receivables_tasker_status_idx")
+  @@index([status, isDisputed, disputeClearsAt], map: "tasker_platform_receivables_clearance_idx")
+  @@map("TaskerPlatformReceivables")
+}
+
+model TaskerPlatformLedgerEntry {
+  id                String   @id @default(cuid()) @db.VarChar(40)
+  taskerId          Int
+  bookingId         Int?
+  receivableId      String?  @db.VarChar(40)
+  earningId         String?  @db.VarChar(40)
+  kind              String   @db.VarChar(48)
+  status            String   @default("settled") @db.VarChar(32)
+  amount            Decimal  @db.Decimal(14, 2)
+  payableDelta      Decimal  @db.Decimal(14, 2)
+  currency          String   @db.VarChar(3)
+  description       String   @db.VarChar(500)
+  externalReference String?  @db.VarChar(255)
+  idempotencyKey    String   @unique(map: "TaskerPlatformLedger_idempotencyKey_key") @db.VarChar(180)
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+
+  tasker     User                      @relation("TaskerPlatformLedgerTasker", fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerPlatformLedger_taskerId_fkey")
+  booking    Booking?                  @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerPlatformLedger_bookingId_fkey")
+  receivable TaskerPlatformReceivable? @relation(fields: [receivableId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerPlatformLedger_receivableId_fkey")
+  earning    TaskerEarning?            @relation(fields: [earningId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerPlatformLedger_earningId_fkey")
+
+  @@index([taskerId, createdAt], map: "tasker_platform_ledger_tasker_created_idx")
+  @@index([receivableId, createdAt], map: "tasker_platform_ledger_receivable_created_idx")
+  @@index([earningId, createdAt], map: "tasker_platform_ledger_earning_created_idx")
+  @@index([bookingId], map: "tasker_platform_ledger_booking_idx")
+  @@map("TaskerPlatformLedger")
+}
+
+model RealtimeOutboxEvent {
+  id          String    @id @default(cuid()) @db.VarChar(40)
+  room        String    @db.VarChar(180)
+  eventName   String    @db.VarChar(96)
+  payload     Json      @db.JsonB
+  attempts    Int       @default(0)
+  lockedAt    DateTime? @db.Timestamptz(6)
+  lockToken   String?   @db.VarChar(64)
+  publishedAt DateTime? @db.Timestamptz(6)
+  lastError   String?   @db.VarChar(1000)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([publishedAt, lockedAt, createdAt], map: "realtime_outbox_pending_idx")
+  @@index([room, createdAt], map: "realtime_outbox_room_created_idx")
+  @@index([publishedAt, createdAt, id], map: "realtime_outbox_cleanup_cursor_idx")
+  @@map("RealtimeOutboxEvents")
 }

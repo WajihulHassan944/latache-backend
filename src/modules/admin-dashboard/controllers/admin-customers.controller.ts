@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiForbiddenResponse,
@@ -69,20 +78,14 @@ export class AdminCustomersController {
   @Get(':id/bookings')
   @Permissions('customers.read', 'bookings.read')
   @ApiOperation({ summary: 'Get one customer booking history' })
-  bookings(
-    @Param('id', ParseIntPipe) id: number,
-    @Query() query: AdminCustomerBookingsQueryDto,
-  ) {
+  bookings(@Param('id', ParseIntPipe) id: number, @Query() query: AdminCustomerBookingsQueryDto) {
     return this.customers.bookings(id, query);
   }
 
   @Get(':id/payments')
   @Permissions('customers.read', 'finance.read')
   @ApiOperation({ summary: 'Get one customer payment history' })
-  payments(
-    @Param('id', ParseIntPipe) id: number,
-    @Query() query: AdminCustomerPaymentsQueryDto,
-  ) {
+  payments(@Param('id', ParseIntPipe) id: number, @Query() query: AdminCustomerPaymentsQueryDto) {
     return this.customers.payments(id, query);
   }
 

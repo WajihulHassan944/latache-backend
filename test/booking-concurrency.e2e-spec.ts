@@ -7,11 +7,7 @@ import { UserRole } from '../src/common/enums/user-role.enum';
 import type { AccessTokenPayload } from '../src/common/types/jwt-payload';
 import { dateOnlyFromDate, dateOnlyToDate } from '../src/common/utils/date.util';
 import { PrismaService } from '../src/database/prisma.service';
-import type {
-  Service,
-  User,
-  UserAvailability,
-} from '../src/generated/prisma/client';
+import type { Service, User, UserAvailability } from '../src/generated/prisma/client';
 
 const futureDate = (daysFromNow: number): string => {
   const date = new Date();
@@ -33,9 +29,7 @@ describe('Booking slot concurrency (e2e)', () => {
 
   beforeAll(async () => {
     if (!process.env.DATABASE_URL) {
-      throw new Error(
-        'Booking concurrency e2e test requires a migrated PostgreSQL test database',
-      );
+      throw new Error('Booking concurrency e2e test requires a migrated PostgreSQL test database');
     }
 
     jwtSecret = process.env.JWT_SECRET ?? '';
@@ -170,9 +164,7 @@ describe('Booking slot concurrency (e2e)', () => {
     ]);
 
     expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
-    expect(
-      await prisma.booking.count({ where: { availabilityId: availability.id } }),
-    ).toBe(1);
+    expect(await prisma.booking.count({ where: { availabilityId: availability.id } })).toBe(1);
     const storedSlot = await prisma.userAvailability.findUnique({
       where: { id: availability.id },
     });

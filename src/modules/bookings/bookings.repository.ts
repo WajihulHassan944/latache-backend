@@ -37,10 +37,7 @@ export class BookingsRepository {
     });
   }
 
-  async claimSlot(
-    availabilityId: number,
-    transaction: Prisma.TransactionClient,
-  ): Promise<boolean> {
+  async claimSlot(availabilityId: number, transaction: Prisma.TransactionClient): Promise<boolean> {
     const result = await transaction.userAvailability.updateMany({
       where: { id: availabilityId, isBooked: false },
       data: { isBooked: true },

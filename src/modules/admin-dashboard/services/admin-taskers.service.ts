@@ -13,18 +13,11 @@ import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { AuthSessionsRepository } from '../../auth/repositories/auth-sessions.repository';
 import { NotificationsService } from '../../notifications/notifications.service';
 import type {
-  AdminDateRangeQueryDto,
   AdminUserModerationDto,
   ListAdminTaskersDto,
   TaskerVerificationActionDto,
 } from '../dto';
-import {
-  dateFilter,
-  fullName,
-  money,
-  pagination,
-  resolveAdminDateRange,
-} from '../admin-dashboard.utils';
+import { fullName, money, pagination } from '../admin-dashboard.utils';
 
 @Injectable()
 export class AdminTaskersService {
@@ -153,7 +146,6 @@ export class AdminTaskersService {
     };
   }
 
-
   async details(taskerId: number) {
     const tasker = await this.prisma.user.findFirst({
       where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
@@ -240,12 +232,19 @@ export class AdminTaskersService {
         endTime: slot.endTime,
         isBooked: slot.isBooked,
       })),
-      verificationChecks: this.verificationChecks(tasker, tasker.userServices.length, tasker.availability.length),
+      verificationChecks: this.verificationChecks(
+        tasker,
+        tasker.userServices.length,
+        tasker.availability.length,
+      ),
       metrics: {
         totalSettledEarnings: money(earnings._sum.amount),
         totalPaidWithdrawals: money(payouts._sum.amount),
         activeDisputes: complaints,
-        bookingsByStatus: bookingStatus.map((row) => ({ status: row.status, count: row._count._all })),
+        bookingsByStatus: bookingStatus.map((row) => ({
+          status: row.status,
+          count: row._count._all,
+        })),
       },
       moderationHistory: auditRows.map((row) => ({
         id: row.id,
@@ -253,7 +252,11 @@ export class AdminTaskersService {
         reason: row.reason,
         metadata: row.metadata,
         actor: row.actor
-          ? { id: String(row.actor.id), name: fullName(row.actor.firstName, row.actor.lastName), email: row.actor.email }
+          ? {
+              id: String(row.actor.id),
+              name: fullName(row.actor.firstName, row.actor.lastName),
+              email: row.actor.email,
+            }
           : null,
         createdAt: row.createdAt.toISOString(),
       })),
@@ -277,12 +280,18 @@ export class AdminTaskersService {
     }
 
     if (dto.action === 'approve') {
-      const checks = this.verificationChecks(tasker, tasker._count.userServices, tasker._count.availability);
+      const checks = this.verificationChecks(
+        tasker,
+        tasker._count.userServices,
+        tasker._count.availability,
+      );
       const blocking = Object.entries(checks)
         .filter(([, value]) => value === false)
         .map(([key]) => key);
       if (blocking.length > 0) {
-        throw new ConflictException(`Tasker cannot be approved until these checks pass: ${blocking.join(', ')}`);
+        throw new ConflictException(
+          `Tasker cannot be approved until these checks pass: ${blocking.join(', ')}`,
+        );
       }
     } else if (!dto.reasonCode || !dto.reason?.trim()) {
       throw new BadRequestException('reasonCode and reason are required when rejecting a tasker');
@@ -330,12 +339,18 @@ export class AdminTaskersService {
         taskerId,
         {
           category: 'system',
-          type: dto.action === 'approve' ? 'tasker_application_approved' : 'tasker_application_rejected',
-          title: dto.action === 'approve' ? 'Tasker application approved' : 'Tasker application rejected',
+          type:
+            dto.action === 'approve'
+              ? 'tasker_application_approved'
+              : 'tasker_application_rejected',
+          title:
+            dto.action === 'approve'
+              ? 'Tasker application approved'
+              : 'Tasker application rejected',
           body:
             dto.action === 'approve'
               ? 'Your Latache tasker profile has been approved and is now active.'
-              : dto.reason?.trim() ?? 'Your Latache tasker application was not approved.',
+              : (dto.reason?.trim() ?? 'Your Latache tasker application was not approved.'),
           entityType: 'tasker',
           entityId: String(taskerId),
         },
@@ -370,11 +385,19 @@ export class AdminTaskersService {
     if (dto.action === 'reactivate' && tasker.accountStatus === AccountStatus.Active) {
       throw new ConflictException('Tasker is already active');
     }
-    if (dto.action === 'reactivate' && tasker.accountStatus === AccountStatus.Deactivated && actor.role !== UserRole.SuperAdmin) {
-      throw new ForbiddenException('Only the super administrator may reactivate a deactivated/banned tasker');
+    if (
+      dto.action === 'reactivate' &&
+      tasker.accountStatus === AccountStatus.Deactivated &&
+      actor.role !== UserRole.SuperAdmin
+    ) {
+      throw new ForbiddenException(
+        'Only the super administrator may reactivate a deactivated/banned tasker',
+      );
     }
     if (dto.action === 'reactivate' && tasker.onboardingStatus !== 'approved') {
-      throw new ConflictException('Only an approved tasker can be reactivated; resolve verification first');
+      throw new ConflictException(
+        'Only an approved tasker can be reactivated; resolve verification first',
+      );
     }
 
     const nextStatus =
@@ -409,7 +432,12 @@ export class AdminTaskersService {
         {
           category: 'system',
           type: `account_${nextStatus}`,
-          title: dto.action === 'reactivate' ? 'Tasker account reactivated' : dto.action === 'suspend' ? 'Tasker account suspended' : 'Tasker account deactivated',
+          title:
+            dto.action === 'reactivate'
+              ? 'Tasker account reactivated'
+              : dto.action === 'suspend'
+                ? 'Tasker account suspended'
+                : 'Tasker account deactivated',
           body: dto.reason?.trim() || 'Your tasker account status was updated by an administrator.',
           entityType: 'tasker',
           entityId: String(taskerId),

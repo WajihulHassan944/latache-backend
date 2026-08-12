@@ -17,7 +17,6 @@ import {
   ApiConflictResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
-  ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiTags,
@@ -46,7 +45,9 @@ import { EliteProgramService } from '../services/elite-program.service';
 @ApiTags('23 Admin - Elite Tasker Program')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid active administrator session is required.' })
-@ApiForbiddenResponse({ description: 'The administrator lacks the required Elite Program permission.' })
+@ApiForbiddenResponse({
+  description: 'The administrator lacks the required Elite Program permission.',
+})
 @UseGuards(AdminAuthGuard, PermissionsGuard)
 @Permissions('elite.read')
 @Controller('admin/elite-taskers')

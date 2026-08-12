@@ -1,3 +1,6 @@
+import type { ConversationCallListView, ConversationCallView } from '../realtime/realtime.types';
+import type { ConversationAttachmentReference } from '../uploads/uploads.types';
+
 export interface PersonSummaryView {
   id: string;
   name: string;
@@ -13,7 +16,7 @@ export interface ConversationMessageView {
   senderId: string;
   isMine: boolean;
   body: string;
-  attachments: unknown[];
+  attachments: ConversationAttachmentReference[];
   readAt: string | null;
   createdAt: string;
 }
@@ -47,5 +50,39 @@ export interface MessageListView {
   limit: number;
   totalItems: number;
   totalPages: number;
+  nextCursor: string | null;
+  hasMore: boolean;
   items: ConversationMessageView[];
 }
+
+export interface ConversationCapabilitiesView {
+  attachments: {
+    uploadFolder: string;
+    singleUploadEndpoint: string;
+    multipleUploadEndpoint: string;
+    maxFilesPerMessage: number;
+    maxFileSizeBytes: number;
+    maxTotalSizeBytes: number;
+    allowedMimeTypes: string[];
+  };
+  calls: {
+    enabled: boolean;
+    provider: string;
+    mediaTransport: string;
+    supportedTypes: readonly ['voice', 'video'];
+    oneToOneOnly: boolean;
+    recordingSupported: boolean;
+    ringTimeoutSeconds: number;
+    maxDurationSeconds: number;
+    allowedBookingStatuses: string[];
+    signaling: {
+      persistedLifecycleEvents: string[];
+      transientEvents: string[];
+    };
+    sessionEndpoint: string;
+    listHistoryEndpoint: string;
+    detailEndpoint: string;
+  };
+}
+
+export type { ConversationCallListView, ConversationCallView };

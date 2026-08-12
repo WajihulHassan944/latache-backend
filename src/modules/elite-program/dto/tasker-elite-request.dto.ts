@@ -7,7 +7,9 @@ export class TaskerEliteRequestDto {
   @IsIn(ELITE_REQUEST_KINDS)
   kind!: EliteRequestKind;
 
-  @ApiPropertyOptional({ example: 'I would like my recent performance reviewed for the next tier.' })
+  @ApiPropertyOptional({
+    example: 'I would like my recent performance reviewed for the next tier.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(1000)

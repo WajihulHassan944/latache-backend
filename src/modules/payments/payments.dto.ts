@@ -1,14 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import {
-  IsIn,
-  IsInt,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Length,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -51,7 +42,10 @@ export class RetryBookingPaymentDto {
 }
 
 export class ListPaymentTransactionsQueryDto {
-  @ApiPropertyOptional({ enum: ['all', 'booking_charge', 'wallet_topup', 'refund'], default: 'all' })
+  @ApiPropertyOptional({
+    enum: ['all', 'booking_charge', 'wallet_topup', 'refund'],
+    default: 'all',
+  })
   @IsOptional()
   @IsIn(['all', 'booking_charge', 'wallet_topup', 'refund'])
   kind?: 'all' | 'booking_charge' | 'wallet_topup' | 'refund';

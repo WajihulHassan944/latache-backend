@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -9,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -17,11 +18,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PaymentsService } from '../payments/payments.service';
-import {
-  UpdateTaskerLocationDto,
-  UpdateTimerNotesDto,
-} from '../tasker-dashboard/dto';
-import { AddComplaintEvidenceDto, FileComplaintDto } from './dto/file-complaint.dto';
+import { UpdateTaskerLocationDto, UpdateTimerNotesDto } from '../tasker-dashboard/dto';
 import { TaskerTasksService } from '../tasker-dashboard/services/tasker-tasks.service';
 import { BookingsService } from './bookings.service';
 import {
@@ -34,6 +31,7 @@ import {
   UpdateBookingBillingDto,
 } from './dto/booking-actions.dto';
 import { BookTaskerDto } from './dto/book-tasker.dto';
+import { ConfirmCashCollectionDto } from '../tasker-finance/dto/tasker-finance.dto';
 
 @ApiTags('05 Bookings & Tasks')
 @Controller('bookings')
@@ -44,7 +42,7 @@ export class BookingDiscoveryController {
   @ApiOperation({
     summary: 'Get a live booking estimate for an available tasker slot',
     description:
-      'Public/guest-safe. Uses the tasker persisted hourly rate and real availability. Tax remains uncalculated until a tax integration is configured.',
+      'Public/guest-safe. Uses persisted Tasker rates, real availability, and the active platform commission/tax policy. No payment is created by this quote.',
   })
   quote(@Body() dto: BookingQuoteDto) {
     return this.bookings.quote(dto);
@@ -68,14 +66,16 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Create a booking',
     description:
-      'Reserves a real tasker availability slot. Stripe cards are saved before booking and are not charged until the completed task is finalized.',
+      'Reserves a real Tasker availability slot. Stripe cards are saved before booking and are not charged until finalization. Cash is paid directly to the Tasker, is subject to the configured platform-payable threshold, and never enters the Latache wallet.',
   })
   create(@CurrentUser() user: User, @Body() dto: BookTaskerDto) {
     return this.bookings.book(user.id, dto);
   }
 
   @Get()
-  @ApiOperation({ summary: 'List current user bookings/tasks by booked, ongoing, or history bucket' })
+  @ApiOperation({
+    summary: 'List current user bookings/tasks by booked, ongoing, or history bucket',
+  })
   list(@CurrentUser() user: User, @Query() query: ListUnifiedBookingsQueryDto) {
     return this.bookings.list(user, query);
   }
@@ -157,7 +157,8 @@ export class BookingsController {
   @Get(':bookingId/navigation')
   @ApiOperation({
     summary: 'Get shared live-location/navigation state',
-    description: 'Customer and Tasker use the same endpoint. ETA/distance remain null until a real routing provider is integrated.',
+    description:
+      'Customer and Tasker use the same endpoint. ETA/distance remain null until a real routing provider is integrated.',
   })
   navigation(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     return this.bookings.navigation(user.id, params.bookingId);
@@ -165,7 +166,11 @@ export class BookingsController {
 
   @Put(':bookingId/location')
   @Roles(UserRole.Tasker)
-  @ApiOperation({ summary: 'Tasker updates current coordinates for an active booking' })
+  @ApiOperation({
+    summary: 'Tasker updates current coordinates for an active booking',
+    description:
+      'Business-important latest location remains persisted and emitted through the transactional outbox. When Redis is healthy, writes above REALTIME_LOCATION_MIN_WRITE_INTERVAL_MS are coalesced across API replicas; Redis failure falls back to normal PostgreSQL persistence.',
+  })
   location(
     @CurrentUser() user: User,
     @Param() params: BookingParamDto,
@@ -225,7 +230,7 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Complete a stopped task and start real final-payment orchestration',
     description:
-      'Customer and Tasker use the same endpoint. The timer must be stopped. Completion is idempotent and payment state reflects the actual Stripe/customer-wallet result.',
+      'Customer and Tasker use the same endpoint. The timer must be stopped. Online payment state reflects genuine Stripe/customer-wallet settlement and creates a pending Tasker earning; cash returns cash_confirmation_required and does not create wallet funds.',
   })
   async complete(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     if (user.role === UserRole.Tasker) {
@@ -238,41 +243,31 @@ export class BookingsController {
     return { booking, payment };
   }
 
-  @Get(':bookingId/complaints')
-  @ApiOperation({
-    summary: 'List disputes and outstanding evidence requests for this booking participant',
+  @Post(':bookingId/cash-payment/confirm')
+  @Roles(UserRole.Tasker)
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    example: 'cash-booking-481-confirm-v1',
     description:
-      'Customer and Tasker use the same endpoint. It exposes the case state, evidence requests addressed to the current role, and only evidence uploaded by the current user.',
+      'Stable client key. A duplicate request returns the same receivable and cannot duplicate platform debt.',
   })
-  complaints(@CurrentUser() user: User, @Param() params: BookingParamDto) {
-    return this.bookings.listComplaints(user, params.bookingId);
-  }
-
-  @Post(':bookingId/complaints')
   @ApiOperation({
-    summary: 'Open a booking complaint/dispute as either customer or tasker',
-    description: 'If final payment is not already settled, an open dispute places the booking payment on hold.',
+    summary: 'Tasker confirms physical cash collection for a completed cash booking',
+    description:
+      'Records cash as physically held by the Tasker, creates an auditable platform payable for non-Tasker components, and never credits fake wallet funds. The amount must match the final immutable booking calculation.',
   })
-  complaint(
+  confirmCashPayment(
     @CurrentUser() user: User,
     @Param() params: BookingParamDto,
-    @Body() dto: FileComplaintDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() dto: ConfirmCashCollectionDto,
   ) {
-    return this.bookings.fileComplaint(user.id, params.bookingId, dto);
-  }
-
-  @Post(':bookingId/complaints/:complaintId/evidence')
-  @ApiOperation({
-    summary: 'Submit requested dispute evidence as the Customer or Tasker participant',
-    description:
-      'Upload the file first through the existing Cloudinary booking-attachment upload API, then submit the returned metadata here. Relevant pending evidence requests are fulfilled transactionally.',
-  })
-  complaintEvidence(
-    @CurrentUser() user: User,
-    @Param() params: BookingParamDto,
-    @Param('complaintId') complaintId: string,
-    @Body() dto: AddComplaintEvidenceDto,
-  ) {
-    return this.bookings.addComplaintEvidence(user, params.bookingId, complaintId, dto);
+    return this.payments.confirmCashCollection({
+      taskerId: user.id,
+      bookingId: params.bookingId,
+      collectedAmount: dto.collectedAmount,
+      idempotencyKey: idempotencyKey ?? '',
+    });
   }
 }

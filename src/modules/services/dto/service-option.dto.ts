@@ -8,11 +8,23 @@ import {
   Matches,
   Max,
   Min,
+  ArrayMaxSize,
+  IsArray,
+  ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { TranslationDto } from '../../localization/translation.dto';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
+
+export class ServiceOptionTranslationDto extends TranslationDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 500)
+  declare description?: string;
+}
 
 export class ServiceIdParamDto {
   @Type(() => Number)
@@ -56,6 +68,14 @@ export class CreateServiceOptionDto {
   @Min(0)
   @Max(10000)
   sortOrder?: number;
+
+  @ApiPropertyOptional({ type: [ServiceOptionTranslationDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => ServiceOptionTranslationDto)
+  translations?: ServiceOptionTranslationDto[];
 }
 
 export class UpdateServiceOptionDto {
@@ -85,4 +105,12 @@ export class UpdateServiceOptionDto {
   @Min(0)
   @Max(10000)
   sortOrder?: number;
+
+  @ApiPropertyOptional({ type: [ServiceOptionTranslationDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => ServiceOptionTranslationDto)
+  translations?: ServiceOptionTranslationDto[];
 }

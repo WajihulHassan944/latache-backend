@@ -4,34 +4,34 @@ Version 3.6 maps the supplied customer dashboard/booking designs to the existing
 
 ## Screen-to-API mapping
 
-| Customer design | Backend API |
-|---|---|
-| Services | `GET /api/services/get-services` |
-| Service sub-options | `GET /api/services/:serviceId/options` |
-| Location/tasker discovery/filtering | `GET /api/taskers` |
-| Tasker profile | `GET /api/taskers/:id` |
-| Public Tasker reviews | `GET /api/taskers/:id/reviews` |
-| Tasker availability/date/time | `GET /api/taskers/:id/availability` |
-| Estimated price | `POST /api/bookings/quote` |
-| Project details/attachments | Cloudinary `/api/uploads/*`, then `POST /api/bookings` |
-| Saved cards | `/api/payments/setup-intent`, `/api/payments/methods` |
-| Confirm booking | `POST /api/bookings` |
-| Dashboard home | `GET /api/dashboard/overview` |
-| Task management | `GET /api/bookings?bucket=booked|ongoing|history` |
-| Task detail | `GET /api/bookings/:bookingId` |
-| Reschedule/cancel | `/api/bookings/:bookingId/reschedule`, `/cancel` |
-| Track Tasker | `GET /api/bookings/:bookingId/navigation` |
-| Task timer | `GET /api/bookings/:bookingId/timer` |
-| Extend time | `POST /api/bookings/:bookingId/extend` |
-| Complaint/dispute | `POST /api/bookings/:bookingId/complaints` |
-| Chat | `/api/conversations/*` |
-| Notifications | `/api/notifications/*` |
-| Favorite Taskers | `/api/favorites/taskers/*` |
-| Ratings/reviews | `/api/reviews/*` |
-| Wallet/balance | `/api/payments/wallet*` |
-| Payment history | `GET /api/payments/transactions` |
-| Mark task complete | `POST /api/bookings/:bookingId/complete` (Customer or Tasker, stopped timer required) |
-| Completed-task payment | `GET /api/payments/bookings/:bookingId` and provider webhook state |
+| Customer design                     | Backend API                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------- | ------- | -------- |
+| Services                            | `GET /api/services`                                                                   |
+| Service sub-options                 | `GET /api/services/:serviceId/options`                                                |
+| Location/tasker discovery/filtering | `GET /api/taskers`                                                                    |
+| Tasker profile                      | `GET /api/taskers/:id`                                                                |
+| Public Tasker reviews               | `GET /api/taskers/:id/reviews`                                                        |
+| Tasker availability/date/time       | `GET /api/taskers/:id/availability`                                                   |
+| Estimated price                     | `POST /api/bookings/quote`                                                            |
+| Project details/attachments         | Cloudinary `/api/uploads/*`, then `POST /api/bookings`                                |
+| Saved cards                         | `/api/payments/setup-intent`, `/api/payments/methods`                                 |
+| Confirm booking                     | `POST /api/bookings`                                                                  |
+| Dashboard home                      | `GET /api/dashboard/overview`                                                         |
+| Task management                     | `GET /api/bookings?bucket=booked                                                      | ongoing | history` |
+| Task detail                         | `GET /api/bookings/:bookingId`                                                        |
+| Reschedule/cancel                   | `/api/bookings/:bookingId/reschedule`, `/cancel`                                      |
+| Track Tasker                        | `GET /api/bookings/:bookingId/navigation`                                             |
+| Task timer                          | `GET /api/bookings/:bookingId/timer`                                                  |
+| Extend time                         | `POST /api/bookings/:bookingId/extend`                                                |
+| Complaint/dispute                   | `POST /api/bookings/:bookingId/disputes`                                              |
+| Chat                                | `/api/conversations/*`                                                                |
+| Notifications                       | `/api/notifications/*`                                                                |
+| Favorite Taskers                    | `/api/favorites/taskers/*`                                                            |
+| Ratings/reviews                     | `/api/reviews/*`                                                                      |
+| Wallet/balance                      | `/api/payments/wallet*`                                                               |
+| Payment history                     | `GET /api/payments/transactions`                                                      |
+| Mark task complete                  | `POST /api/bookings/:bookingId/complete` (Customer or Tasker, stopped timer required) |
+| Completed-task payment              | `GET /api/payments/bookings/:bookingId` and provider webhook state                    |
 
 ## Shared role-aware resources
 
@@ -45,7 +45,7 @@ GET  /api/bookings/next
 GET  /api/bookings/:bookingId/navigation
 GET  /api/bookings/:bookingId/timer
 POST /api/bookings/:bookingId/cancel
-POST /api/bookings/:bookingId/complaints
+POST /api/bookings/:bookingId/disputes
 
 GET/POST /api/conversations/...
 GET/POST /api/notifications/...

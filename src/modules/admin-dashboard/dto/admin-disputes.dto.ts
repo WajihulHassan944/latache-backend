@@ -53,19 +53,29 @@ export class AdminDisputesQueryDto extends AdminPaginationDto {
   @IsIn(['all', ...DISPUTE_PRIORITIES])
   priority?: 'all' | (typeof DISPUTE_PRIORITIES)[number] = 'all';
 
-  @ApiPropertyOptional({ type: Number, minimum: 1, description: 'Filter cases assigned to a specific administrator.' })
+  @ApiPropertyOptional({
+    type: Number,
+    minimum: 1,
+    description: 'Filter cases assigned to a specific administrator.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   assignedAdminId?: number;
 
-  @ApiPropertyOptional({ example: '2026-08-01', description: 'Complaint creation date, inclusive. Supply with to.' })
+  @ApiPropertyOptional({
+    example: '2026-08-01',
+    description: 'Complaint creation date, inclusive. Supply with to.',
+  })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   from?: string;
 
-  @ApiPropertyOptional({ example: '2026-08-31', description: 'Complaint creation date, inclusive. Supply with from.' })
+  @ApiPropertyOptional({
+    example: '2026-08-31',
+    description: 'Complaint creation date, inclusive. Supply with from.',
+  })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   to?: string;
@@ -146,7 +156,11 @@ export class AdminDisputeActionDto {
   @IsIn(ADMIN_DISPUTE_ACTIONS)
   action!: (typeof ADMIN_DISPUTE_ACTIONS)[number];
 
-  @ApiPropertyOptional({ type: Number, minimum: 1, description: 'Used by assign/start_investigation.' })
+  @ApiPropertyOptional({
+    type: Number,
+    minimum: 1,
+    description: 'Used by assign/start_investigation.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -158,14 +172,19 @@ export class AdminDisputeActionDto {
   @IsIn(DISPUTE_PRIORITIES)
   priority?: (typeof DISPUTE_PRIORITIES)[number];
 
-  @ApiPropertyOptional({ example: 'Escalated because the allegation concerns safety and requires senior review.' })
+  @ApiPropertyOptional({
+    example: 'Escalated because the allegation concerns safety and requires senior review.',
+  })
   @IsOptional()
   @Transform(trim)
   @IsString()
   @MaxLength(1000)
   reason?: string;
 
-  @ApiPropertyOptional({ enum: ['customer', 'tasker', 'both'], description: 'Used by request_evidence.' })
+  @ApiPropertyOptional({
+    enum: ['customer', 'tasker', 'both'],
+    description: 'Used by request_evidence.',
+  })
   @IsOptional()
   @IsIn(['customer', 'tasker', 'both'])
   requestedFrom?: 'customer' | 'tasker' | 'both';
@@ -177,7 +196,10 @@ export class AdminDisputeActionDto {
   @MaxLength(1000)
   message?: string;
 
-  @ApiPropertyOptional({ example: '2026-08-12', description: 'UTC due date for requested evidence.' })
+  @ApiPropertyOptional({
+    example: '2026-08-12',
+    description: 'UTC due date for requested evidence.',
+  })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   dueDate?: string;
@@ -197,7 +219,10 @@ export class AdminDisputeActionDto {
   @MaxLength(5000)
   reviewNotes?: string;
 
-  @ApiPropertyOptional({ example: 'cm123resolution', description: 'Update/apply a previously saved draft resolution.' })
+  @ApiPropertyOptional({
+    example: 'cm123resolution',
+    description: 'Update/apply a previously saved draft resolution.',
+  })
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -209,7 +234,11 @@ export class AdminDisputeActionDto {
   @IsIn(DISPUTE_RESOLUTION_TYPES)
   resolutionType?: (typeof DISPUTE_RESOLUTION_TYPES)[number];
 
-  @ApiPropertyOptional({ example: 60, minimum: 0.01, description: 'Required only for partial refund actions.' })
+  @ApiPropertyOptional({
+    example: 60,
+    minimum: 0.01,
+    description: 'Required only for partial refund actions.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -217,7 +246,10 @@ export class AdminDisputeActionDto {
   @Max(999999999)
   refundAmount?: number;
 
-  @ApiPropertyOptional({ enum: ['customer', 'tasker', 'both'], description: 'Required for warning outcomes.' })
+  @ApiPropertyOptional({
+    enum: ['customer', 'tasker', 'both'],
+    description: 'Required for warning outcomes.',
+  })
   @IsOptional()
   @IsIn(['customer', 'tasker', 'both'])
   warningTarget?: 'customer' | 'tasker' | 'both';
@@ -227,7 +259,10 @@ export class AdminDisputeActionDto {
   @IsBoolean()
   notifyParties?: boolean = true;
 
-  @ApiPropertyOptional({ example: 'Partial refund approved after evidence review; remaining amount is payable to the Tasker.' })
+  @ApiPropertyOptional({
+    example:
+      'Partial refund approved after evidence review; remaining amount is payable to the Tasker.',
+  })
   @IsOptional()
   @Transform(trim)
   @IsString()

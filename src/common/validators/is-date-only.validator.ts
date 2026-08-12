@@ -6,8 +6,7 @@ export const IsDateOnly = (validationOptions?: ValidationOptions): PropertyDecor
     {
       name: 'isDateOnly',
       validator: {
-        validate: (value: unknown): boolean =>
-          typeof value === 'string' && isValidDateOnly(value),
+        validate: (value: unknown): boolean => typeof value === 'string' && isValidDateOnly(value),
         defaultMessage: buildMessage(
           (eachPrefix) => `${eachPrefix}$property must be a valid date in YYYY-MM-DD format`,
           validationOptions,

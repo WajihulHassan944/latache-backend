@@ -9,7 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -19,8 +19,15 @@ import { SubmitOnboardingDto } from './dto/submit-onboarding.dto';
 import { TaskerDetailQueryDto } from './dto/tasker-detail-query.dto';
 import { TaskerParamDto } from './dto/tasker-param.dto';
 import { TaskersService } from './taskers.service';
+import { RequestLocale } from '../localization/request-locale.decorator';
 
 @ApiTags('14 Tasker Discovery')
+@ApiHeader({
+  name: 'Accept-Language',
+  required: false,
+  example: 'ary',
+  description: 'Supports en, ar, and ary (Moroccan Darija), with English fallback.',
+})
 @Controller('taskers')
 export class TaskersController {
   constructor(private readonly taskers: TaskersService) {}
@@ -34,8 +41,8 @@ export class TaskersController {
   }
 
   @Get()
-  getTaskers(@Query() query: ListTaskersQueryDto) {
-    return this.taskers.list(query);
+  getTaskers(@Query() query: ListTaskersQueryDto, @RequestLocale() locale: string) {
+    return this.taskers.list(query, locale);
   }
 
   @Get(':id/availability')
@@ -45,10 +52,7 @@ export class TaskersController {
 
   @Get(':id/reviews')
   @ApiOperation({ summary: 'List public reviews received by an active tasker' })
-  getTaskerReviews(
-    @Param() params: TaskerParamDto,
-    @Query() query: PublicTaskerReviewsQueryDto,
-  ) {
+  getTaskerReviews(@Param() params: TaskerParamDto, @Query() query: PublicTaskerReviewsQueryDto) {
     return this.taskers.getPublicReviews(params.id, query);
   }
 
@@ -56,7 +60,8 @@ export class TaskersController {
   getTaskerById(
     @Param() params: TaskerParamDto,
     @Query() query: TaskerDetailQueryDto,
+    @RequestLocale() locale: string,
   ) {
-    return this.taskers.getById(params.id, query.serviceSlug);
+    return this.taskers.getById(params.id, query.serviceSlug, locale);
   }
 }

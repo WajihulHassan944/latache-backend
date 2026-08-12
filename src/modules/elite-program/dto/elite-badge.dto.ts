@@ -1,6 +1,19 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsObject, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUrl,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
 import { ELITE_TIER_CODES, type EliteTierCode } from '../elite-program.constants';
+import { EliteTranslationDto } from './elite-benefits.dto';
 
 export class CreateEliteBadgeDto {
   @ApiProperty({ example: 'reliability_pro' })
@@ -30,7 +43,10 @@ export class CreateEliteBadgeDto {
   @MaxLength(1000)
   assetUrl?: string;
 
-  @ApiPropertyOptional({ type: Object, description: 'Descriptive criteria. Automatic award evaluation is not implied.' })
+  @ApiPropertyOptional({
+    type: Object,
+    description: 'Descriptive criteria. Automatic award evaluation is not implied.',
+  })
   @IsOptional()
   @IsObject()
   criteria?: Record<string, unknown>;
@@ -39,6 +55,14 @@ export class CreateEliteBadgeDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean = true;
+
+  @ApiPropertyOptional({ type: [EliteTranslationDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => EliteTranslationDto)
+  translations?: EliteTranslationDto[];
 }
 
 export class UpdateEliteBadgeDto extends PartialType(CreateEliteBadgeDto) {}

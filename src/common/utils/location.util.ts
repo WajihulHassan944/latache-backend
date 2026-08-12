@@ -16,7 +16,5 @@ export const formatLocation = (source: LocationSource = {}) => ({
   lng: toNumberOrNull(source.lng),
   city: source.city ?? null,
   area: source.area ?? null,
-  ...(source.radiusKm !== undefined
-    ? { serviceRadiusKm: toNumberOrNull(source.radiusKm) }
-    : {}),
+  ...(source.radiusKm !== undefined ? { serviceRadiusKm: toNumberOrNull(source.radiusKm) } : {}),
 });

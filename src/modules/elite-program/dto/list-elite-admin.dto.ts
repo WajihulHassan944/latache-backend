@@ -21,7 +21,11 @@ export class ListEliteAdminDto extends AdminPaginationDto {
   @IsIn(ELITE_TIER_CODES)
   tier?: EliteTierCode;
 
-  @ApiPropertyOptional({ enum: ELITE_REQUEST_STATUSES, default: 'pending', description: 'Used for request queue views.' })
+  @ApiPropertyOptional({
+    enum: ELITE_REQUEST_STATUSES,
+    default: 'pending',
+    description: 'Used for request queue views.',
+  })
   @IsOptional()
   @IsIn(ELITE_REQUEST_STATUSES)
   requestStatus?: EliteRequestStatus = 'pending';
@@ -32,7 +36,10 @@ export class ListEliteAdminDto extends AdminPaginationDto {
   @MaxLength(120)
   search?: string;
 
-  @ApiPropertyOptional({ enum: ['newest', 'oldest', 'rating_desc', 'jobs_desc', 'earnings_desc'], default: 'newest' })
+  @ApiPropertyOptional({
+    enum: ['newest', 'oldest', 'rating_desc', 'jobs_desc', 'earnings_desc'],
+    default: 'newest',
+  })
   @IsOptional()
   @IsIn(['newest', 'oldest', 'rating_desc', 'jobs_desc', 'earnings_desc'])
   sort?: 'newest' | 'oldest' | 'rating_desc' | 'jobs_desc' | 'earnings_desc' = 'newest';

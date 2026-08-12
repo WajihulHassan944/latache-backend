@@ -1,6 +1,42 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArrayMaxSize, IsArray, IsBoolean, IsInt, IsObject, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { TranslationDto } from '../../localization/translation.dto';
+
+const trim = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim() : value;
+
+export class EliteTranslationDto extends TranslationDto {
+  @IsString()
+  @Transform(trim)
+  @MaxLength(120)
+  declare name: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(trim)
+  @MaxLength(500)
+  declare description?: string;
+}
+
+export class EliteBenefitTranslationDto extends EliteTranslationDto {
+  @ApiPropertyOptional({ example: '10%' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  displayValue?: string;
+}
 
 export class EliteBenefitInputDto {
   @ApiProperty({ example: 'reduced_platform_fee' })
@@ -25,7 +61,11 @@ export class EliteBenefitInputDto {
   @MaxLength(120)
   displayValue?: string;
 
-  @ApiPropertyOptional({ type: Object, description: 'Configuration metadata only. Financial effects are not applied unless a consuming payment/service module explicitly supports them.' })
+  @ApiPropertyOptional({
+    type: Object,
+    description:
+      'Configuration metadata only. Financial effects are not applied unless a consuming payment/service module explicitly supports them.',
+  })
   @IsOptional()
   @IsObject()
   metadata?: Record<string, unknown>;
@@ -40,6 +80,14 @@ export class EliteBenefitInputDto {
   @IsInt()
   @Min(0)
   sortOrder?: number = 0;
+
+  @ApiPropertyOptional({ type: [EliteBenefitTranslationDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => EliteBenefitTranslationDto)
+  translations?: EliteBenefitTranslationDto[];
 }
 
 export class ReplaceEliteBenefitsDto {

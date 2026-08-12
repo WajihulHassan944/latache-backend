@@ -80,9 +80,9 @@ Admins may save a refund resolution draft with `support.manage`, but applying it
 Customer and Tasker evidence is part of the shared booking/dispute resource:
 
 ```text
-GET  /api/bookings/:bookingId/complaints
-POST /api/bookings/:bookingId/complaints
-POST /api/bookings/:bookingId/complaints/:complaintId/evidence
+GET  /api/disputes?bookingId=:bookingId
+POST /api/bookings/:bookingId/disputes
+POST /api/disputes/:disputeId/evidence
 ```
 
 Files are first uploaded through the existing Cloudinary `booking-attachments` upload category. The participant evidence endpoint accepts the returned Cloudinary metadata and verifies that the `publicId` belongs to the authenticated account namespace and that the URL belongs to the configured Cloudinary account.

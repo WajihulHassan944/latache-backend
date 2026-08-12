@@ -12,10 +12,7 @@ import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PaymentsService } from '../../payments/payments.service';
 import { PAYMENT_STATUS, PAYMENT_TRANSACTION_KIND } from '../../payments/payments.constants';
-import type {
-  AdminDisputeActionDto,
-  AdminDisputesQueryDto,
-} from '../dto';
+import type { AdminDisputeActionDto, AdminDisputesQueryDto } from '../dto';
 import { fullName, money, pagination } from '../admin-dashboard.utils';
 
 const ACTIVE_DISPUTE_STATUSES = ['open', 'under_investigation', 'escalated'] as const;
@@ -34,6 +31,70 @@ const DAY_MS = 86_400_000;
 
 interface AverageRow {
   value: number | string | Prisma.Decimal | null;
+}
+
+interface DisputeListRow {
+  id: string;
+  category: string;
+  description: string;
+  status: string;
+  priority: string;
+  evidenceReviewStatus: string;
+  awaitingResponseFrom: string | null;
+  responseDueAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  filedBy: {
+    id: number;
+    role: string;
+    firstName: string | null;
+    lastName: string | null;
+  };
+  assignedAdmin: {
+    id: number;
+    firstName: string | null;
+    lastName: string | null;
+  } | null;
+  booking: {
+    id: number;
+    totalChargedAmount: Prisma.Decimal | null;
+    serviceAmount: Prisma.Decimal | null;
+    platformFeeAmount: Prisma.Decimal;
+    taxAmount: Prisma.Decimal;
+    taxInclusive: boolean;
+    serviceSurchargeAmount: Prisma.Decimal;
+    tipAmount: Prisma.Decimal;
+    donationAmount: Prisma.Decimal;
+    paymentCurrency: string;
+    paymentStatus: string;
+    customer: { id: number; firstName: string | null; lastName: string | null };
+    tasker: { id: number; firstName: string | null; lastName: string | null };
+    service: { id: number; name: string | null; slug: string | null };
+  };
+  _count: { evidences: number; evidenceRequests: number; resolutions: number };
+}
+
+interface DisputeTimelineSource {
+  createdAt: Date;
+  escalatedAt: Date | null;
+  escalationReason: string | null;
+  filedBy: { firstName: string | null; lastName: string | null };
+  evidences: Array<{ id: string; name: string; createdAt: Date }>;
+  evidenceRequests: Array<{ id: string; message: string; createdAt: Date }>;
+  resolutions: Array<{
+    id: string;
+    status: string;
+    summary: string;
+    appliedAt: Date | null;
+    createdAt: Date;
+  }>;
+}
+
+interface DisputeAuditTimelineEvent {
+  action: string;
+  reason: string | null;
+  createdAt: Date;
+  actor: { firstName: string | null; lastName: string | null } | null;
 }
 
 const disputeDisplayId = (id: string): string => `DSP-${id.slice(-6).toUpperCase()}`;
@@ -110,17 +171,39 @@ export class AdminDisputesService {
       where: { id },
       include: {
         filedBy: {
-          select: { id: true, role: true, firstName: true, lastName: true, email: true, profilePicture: true },
+          select: {
+            id: true,
+            role: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            profilePicture: true,
+          },
         },
         assignedAdmin: { select: { id: true, firstName: true, lastName: true, email: true } },
         resolvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
         booking: {
           include: {
             customer: {
-              select: { id: true, firstName: true, lastName: true, email: true, profilePicture: true, accountStatus: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                profilePicture: true,
+                accountStatus: true,
+              },
             },
             tasker: {
-              select: { id: true, firstName: true, lastName: true, email: true, profilePicture: true, accountStatus: true, rating: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                profilePicture: true,
+                accountStatus: true,
+                rating: true,
+              },
             },
             service: { select: { id: true, name: true, slug: true } },
             serviceOption: { select: { id: true, name: true, slug: true } },
@@ -141,7 +224,9 @@ export class AdminDisputesService {
         },
         resolutions: {
           orderBy: { createdAt: 'desc' },
-          include: { actor: { select: { id: true, firstName: true, lastName: true, email: true } } },
+          include: {
+            actor: { select: { id: true, firstName: true, lastName: true, email: true } },
+          },
         },
       },
     });
@@ -219,7 +304,10 @@ export class AdminDisputesService {
         source: complaint.booking.paymentSource,
         status: complaint.booking.paymentStatus,
         currency: complaint.booking.paymentCurrency,
-        totalChargedAmount: complaint.booking.totalChargedAmount === null ? null : money(complaint.booking.totalChargedAmount),
+        totalChargedAmount:
+          complaint.booking.totalChargedAmount === null
+            ? null
+            : money(complaint.booking.totalChargedAmount),
         refundableAmount: refundable,
         stripePaymentIntentId: complaint.booking.stripePaymentIntentId,
         transactions: complaint.booking.paymentTransactions.map((transaction) => ({
@@ -367,13 +455,16 @@ export class AdminDisputesService {
         where: { id },
         data: { status: 'under_investigation', assignedAdminId },
       });
-      await this.audit.record({
-        actorId: actor.id,
-        action: 'dispute_investigation_started',
-        entityType: 'dispute',
-        entityId: id,
-        metadata: { assignedAdminId },
-      }, transaction);
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'dispute_investigation_started',
+          entityType: 'dispute',
+          entityId: id,
+          metadata: { assignedAdminId },
+        },
+        transaction,
+      );
     });
     return this.details(id);
   }
@@ -384,14 +475,20 @@ export class AdminDisputesService {
     await this.prisma.$transaction(async (transaction) => {
       const complaint = await this.lockComplaint(transaction, id);
       this.assertActive(complaint.status);
-      await transaction.taskComplaint.update({ where: { id }, data: { assignedAdminId: dto.assignedAdminId } });
-      await this.audit.record({
-        actorId: actor.id,
-        action: 'dispute_assigned',
-        entityType: 'dispute',
-        entityId: id,
-        metadata: { assignedAdminId: dto.assignedAdminId },
-      }, transaction);
+      await transaction.taskComplaint.update({
+        where: { id },
+        data: { assignedAdminId: dto.assignedAdminId },
+      });
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'dispute_assigned',
+          entityType: 'dispute',
+          entityId: id,
+          metadata: { assignedAdminId: dto.assignedAdminId },
+        },
+        transaction,
+      );
     });
     return this.details(id);
   }
@@ -402,20 +499,24 @@ export class AdminDisputesService {
       const complaint = await this.lockComplaint(transaction, id);
       this.assertActive(complaint.status);
       await transaction.taskComplaint.update({ where: { id }, data: { priority: dto.priority } });
-      await this.audit.record({
-        actorId: actor.id,
-        action: 'dispute_priority_changed',
-        entityType: 'dispute',
-        entityId: id,
-        metadata: { previousPriority: complaint.priority, priority: dto.priority },
-      }, transaction);
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'dispute_priority_changed',
+          entityType: 'dispute',
+          entityId: id,
+          metadata: { previousPriority: complaint.priority, priority: dto.priority },
+        },
+        transaction,
+      );
     });
     return this.details(id);
   }
 
   private async escalate(actor: User, id: string, dto: AdminDisputeActionDto) {
     const reason = dto.reason?.trim();
-    if (!reason || reason.length < 5) throw new BadRequestException('A meaningful escalation reason is required');
+    if (!reason || reason.length < 5)
+      throw new BadRequestException('A meaningful escalation reason is required');
     await this.prisma.$transaction(async (transaction) => {
       const complaint = await this.lockComplaint(transaction, id);
       this.assertActive(complaint.status);
@@ -429,13 +530,16 @@ export class AdminDisputesService {
           assignedAdminId: complaint.assignedAdminId ?? actor.id,
         },
       });
-      await this.audit.record({
-        actorId: actor.id,
-        action: 'dispute_escalated',
-        entityType: 'dispute',
-        entityId: id,
-        reason,
-      }, transaction);
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'dispute_escalated',
+          entityType: 'dispute',
+          entityId: id,
+          reason,
+        },
+        transaction,
+      );
     });
     return this.details(id);
   }
@@ -444,17 +548,20 @@ export class AdminDisputesService {
     const requestedFrom = dto.requestedFrom;
     const message = dto.message?.trim();
     if (!requestedFrom) throw new BadRequestException('requestedFrom is required');
-    if (!message || message.length < 5) throw new BadRequestException('Evidence request message is required');
+    if (!message || message.length < 5)
+      throw new BadRequestException('Evidence request message is required');
     const dueAt = dto.dueDate ? new Date(`${dto.dueDate}T23:59:59.999Z`) : null;
-    if (dueAt && Number.isNaN(dueAt.getTime())) throw new BadRequestException('Invalid evidence due date');
+    if (dueAt && Number.isNaN(dueAt.getTime()))
+      throw new BadRequestException('Invalid evidence due date');
 
     await this.prisma.$transaction(async (transaction) => {
       const complaint = await this.lockComplaint(transaction, id);
       this.assertActive(complaint.status);
-      const booking = await transaction.booking.findUniqueOrThrow({ where: { id: complaint.bookingId } });
-      const requestedRoles: Array<'customer' | 'tasker'> = requestedFrom === 'both'
-        ? ['customer', 'tasker']
-        : [requestedFrom];
+      const booking = await transaction.booking.findUniqueOrThrow({
+        where: { id: complaint.bookingId },
+      });
+      const requestedRoles: Array<'customer' | 'tasker'> =
+        requestedFrom === 'both' ? ['customer', 'tasker'] : [requestedFrom];
 
       const requests: Array<{ id: string; requestedFrom: 'customer' | 'tasker' }> = [];
       for (const role of requestedRoles) {
@@ -483,40 +590,49 @@ export class AdminDisputesService {
 
       for (const request of requests) {
         const userId = request.requestedFrom === 'customer' ? booking.customerId : booking.taskerId;
-        await this.notifications.create(userId, {
-          category: 'tasks',
-          type: 'dispute_evidence_requested',
-          title: 'More evidence requested',
-          body: message,
-          entityType: 'dispute',
-          entityId: id,
-          metadata: { evidenceRequestId: request.id, dueAt: dueAt?.toISOString() ?? null },
-        }, transaction);
+        await this.notifications.create(
+          userId,
+          {
+            category: 'tasks',
+            type: 'dispute_evidence_requested',
+            title: 'More evidence requested',
+            body: message,
+            entityType: 'dispute',
+            entityId: id,
+            metadata: { evidenceRequestId: request.id, dueAt: dueAt?.toISOString() ?? null },
+          },
+          transaction,
+        );
       }
 
-      await this.audit.record({
-        actorId: actor.id,
-        action: 'dispute_evidence_requested',
-        entityType: 'dispute',
-        entityId: id,
-        reason: message,
-        metadata: {
-          requestedFrom,
-          evidenceRequestIds: requests.map((request) => request.id),
-          dueAt: dueAt?.toISOString() ?? null,
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'dispute_evidence_requested',
+          entityType: 'dispute',
+          entityId: id,
+          reason: message,
+          metadata: {
+            requestedFrom,
+            evidenceRequestIds: requests.map((request) => request.id),
+            dueAt: dueAt?.toISOString() ?? null,
+          },
         },
-      }, transaction);
+        transaction,
+      );
     });
     return this.details(id);
   }
 
   private async addEvidence(actor: User, id: string, dto: AdminDisputeActionDto) {
-    if (!dto.evidence?.length) throw new BadRequestException('At least one evidence item is required');
+    const evidenceItems = dto.evidence;
+    if (!evidenceItems?.length)
+      throw new BadRequestException('At least one evidence item is required');
     await this.prisma.$transaction(async (transaction) => {
       const complaint = await this.lockComplaint(transaction, id);
       this.assertActive(complaint.status);
       await transaction.disputeEvidence.createMany({
-        data: dto.evidence!.map((evidence) => ({
+        data: evidenceItems.map((evidence) => ({
           complaintId: id,
           uploadedById: actor.id,
           uploadedByRole: actor.role,
@@ -533,13 +649,16 @@ export class AdminDisputesService {
         where: { id },
         data: { evidenceReviewStatus: 'pending' },
       });
-      await this.audit.record({
-        actorId: actor.id,
-        action: 'dispute_evidence_added',
-        entityType: 'dispute',
-        entityId: id,
-        metadata: { count: dto.evidence!.length },
-      }, transaction);
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'dispute_evidence_added',
+          entityType: 'dispute',
+          entityId: id,
+          metadata: { count: evidenceItems.length },
+        },
+        transaction,
+      );
     });
     return this.details(id);
   }
@@ -567,13 +686,16 @@ export class AdminDisputesService {
           assignedAdminId: complaint.assignedAdminId ?? actor.id,
         },
       });
-      await this.audit.record({
-        actorId: actor.id,
-        action: 'dispute_evidence_reviewed',
-        entityType: 'dispute',
-        entityId: id,
-        reason: notes,
-      }, transaction);
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'dispute_evidence_reviewed',
+          entityType: 'dispute',
+          entityId: id,
+          reason: notes,
+        },
+        transaction,
+      );
     });
     return this.details(id);
   }
@@ -608,7 +730,9 @@ export class AdminDisputesService {
     const prepared = await this.prisma.$transaction(async (transaction) => {
       const complaint = await this.lockComplaint(transaction, id);
       this.assertActive(complaint.status);
-      const booking = await transaction.booking.findUniqueOrThrow({ where: { id: complaint.bookingId } });
+      const booking = await transaction.booking.findUniqueOrThrow({
+        where: { id: complaint.bookingId },
+      });
       let refundAmount: number | null = null;
       if (isRefund) {
         const pendingRefundResolution = await transaction.disputeResolution.findFirst({
@@ -622,18 +746,25 @@ export class AdminDisputesService {
         if (pendingRefundResolution) {
           throw new ConflictException('A refund resolution is already processing for this dispute');
         }
-        if (![PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded].includes(booking.paymentStatus as never)) {
+        if (
+          ![PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded].includes(
+            booking.paymentStatus as never,
+          )
+        ) {
           throw new ConflictException('Refund outcomes require a settled booking payment');
         }
         const remaining = await this.refundableAmount(booking.id, transaction);
-        if (remaining <= 0) throw new ConflictException('This booking has no remaining refundable amount');
+        if (remaining <= 0)
+          throw new ConflictException('This booking has no remaining refundable amount');
         const isFull = values.actionType.startsWith('full_refund');
         refundAmount = isFull ? remaining : values.refundAmount;
         if (!refundAmount || refundAmount <= 0) {
           throw new BadRequestException('refundAmount is required for partial refund outcomes');
         }
         if (refundAmount > remaining + 0.0001) {
-          throw new ConflictException(`Refund exceeds remaining refundable amount of ${booking.paymentCurrency} ${remaining.toFixed(2)}`);
+          throw new ConflictException(
+            `Refund exceeds remaining refundable amount of ${booking.paymentCurrency} ${remaining.toFixed(2)}`,
+          );
         }
       }
 
@@ -686,17 +817,34 @@ export class AdminDisputesService {
             responseDueAt: null,
           },
         });
-        await this.audit.record({
-          actorId: actor.id,
-          action: dismissed ? 'dispute_dismissed' : 'dispute_resolved',
-          entityType: 'dispute',
-          entityId: id,
-          reason: values.summary,
-          metadata: { actionType: values.actionType },
-        }, transaction);
-        await this.warningAudit(transaction, actor.id, values.actionType, values.warningTarget, booking, id, values.summary);
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            action: dismissed ? 'dispute_dismissed' : 'dispute_resolved',
+            entityType: 'dispute',
+            entityId: id,
+            reason: values.summary,
+            metadata: { actionType: values.actionType },
+          },
+          transaction,
+        );
+        await this.warningAudit(
+          transaction,
+          actor.id,
+          values.actionType,
+          values.warningTarget,
+          booking,
+          id,
+          values.summary,
+        );
         if (values.notifyParties) {
-          await this.notifyResolution(transaction, booking.customerId, booking.taskerId, id, values.summary);
+          await this.notifyResolution(
+            transaction,
+            booking.customerId,
+            booking.taskerId,
+            id,
+            values.summary,
+          );
         }
       } else {
         await transaction.taskComplaint.update({
@@ -706,25 +854,35 @@ export class AdminDisputesService {
             assignedAdminId: complaint.assignedAdminId ?? actor.id,
           },
         });
-        await this.audit.record({
-          actorId: actor.id,
-          action: 'dispute_refund_submitted',
-          entityType: 'dispute',
-          entityId: id,
-          reason: values.summary,
-          metadata: { actionType: values.actionType, refundAmount, currency: booking.paymentCurrency },
-        }, transaction);
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            action: 'dispute_refund_submitted',
+            entityType: 'dispute',
+            entityId: id,
+            reason: values.summary,
+            metadata: {
+              actionType: values.actionType,
+              refundAmount,
+              currency: booking.paymentCurrency,
+            },
+          },
+          transaction,
+        );
       }
       return { resolution, booking, refundAmount };
     });
 
     if (isRefund) {
+      if (prepared.refundAmount === null) {
+        throw new ConflictException('A refund amount was not prepared for this resolution');
+      }
       const refund = await this.payments.issueDisputeRefund({
         bookingId: prepared.booking.id,
         complaintId: id,
         resolutionId: prepared.resolution.id,
         actorId: actor.id,
-        amount: prepared.refundAmount!,
+        amount: prepared.refundAmount,
         summary: prepared.resolution.summary,
       });
       return { refund, dispute: await this.details(id) };
@@ -736,7 +894,8 @@ export class AdminDisputesService {
 
   private async reopen(actor: User, id: string, dto: AdminDisputeActionDto) {
     const reason = dto.reason?.trim();
-    if (!reason || reason.length < 5) throw new BadRequestException('A meaningful reopen reason is required');
+    if (!reason || reason.length < 5)
+      throw new BadRequestException('A meaningful reopen reason is required');
     await this.prisma.$transaction(async (transaction) => {
       const complaint = await this.lockComplaint(transaction, id);
       if (!['resolved', 'dismissed'].includes(complaint.status)) {
@@ -755,13 +914,16 @@ export class AdminDisputesService {
           resolutionCurrency: null,
         },
       });
-      await this.audit.record({
-        actorId: actor.id,
-        action: 'dispute_reopened',
-        entityType: 'dispute',
-        entityId: id,
-        reason,
-      }, transaction);
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'dispute_reopened',
+          entityType: 'dispute',
+          entityId: id,
+          reason,
+        },
+        transaction,
+      );
     });
     return this.details(id);
   }
@@ -786,7 +948,8 @@ export class AdminDisputesService {
     }
 
     if (!resolutionType) throw new BadRequestException('resolutionType is required');
-    if (!summary || summary.length < 5) throw new BadRequestException('resolutionSummary is required');
+    if (!summary || summary.length < 5)
+      throw new BadRequestException('resolutionSummary is required');
     if (resolutionType.startsWith('partial_refund') && (!refundAmount || refundAmount <= 0)) {
       throw new BadRequestException('refundAmount is required for partial refund outcomes');
     }
@@ -827,19 +990,47 @@ export class AdminDisputesService {
       averageResolutionRows,
     ] = await Promise.all([
       this.prisma.taskComplaint.count({ where: { createdAt: { gte: today, lt: tomorrow } } }),
-      this.prisma.taskComplaint.count({ where: { status: { in: [...ACTIVE_DISPUTE_STATUSES] }, awaitingResponseFrom: { not: null } } }),
+      this.prisma.taskComplaint.count({
+        where: {
+          status: { in: [...ACTIVE_DISPUTE_STATUSES] },
+          awaitingResponseFrom: { not: null },
+        },
+      }),
       this.prisma.taskComplaint.count({ where: { status: { in: [...ACTIVE_DISPUTE_STATUSES] } } }),
       this.prisma.taskComplaint.count({ where: { status: 'under_investigation' } }),
-      this.prisma.taskComplaint.count({ where: { status: { in: [...ACTIVE_DISPUTE_STATUSES] }, priority: { in: ['high', 'urgent'] } } }),
+      this.prisma.taskComplaint.count({
+        where: {
+          status: { in: [...ACTIVE_DISPUTE_STATUSES] },
+          priority: { in: ['high', 'urgent'] },
+        },
+      }),
       this.prisma.taskComplaint.count({ where: { escalatedAt: { gte: today, lt: tomorrow } } }),
       this.prisma.taskComplaint.count({ where: { status: 'escalated' } }),
       this.prisma.taskComplaint.count({ where: { status: { in: ['resolved', 'dismissed'] } } }),
       this.prisma.taskComplaint.count({ where: { resolvedAt: { gte: weekAgo } } }),
-      this.prisma.taskComplaint.count({ where: { status: { in: [...ACTIVE_DISPUTE_STATUSES] }, priority: 'urgent' } }),
-      this.prisma.disputeResolution.count({ where: { status: 'applied', appliedAt: { gte: weekAgo } } }),
-      this.prisma.disputeResolution.count({ where: { status: 'applied', appliedAt: { gte: weekAgo }, actionType: { contains: 'refund' } } }),
-      this.prisma.disputeResolution.count({ where: { status: 'applied', appliedAt: { gte: weekAgo }, actionType: { contains: 'warning' } } }),
-      this.prisma.disputeResolution.count({ where: { status: 'applied', appliedAt: { gte: weekAgo }, actionType: 'dismiss' } }),
+      this.prisma.taskComplaint.count({
+        where: { status: { in: [...ACTIVE_DISPUTE_STATUSES] }, priority: 'urgent' },
+      }),
+      this.prisma.disputeResolution.count({
+        where: { status: 'applied', appliedAt: { gte: weekAgo } },
+      }),
+      this.prisma.disputeResolution.count({
+        where: {
+          status: 'applied',
+          appliedAt: { gte: weekAgo },
+          actionType: { contains: 'refund' },
+        },
+      }),
+      this.prisma.disputeResolution.count({
+        where: {
+          status: 'applied',
+          appliedAt: { gte: weekAgo },
+          actionType: { contains: 'warning' },
+        },
+      }),
+      this.prisma.disputeResolution.count({
+        where: { status: 'applied', appliedAt: { gte: weekAgo }, actionType: 'dismiss' },
+      }),
       this.prisma.$queryRaw<AverageRow[]>`
         SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - "createdAt")) / 86400.0), 0) AS value
         FROM "TaskComplaints"
@@ -870,7 +1061,8 @@ export class AdminDisputesService {
         satisfaction: {
           trackingAvailable: false,
           rate: null,
-          reason: 'No post-dispute satisfaction survey is implemented; the API does not invent a percentage.',
+          reason:
+            'No post-dispute satisfaction survey is implemented; the API does not invent a percentage.',
         },
       },
       evidence: { urgentCases, resolved7d },
@@ -885,7 +1077,9 @@ export class AdminDisputesService {
     const { page, limit, skip } = pagination(query.page, query.limit);
     const search = query.search?.trim();
     const displaySuffix = search?.toUpperCase().startsWith('DSP-') ? search.slice(4).trim() : null;
-    const bookingSearch = search ? Number.parseInt(search.replace(/^(BKG-|B-)/i, ''), 10) : Number.NaN;
+    const bookingSearch = search
+      ? Number.parseInt(search.replace(/^(BKG-|B-)/i, ''), 10)
+      : Number.NaN;
     const appliedAt = this.dateRange(query.from, query.to);
     const complaintFilter: Prisma.TaskComplaintWhereInput = {
       ...(query.priority && query.priority !== 'all' ? { priority: query.priority } : {}),
@@ -907,10 +1101,26 @@ export class AdminDisputesService {
                 : []),
               { actionType: { contains: search, mode: 'insensitive' } },
               { summary: { contains: search, mode: 'insensitive' } },
-              { complaint: { booking: { customer: { firstName: { contains: search, mode: 'insensitive' } } } } },
-              { complaint: { booking: { customer: { lastName: { contains: search, mode: 'insensitive' } } } } },
-              { complaint: { booking: { tasker: { firstName: { contains: search, mode: 'insensitive' } } } } },
-              { complaint: { booking: { tasker: { lastName: { contains: search, mode: 'insensitive' } } } } },
+              {
+                complaint: {
+                  booking: { customer: { firstName: { contains: search, mode: 'insensitive' } } },
+                },
+              },
+              {
+                complaint: {
+                  booking: { customer: { lastName: { contains: search, mode: 'insensitive' } } },
+                },
+              },
+              {
+                complaint: {
+                  booking: { tasker: { firstName: { contains: search, mode: 'insensitive' } } },
+                },
+              },
+              {
+                complaint: {
+                  booking: { tasker: { lastName: { contains: search, mode: 'insensitive' } } },
+                },
+              },
             ],
           }
         : {}),
@@ -973,7 +1183,9 @@ export class AdminDisputesService {
   private listWhere(query: AdminDisputesQueryDto): Prisma.TaskComplaintWhereInput {
     const search = query.search?.trim();
     const displaySuffix = search?.toUpperCase().startsWith('DSP-') ? search.slice(4).trim() : null;
-    const bookingSearch = search ? Number.parseInt(search.replace(/^(BKG-|B-)/i, ''), 10) : Number.NaN;
+    const bookingSearch = search
+      ? Number.parseInt(search.replace(/^(BKG-|B-)/i, ''), 10)
+      : Number.NaN;
     const createdAt = this.dateRange(query.from, query.to);
     const base: Prisma.TaskComplaintWhereInput = {
       ...(createdAt ? { createdAt } : {}),
@@ -982,8 +1194,12 @@ export class AdminDisputesService {
       ...(search
         ? {
             OR: [
-              ...(displaySuffix ? [{ id: { endsWith: displaySuffix, mode: 'insensitive' as const } }] : []),
-              ...(Number.isInteger(bookingSearch) && bookingSearch > 0 ? [{ bookingId: bookingSearch }] : []),
+              ...(displaySuffix
+                ? [{ id: { endsWith: displaySuffix, mode: 'insensitive' as const } }]
+                : []),
+              ...(Number.isInteger(bookingSearch) && bookingSearch > 0
+                ? [{ bookingId: bookingSearch }]
+                : []),
               { category: { contains: search, mode: 'insensitive' } },
               { description: { contains: search, mode: 'insensitive' } },
               { booking: { customer: { firstName: { contains: search, mode: 'insensitive' } } } },
@@ -1022,24 +1238,28 @@ export class AdminDisputesService {
     }
   }
 
-  private orderBy(sort: AdminDisputesQueryDto['sort']): Prisma.TaskComplaintOrderByWithRelationInput[] {
+  private orderBy(
+    sort: AdminDisputesQueryDto['sort'],
+  ): Prisma.TaskComplaintOrderByWithRelationInput[] {
     if (sort === 'oldest') return [{ createdAt: 'asc' }];
-    if (sort === 'amount_desc') return [{ booking: { totalChargedAmount: 'desc' } }, { createdAt: 'desc' }];
+    if (sort === 'amount_desc')
+      return [{ booking: { totalChargedAmount: 'desc' } }, { createdAt: 'desc' }];
     if (sort === 'priority') return [{ priority: 'desc' }, { createdAt: 'desc' }];
     return [{ createdAt: 'desc' }];
   }
 
-  private listItem(complaint: any) {
-    const amount = complaint.booking.totalChargedAmount === null
-      ? money(
-          Number(complaint.booking.serviceAmount ?? 0) +
-            Number(complaint.booking.platformFeeAmount) +
-            (complaint.booking.taxInclusive ? 0 : Number(complaint.booking.taxAmount ?? 0)) +
-            Number(complaint.booking.serviceSurchargeAmount ?? 0) +
-            Number(complaint.booking.tipAmount) +
-            Number(complaint.booking.donationAmount),
-        )
-      : money(complaint.booking.totalChargedAmount);
+  private listItem(complaint: DisputeListRow) {
+    const amount =
+      complaint.booking.totalChargedAmount === null
+        ? money(
+            Number(complaint.booking.serviceAmount ?? 0) +
+              Number(complaint.booking.platformFeeAmount) +
+              (complaint.booking.taxInclusive ? 0 : Number(complaint.booking.taxAmount ?? 0)) +
+              Number(complaint.booking.serviceSurchargeAmount ?? 0) +
+              Number(complaint.booking.tipAmount) +
+              Number(complaint.booking.donationAmount),
+          )
+        : money(complaint.booking.totalChargedAmount);
     return {
       id: complaint.id,
       disputeId: disputeDisplayId(complaint.id),
@@ -1090,13 +1310,20 @@ export class AdminDisputesService {
 
   private assertActive(status: string): void {
     if (!ACTIVE_DISPUTE_STATUSES.includes(status as never)) {
-      throw new ConflictException('This dispute is already closed; reopen it before applying active-case actions');
+      throw new ConflictException(
+        'This dispute is already closed; reopen it before applying active-case actions',
+      );
     }
   }
 
   private async assertAdministrator(id: number): Promise<void> {
     const admin = await this.prisma.user.findFirst({
-      where: { id, role: { in: [UserRole.Admin, UserRole.SuperAdmin] }, accountStatus: 'active', deletedAt: null },
+      where: {
+        id,
+        role: { in: [UserRole.Admin, UserRole.SuperAdmin] },
+        accountStatus: 'active',
+        deletedAt: null,
+      },
       select: { id: true, role: true, permissions: true },
     });
     if (!admin) throw new BadRequestException('Assigned administrator is unavailable');
@@ -1108,11 +1335,16 @@ export class AdminDisputesService {
   private assertFinanceManage(actor: User): void {
     if (actor.role === UserRole.SuperAdmin) return;
     if (!actor.permissions.includes('finance.manage')) {
-      throw new ForbiddenException('Refund resolutions require finance.manage in addition to support.manage');
+      throw new ForbiddenException(
+        'Refund resolutions require finance.manage in addition to support.manage',
+      );
     }
   }
 
-  private async refundableAmount(bookingId: number, transaction?: Prisma.TransactionClient): Promise<number> {
+  private async refundableAmount(
+    bookingId: number,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<number> {
     const db = transaction ?? this.prisma;
     const booking = await db.booking.findUnique({
       where: { id: bookingId },
@@ -1127,7 +1359,10 @@ export class AdminDisputesService {
       },
       _sum: { amount: true },
     });
-    return Math.max(0, money(Number(booking.totalChargedAmount) - Number(refunds._sum.amount ?? 0)));
+    return Math.max(
+      0,
+      money(Number(booking.totalChargedAmount) - Number(refunds._sum.amount ?? 0)),
+    );
   }
 
   private async warningAudit(
@@ -1140,20 +1375,24 @@ export class AdminDisputesService {
     summary: string,
   ): Promise<void> {
     if (!WARNING_RESOLUTION_TYPES.has(actionType) || !warningTarget) return;
-    const targets = warningTarget === 'both'
-      ? [booking.customerId, booking.taskerId]
-      : warningTarget === 'customer'
-        ? [booking.customerId]
-        : [booking.taskerId];
+    const targets =
+      warningTarget === 'both'
+        ? [booking.customerId, booking.taskerId]
+        : warningTarget === 'customer'
+          ? [booking.customerId]
+          : [booking.taskerId];
     for (const targetUserId of targets) {
-      await this.audit.record({
-        actorId,
-        targetUserId,
-        action: 'dispute_warning_issued',
-        entityType: 'dispute',
-        entityId: complaintId,
-        reason: summary,
-      }, transaction);
+      await this.audit.record(
+        {
+          actorId,
+          targetUserId,
+          action: 'dispute_warning_issued',
+          entityType: 'dispute',
+          entityId: complaintId,
+          reason: summary,
+        },
+        transaction,
+      );
     }
   }
 
@@ -1165,14 +1404,18 @@ export class AdminDisputesService {
     summary: string,
   ): Promise<void> {
     for (const userId of [customerId, taskerId]) {
-      await this.notifications.create(userId, {
-        category: 'tasks',
-        type: 'booking_dispute_resolved',
-        title: 'Booking dispute resolved',
-        body: summary.slice(0, 500),
-        entityType: 'dispute',
-        entityId: complaintId,
-      }, transaction);
+      await this.notifications.create(
+        userId,
+        {
+          category: 'tasks',
+          type: 'booking_dispute_resolved',
+          title: 'Booking dispute resolved',
+          body: summary.slice(0, 500),
+          entityType: 'dispute',
+          entityId: complaintId,
+        },
+        transaction,
+      );
     }
   }
 
@@ -1217,7 +1460,7 @@ export class AdminDisputesService {
     ];
   }
 
-  private timeline(complaint: any, audit: any[]) {
+  private timeline(complaint: DisputeTimelineSource, audit: DisputeAuditTimelineEvent[]) {
     const events: Array<Record<string, unknown> & { at: string }> = [
       {
         type: 'dispute_opened',
@@ -1226,16 +1469,35 @@ export class AdminDisputesService {
       },
     ];
     if (complaint.escalatedAt) {
-      events.push({ type: 'dispute_escalated', at: complaint.escalatedAt.toISOString(), label: complaint.escalationReason ?? 'Escalated' });
+      events.push({
+        type: 'dispute_escalated',
+        at: complaint.escalatedAt.toISOString(),
+        label: complaint.escalationReason ?? 'Escalated',
+      });
     }
     for (const evidence of complaint.evidences) {
-      events.push({ type: 'evidence_added', at: evidence.createdAt.toISOString(), label: evidence.name, evidenceId: evidence.id });
+      events.push({
+        type: 'evidence_added',
+        at: evidence.createdAt.toISOString(),
+        label: evidence.name,
+        evidenceId: evidence.id,
+      });
     }
     for (const request of complaint.evidenceRequests) {
-      events.push({ type: 'evidence_requested', at: request.createdAt.toISOString(), label: request.message, requestId: request.id });
+      events.push({
+        type: 'evidence_requested',
+        at: request.createdAt.toISOString(),
+        label: request.message,
+        requestId: request.id,
+      });
     }
     for (const resolution of complaint.resolutions) {
-      events.push({ type: `resolution_${resolution.status}`, at: (resolution.appliedAt ?? resolution.createdAt).toISOString(), label: resolution.summary, resolutionId: resolution.id });
+      events.push({
+        type: `resolution_${resolution.status}`,
+        at: (resolution.appliedAt ?? resolution.createdAt).toISOString(),
+        label: resolution.summary,
+        resolutionId: resolution.id,
+      });
     }
     for (const event of audit) {
       events.push({
@@ -1249,7 +1511,8 @@ export class AdminDisputesService {
   }
 
   private dateRange(from?: string, to?: string): Prisma.DateTimeFilter | undefined {
-    if ((from && !to) || (!from && to)) throw new BadRequestException('from and to must be supplied together');
+    if ((from && !to) || (!from && to))
+      throw new BadRequestException('from and to must be supplied together');
     if (!from || !to) return undefined;
     const start = new Date(`${from}T00:00:00.000Z`);
     const end = new Date(`${to}T00:00:00.000Z`);

@@ -3,6 +3,7 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiOperation,
+  ApiHeader,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -13,8 +14,15 @@ import type { User } from '../../../generated/prisma/client';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TaskerEliteRequestDto } from '../dto';
 import { EliteProgramService } from '../services/elite-program.service';
+import { RequestLocale } from '../../localization/request-locale.decorator';
 
 @ApiTags('12 Tasker - Elite Program')
+@ApiHeader({
+  name: 'Accept-Language',
+  required: false,
+  example: 'ary',
+  description: 'Supports en, ar, and ary (Moroccan Darija), with English fallback.',
+})
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Tasker)
@@ -28,8 +36,11 @@ export class TaskerEliteController {
     description:
       'Returns current tier/benefits/badges, one pending request if present, real performance metrics, valid next actions, and a requirements-based eligibility score when the target tier has administrator-configured thresholds.',
   })
-  state(@CurrentUser() user: User): Promise<Record<string, unknown>> {
-    return this.elite.taskerState(user.id);
+  state(
+    @CurrentUser() user: User,
+    @RequestLocale() locale: string,
+  ): Promise<Record<string, unknown>> {
+    return this.elite.taskerState(user.id, locale);
   }
 
   @Post('requests')
@@ -38,7 +49,9 @@ export class TaskerEliteController {
     description:
       'One request endpoint covers all three flows. Target tier is derived from the active tier order so clients cannot skip tiers. Only one pending request per tasker is allowed.',
   })
-  @ApiConflictResponse({ description: 'Tasker state does not allow this request or another request is already pending.' })
+  @ApiConflictResponse({
+    description: 'Tasker state does not allow this request or another request is already pending.',
+  })
   request(
     @CurrentUser() user: User,
     @Body() dto: TaskerEliteRequestDto,

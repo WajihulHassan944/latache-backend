@@ -26,6 +26,17 @@ const requiredFiles = [
   'prisma/migrations/20260810070000_add_elite_tasker_program/migration.sql',
   'prisma/migrations/20260810130000_add_booking_dispute_management/migration.sql',
   'prisma/migrations/20260810173000_add_finance_platform_settings/migration.sql',
+  'prisma/migrations/20260810190000_add_services_support_center/migration.sql',
+  'prisma/migrations/20260810193000_add_realtime_outbox/migration.sql',
+  'prisma/migrations/20260810194500_add_review_moderation/migration.sql',
+  'prisma/migrations/20260812100000_add_conversation_calls/migration.sql',
+  'prisma/migrations/20260812143000_add_tasker_earning_clearance_cash_accounting/migration.sql',
+  'prisma/migrations/20260812190000_add_multilingual_architecture/migration.sql',
+  'prisma/migrations/20260812223000_add_performance_indexes/migration.sql',
+  'src/infrastructure/redis/redis.service.ts',
+  'src/infrastructure/redis/app-cache.service.ts',
+  'src/infrastructure/jobs/performance-jobs.service.ts',
+  'src/infrastructure/observability/request-logging.interceptor.ts',
   'src/modules/admin-audit/admin-audit.service.ts',
   'src/modules/admin-dashboard/admin-dashboard.module.ts',
   'src/modules/admin-dashboard/controllers/admin-analytics.controller.ts',
@@ -37,6 +48,11 @@ const requiredFiles = [
   'src/modules/admin-finance/controllers/admin-finance.controller.ts',
   'src/modules/platform-settings/platform-settings.module.ts',
   'src/modules/platform-settings/platform-settings.controller.ts',
+  'src/modules/support/support.module.ts',
+  'src/modules/support/support.controller.ts',
+  'src/modules/support/admin-support.controller.ts',
+  'src/modules/admin-services/admin-services.module.ts',
+  'src/modules/admin-services/controllers/admin-services.controller.ts',
   'src/modules/elite-program/elite-program.module.ts',
   'src/modules/elite-program/controllers/admin-elite-taskers.controller.ts',
   'src/modules/elite-program/controllers/tasker-elite.controller.ts',
@@ -46,16 +62,45 @@ const requiredFiles = [
   'src/modules/notifications/notifications.controller.ts',
   'src/modules/conversations/conversations.controller.ts',
   'src/modules/reviews/reviews.controller.ts',
+  'src/modules/realtime/realtime.module.ts',
+  'src/modules/realtime/realtime.gateway.ts',
+  'src/modules/realtime/realtime-outbox.service.ts',
+  'src/modules/realtime/realtime.controller.ts',
+  'src/modules/realtime/realtime-calls.service.ts',
+  'src/modules/realtime/webrtc-config.service.ts',
+  'src/modules/uploads/conversation-attachment.constants.ts',
+  'src/modules/realtime/realtime-calls.service.ts',
+  'src/modules/realtime/webrtc-config.service.ts',
+  'src/modules/uploads/conversation-attachment.constants.ts',
+  'src/modules/admin-dashboard/controllers/admin-reviews.controller.ts',
   'src/modules/favorites/favorites.controller.ts',
   'src/modules/payments/payments.controller.ts',
   'src/modules/payments/stripe-webhooks.controller.ts',
   'src/modules/tasker-dashboard/controllers/tasker-profile.controller.ts',
   'src/modules/tasker-dashboard/controllers/tasker-wallet.controller.ts',
+  'src/modules/tasker-finance/tasker-finance.module.ts',
+  'src/modules/tasker-finance/tasker-finance.service.ts',
+  'src/modules/tasker-finance/tasker-earnings.worker.ts',
+  'src/modules/localization/locale.service.ts',
+  'src/modules/notifications/notification-template.service.ts',
+  'src/modules/mail/email-layout.ts',
+  'src/modules/mail/assets/latache-email-header.png',
+  'src/modules/mail/assets/latache-security-shield.png',
+  'src/modules/mail/assets/latache-email-footer.png',
   'docs/auth-module.md',
   'docs/admin-dashboard.md',
   'docs/elite-tasker-program.md',
   'docs/admin-bookings-disputes.md',
   'docs/admin-finance-platform-settings.md',
+  'docs/admin-services-support.md',
+  'docs/api-consistency-audit.md',
+  'docs/realtime.md',
+  'docs/conversation-attachments-calls.md',
+  'docs/chat-attachments-calls.md',
+  'docs/tasker-earnings-clearance-cash-accounting.md',
+  'docs/multilingual-architecture.md',
+  'docs/performance-architecture.md',
+  'docs/email-design-and-darija.md',
 ];
 for (const file of requiredFiles) requireFile(file);
 
@@ -64,15 +109,36 @@ const packageJson = JSON.parse(read('package.json')) as {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
-if (packageJson.version !== '3.10.0') failures.push(`Expected package version 3.10.0, received ${packageJson.version ?? '<missing>'}`);
+if (packageJson.version !== '3.17.0')
+  failures.push(`Expected package version 3.17.0, received ${packageJson.version ?? '<missing>'}`);
 const dependencies: Record<string, string> = {
   ...(packageJson.dependencies ?? {}),
   ...(packageJson.devDependencies ?? {}),
 };
-for (const required of ['@prisma/client', '@prisma/adapter-pg', 'nodemailer', 'cloudinary', 'stripe']) {
+for (const required of [
+  '@prisma/client',
+  '@prisma/adapter-pg',
+  'nodemailer',
+  'cloudinary',
+  'stripe',
+  '@nestjs/websockets',
+  '@nestjs/platform-socket.io',
+  'socket.io',
+  '@socket.io/redis-adapter',
+  'ioredis',
+  'bullmq',
+  'compression',
+]) {
   if (!(required in dependencies)) failures.push(`Required dependency missing: ${required}`);
 }
-for (const forbidden of ['sequelize', 'sequelize-typescript', '@nestjs/sequelize', 'typeorm', '@nestjs/typeorm', 'resend']) {
+for (const forbidden of [
+  'sequelize',
+  'sequelize-typescript',
+  '@nestjs/sequelize',
+  'typeorm',
+  '@nestjs/typeorm',
+  'resend',
+]) {
   if (forbidden in dependencies) failures.push(`Forbidden legacy dependency remains: ${forbidden}`);
 }
 
@@ -111,6 +177,33 @@ for (const marker of [
   'paymentStatus',
   'estimatedDurationMinutes',
   'extensionMinutes',
+  'model SupportTicket {',
+  'model SupportTicketMessage {',
+  'model RealtimeOutboxEvent {',
+  'model ConversationCall {',
+  'task_notifications_user_cursor_idx',
+  'realtime_outbox_cleanup_cursor_idx',
+  'conversationCallsInitiated',
+  'conversationCallsReceived',
+  'model TaskerEarning {',
+  'model TaskerPlatformAccount {',
+  'model TaskerPlatformReceivable {',
+  'model TaskerPlatformLedgerEntry {',
+  'model ServiceTranslation {',
+  'model ServiceOptionTranslation {',
+  'model EliteTierTranslation {',
+  'model EliteBenefitTranslation {',
+  'model EliteBadgeTranslation {',
+  'preferredLanguage',
+  'templateKey',
+  'templateParams',
+  'model ConversationCall {',
+  'conversationCallsInitiated',
+  'conversationCallsReceived',
+  'moderationStatus',
+  'reviewsModerated',
+  'supportTickets',
+  'isActive    Boolean',
 ]) {
   if (!schema.includes(marker)) failures.push(`Prisma schema marker missing: ${marker}`);
 }
@@ -128,13 +221,14 @@ const removedTaskerControllers = [
   'src/modules/tasker-dashboard/controllers/tasker-reviews.controller.ts',
 ];
 for (const file of removedTaskerControllers) {
-  if (existsSync(join(root, file))) failures.push(`Duplicate Tasker API controller remains: ${file}`);
+  if (existsSync(join(root, file)))
+    failures.push(`Duplicate Tasker API controller remains: ${file}`);
 }
 
 const controllerFiles = sourceFiles.filter((path) => path.endsWith('controller.ts'));
 const routes = new Map<string, string>();
-const controllerPattern = /@Controller\(['\"]([^'\"]+)['\"]\)/;
-const routePattern = /@(Get|Post|Patch|Put|Delete)\((?:['\"]([^'\"]*)['\"])?\)/g;
+const controllerPattern = /@Controller\(['"]([^'"]+)['"]\)/;
+const routePattern = /@(Get|Post|Patch|Put|Delete)\((?:['"]([^'"]*)['"])?\)/g;
 for (const file of controllerFiles) {
   const text = read(file);
   const prefix = controllerPattern.exec(text)?.[1] ?? '';
@@ -156,7 +250,14 @@ for (const expected of [
   'GET /api/bookings',
   'POST /api/bookings/:bookingId/reschedule',
   'POST /api/bookings/:bookingId/extend',
+  'POST /api/bookings/:bookingId/cash-payment/confirm',
   'GET /api/conversations',
+  'GET /api/conversations/capabilities',
+  'GET /api/conversations/:bookingId/calls',
+  'GET /api/conversations/:bookingId/calls/:callId',
+  'GET /api/conversations/capabilities',
+  'GET /api/conversations/:bookingId/calls',
+  'GET /api/conversations/:bookingId/calls/:callId',
   'GET /api/notifications',
   'GET /api/reviews',
   'GET /api/favorites/taskers',
@@ -185,11 +286,16 @@ for (const expected of [
   'GET /api/admin/disputes/:id',
   'GET /api/admin/finance',
   'POST /api/admin/finance/payouts/:id/actions',
+  'POST /api/admin/finance/earnings/:id/actions',
   'GET /api/admin/platform-settings',
   'PUT /api/admin/platform-settings',
+  'GET /api/platform/content',
   'POST /api/admin/disputes/:id/actions',
-  'GET /api/bookings/:bookingId/complaints',
-  'POST /api/bookings/:bookingId/complaints/:complaintId/evidence',
+  'GET /api/disputes',
+  'GET /api/disputes/:disputeId',
+  'POST /api/bookings/:bookingId/disputes',
+  'POST /api/disputes/:disputeId/evidence',
+  'GET /api/realtime/session',
   'PATCH /api/rbac/admins/:id',
   'PATCH /api/rbac/admins/:id/access',
   'PATCH /api/rbac/admins/:id/status',
@@ -212,6 +318,29 @@ for (const expected of [
   'GET /api/tasker-dashboard/elite',
   'POST /api/tasker-dashboard/elite/requests',
   'DELETE /api/tasker-dashboard/elite/requests/:requestId',
+  'GET /api/admin/services',
+  'GET /api/admin/services/:serviceId',
+  'GET /api/services',
+  'GET /api/services/:serviceId',
+  'POST /api/services',
+  'PATCH /api/services/:serviceId',
+  'DELETE /api/services/:serviceId',
+  'POST /api/support/tickets',
+  'GET /api/support/tickets',
+  'GET /api/support/tickets/:id',
+  'GET /api/support/tickets/:id/messages',
+  'POST /api/support/tickets/:id/messages',
+  'POST /api/support/tickets/:id/actions',
+  'POST /api/support/tickets/:id/feedback',
+  'GET /api/admin/support',
+  'GET /api/admin/support/:id',
+  'GET /api/admin/support/:id/messages',
+  'POST /api/admin/support/:id/messages',
+  'POST /api/admin/support/:id/actions',
+  'GET /api/admin/reviews',
+  'PATCH /api/admin/reviews/:reviewId/moderation',
+  'GET /api/tasker-dashboard/wallet/earnings',
+  'GET /api/tasker-dashboard/wallet/platform-payables',
 ]) {
   if (!routes.has(expected)) failures.push(`Expected unified route missing: ${expected}`);
 }
@@ -226,22 +355,178 @@ for (const deprecatedPrefix of [
   }
 }
 
+const conversationCallsMigration = read(
+  'prisma/migrations/20260812100000_add_conversation_calls/migration.sql',
+);
+for (const marker of [
+  'CREATE TABLE "ConversationCalls"',
+  'ConversationCalls_bookingId_fkey',
+  'ConversationCalls_initiatorId_fkey',
+  'ConversationCalls_recipientId_fkey',
+  'conversation_calls_initiator_request_unique',
+]) {
+  if (!conversationCallsMigration.includes(marker))
+    failures.push(`Conversation-call migration marker missing: ${marker}`);
+}
+if (/INSERT\s+INTO/i.test(conversationCallsMigration)) {
+  failures.push('Conversation-call migration must not seed fake calls');
+}
+
+const realtimeCallConstants = read('src/modules/realtime/realtime.constants.ts');
+for (const marker of [
+  "'call:initiate'",
+  "'call:accept'",
+  "'call:reject'",
+  "'call:cancel'",
+  "'call:end'",
+  "'call:offer'",
+  "'call:answer'",
+  "'call:ice_candidate'",
+  "'call:incoming'",
+  "'call:state'",
+]) {
+  if (!realtimeCallConstants.includes(marker))
+    failures.push(`Realtime call event missing: ${marker}`);
+}
+
+const conversationUploadFolders = read('src/modules/uploads/dto/upload-folder.enum.ts');
+if (!conversationUploadFolders.includes("ConversationAttachment = 'conversation-attachments'")) {
+  failures.push('Conversation attachment upload folder is missing');
+}
+const conversationController = read('src/modules/conversations/conversations.controller.ts');
+for (const marker of [
+  "@Get('capabilities')",
+  "@Get(':bookingId/calls')",
+  "@Get(':bookingId/calls/:callId')",
+]) {
+  if (!conversationController.includes(marker))
+    failures.push(`Conversation controller marker missing: ${marker}`);
+}
+
 const main = read('src/main.ts');
-for (const marker of ["app.setGlobalPrefix('api')", "startsWith('/api/payments/webhooks/stripe')", "SwaggerModule.setup('api/docs'", ".setVersion('3.10.0')"]) {
+for (const marker of [
+  "app.setGlobalPrefix('api')",
+  "startsWith('/api/payments/webhooks/stripe')",
+  "SwaggerModule.setup('api/docs'",
+  ".setVersion('3.17.0')",
+  'RealtimeIoAdapter',
+  'connectToRedis',
+  'compression',
+]) {
   if (!main.includes(marker)) failures.push(`Bootstrap marker missing: ${marker}`);
 }
 
-const migration = read('prisma/migrations/20260807020000_add_customer_dashboard_and_stripe/migration.sql');
-for (const marker of ['CREATE TABLE IF NOT EXISTS "PaymentTransactions"', 'CREATE TABLE IF NOT EXISTS "StripeWebhookEvents"', 'CREATE TABLE IF NOT EXISTS "FavoriteTaskers"']) {
+const emailLayout = read('src/modules/mail/email-layout.ts');
+const mailService = read('src/modules/mail/mail.service.ts');
+for (const marker of [
+  'https://latache-web.vercel.app/images/logo-full.svg',
+  'data-latache-email-shell="v1"',
+  'latache-email-header@latache',
+  'latache-security-shield@latache',
+  'latache-email-footer@latache',
+]) {
+  if (!emailLayout.includes(marker)) failures.push(`Shared email design marker missing: ${marker}`);
+}
+if (!mailService.includes('latacheEmailAttachments()')) {
+  failures.push('All transactional email must attach the generated design assets');
+}
+if (!read('src/config/configuration.ts').includes("['en', 'ar', 'ary']")) {
+  failures.push('English, Arabic, and Darija must be enabled by default');
+}
+for (const file of walk('src/modules/mail')) {
+  if (/\.(html|hbs|ejs)$/i.test(file))
+    failures.push(`Standalone mail template is forbidden: ${file}`);
+}
+
+const realtimeConstants = read('src/modules/realtime/realtime.constants.ts');
+for (const marker of [
+  "'call:initiate'",
+  "'call:accept'",
+  "'call:reject'",
+  "'call:cancel'",
+  "'call:end'",
+  "'call:offer'",
+  "'call:answer'",
+  "'call:ice_candidate'",
+  "'call:media_state'",
+  "'call:incoming'",
+  "'call:state'",
+]) {
+  if (!realtimeConstants.includes(marker)) failures.push(`Realtime call marker missing: ${marker}`);
+}
+
+const uploadFolders = read('src/modules/uploads/dto/upload-folder.enum.ts');
+if (!uploadFolders.includes("ConversationAttachment = 'conversation-attachments'")) {
+  failures.push('Conversation attachment upload folder is missing');
+}
+
+const callMigration = read('prisma/migrations/20260812100000_add_conversation_calls/migration.sql');
+for (const marker of [
+  'CREATE TABLE "ConversationCalls"',
+  'conversation_calls_one_active_per_booking',
+  'ConversationCalls_bookingId_fkey',
+]) {
+  if (!callMigration.includes(marker))
+    failures.push(`Conversation-call migration marker missing: ${marker}`);
+}
+
+const migration = read(
+  'prisma/migrations/20260807020000_add_customer_dashboard_and_stripe/migration.sql',
+);
+for (const marker of [
+  'CREATE TABLE IF NOT EXISTS "PaymentTransactions"',
+  'CREATE TABLE IF NOT EXISTS "StripeWebhookEvents"',
+  'CREATE TABLE IF NOT EXISTS "FavoriteTaskers"',
+]) {
   if (!migration.includes(marker)) failures.push(`Customer migration marker missing: ${marker}`);
 }
 
-const adminMigration = read('prisma/migrations/20260808090000_add_admin_dashboard_foundation/migration.sql');
-for (const marker of ['CREATE TABLE "AdminAuditLogs"', 'AdminAuditLogs_actorId_fkey', 'AdminAuditLogs_targetUserId_fkey']) {
-  if (!adminMigration.includes(marker)) failures.push(`Admin dashboard migration marker missing: ${marker}`);
+const taskerFinanceMigration = read(
+  'prisma/migrations/20260812143000_add_tasker_earning_clearance_cash_accounting/migration.sql',
+);
+for (const marker of [
+  'CREATE TABLE "TaskerEarnings"',
+  'CREATE TABLE "TaskerPlatformAccounts"',
+  'CREATE TABLE "TaskerPlatformReceivables"',
+  'CREATE TABLE "TaskerPlatformLedger"',
+  'tasker_earnings_release_queue_idx',
+  'TaskerPlatformLedger_idempotencyKey_key',
+]) {
+  if (!taskerFinanceMigration.includes(marker))
+    failures.push(`Tasker-finance migration marker missing: ${marker}`);
+}
+if (/INSERT\s+INTO/i.test(taskerFinanceMigration)) {
+  failures.push('Tasker-finance migration must not seed fake operational or financial records');
 }
 
-const eliteMigration = read('prisma/migrations/20260810070000_add_elite_tasker_program/migration.sql');
+const taskerFinanceService = read('src/modules/tasker-finance/tasker-finance.service.ts');
+for (const marker of [
+  'createPendingEarning',
+  'confirmCashCollection',
+  'releaseMatureEarning',
+  'applyRefundAdjustment',
+  'FOR UPDATE',
+  'EarningDebtOffset',
+]) {
+  if (!taskerFinanceService.includes(marker))
+    failures.push(`Tasker-finance runtime marker missing: ${marker}`);
+}
+
+const adminMigration = read(
+  'prisma/migrations/20260808090000_add_admin_dashboard_foundation/migration.sql',
+);
+for (const marker of [
+  'CREATE TABLE "AdminAuditLogs"',
+  'AdminAuditLogs_actorId_fkey',
+  'AdminAuditLogs_targetUserId_fkey',
+]) {
+  if (!adminMigration.includes(marker))
+    failures.push(`Admin dashboard migration marker missing: ${marker}`);
+}
+
+const eliteMigration = read(
+  'prisma/migrations/20260810070000_add_elite_tasker_program/migration.sql',
+);
 for (const marker of [
   'CREATE TABLE "EliteTiers"',
   'CREATE TABLE "EliteMembershipRequests"',
@@ -254,46 +539,74 @@ for (const marker of [
   "'elite.read'",
   "'elite.manage'",
 ]) {
-  if (!eliteMigration.includes(marker)) failures.push(`Elite Program migration marker missing: ${marker}`);
+  if (!eliteMigration.includes(marker))
+    failures.push(`Elite Program migration marker missing: ${marker}`);
 }
 
-const eliteController = read('src/modules/elite-program/controllers/admin-elite-taskers.controller.ts');
+const eliteController = read(
+  'src/modules/elite-program/controllers/admin-elite-taskers.controller.ts',
+);
 for (const marker of [
   "@Permissions('elite.read')",
   "@Permissions('elite.manage')",
-  "view=members, applications, upgrade_requests, or downgrade_requests",
+  'view=members, applications, upgrade_requests, or downgrade_requests',
   'trackingAvailable=false',
 ]) {
-  if (!eliteController.includes(marker)) failures.push(`Elite controller marker missing: ${marker}`);
+  if (!eliteController.includes(marker))
+    failures.push(`Elite controller marker missing: ${marker}`);
 }
 
 const eliteModule = read('src/modules/elite-program/elite-program.module.ts');
-for (const marker of ['AuthModule', 'AdminAuditModule', 'NotificationsModule', 'EliteProgramService']) {
-  if (!eliteModule.includes(marker)) failures.push(`Elite module dependency marker missing: ${marker}`);
+for (const marker of [
+  'AuthModule',
+  'AdminAuditModule',
+  'NotificationsModule',
+  'EliteProgramService',
+]) {
+  if (!eliteModule.includes(marker))
+    failures.push(`Elite module dependency marker missing: ${marker}`);
 }
 
 const permissionCatalog = read('src/modules/rbac/constants/permission-catalog.ts');
-for (const marker of ["key: 'elite.read'", "key: 'elite.manage'", "key: 'settings.read'", "key: 'settings.manage'"]) {
+for (const marker of [
+  "key: 'elite.read'",
+  "key: 'elite.manage'",
+  "key: 'settings.read'",
+  "key: 'settings.manage'",
+]) {
   if (!permissionCatalog.includes(marker)) failures.push(`Elite RBAC marker missing: ${marker}`);
 }
 
 if (routes.has('GET /api/admin/dashboard/elite-taskers')) {
-  failures.push('Deprecated duplicate Elite analytics route remains: GET /api/admin/dashboard/elite-taskers');
+  failures.push(
+    'Deprecated duplicate Elite analytics route remains: GET /api/admin/dashboard/elite-taskers',
+  );
 }
 
 const rbacController = read('src/modules/rbac/controllers/rbac.controller.ts');
-for (const marker of ["@Patch('admins/:id')", "@Delete('admins/:id')", "@Permissions('admins.update')", "@Permissions('admins.delete')"]) {
-  if (!rbacController.includes(marker)) failures.push(`Administrator-management marker missing: ${marker}`);
+for (const marker of [
+  "@Patch('admins/:id')",
+  "@Delete('admins/:id')",
+  "@Permissions('admins.update')",
+  "@Permissions('admins.delete')",
+]) {
+  if (!rbacController.includes(marker))
+    failures.push(`Administrator-management marker missing: ${marker}`);
 }
 
 const taskerAdmin = read('src/modules/admin-dashboard/services/admin-taskers.service.ts');
-for (const marker of ["{ in: ['submitted', 'pending_review'] }", 'Tasker is not currently awaiting administrator verification', 'backgroundCheck: null', 'insuranceVerification: null']) {
+for (const marker of [
+  "{ in: ['submitted', 'pending_review'] }",
+  'Tasker is not currently awaiting administrator verification',
+  'backgroundCheck: null',
+  'insuranceVerification: null',
+]) {
   if (!taskerAdmin.includes(marker)) failures.push(`Tasker admin-flow marker missing: ${marker}`);
 }
 
-
-
-const bookingDisputeMigration = read('prisma/migrations/20260810130000_add_booking_dispute_management/migration.sql');
+const bookingDisputeMigration = read(
+  'prisma/migrations/20260810130000_add_booking_dispute_management/migration.sql',
+);
 for (const marker of [
   'ALTER TABLE "TaskComplaints"',
   'CREATE TABLE "DisputeEvidence"',
@@ -302,7 +615,8 @@ for (const marker of [
   'DisputeResolutions_refundTransactionId_key',
   "evidenceReviewStatus\" VARCHAR(32) NOT NULL DEFAULT 'not_required'",
 ]) {
-  if (!bookingDisputeMigration.includes(marker)) failures.push(`Booking/dispute migration marker missing: ${marker}`);
+  if (!bookingDisputeMigration.includes(marker))
+    failures.push(`Booking/dispute migration marker missing: ${marker}`);
 }
 if (/INSERT\s+INTO/i.test(bookingDisputeMigration)) {
   failures.push('Booking/dispute migration must not seed fake operational or financial rows');
@@ -316,32 +630,53 @@ for (const marker of [
   'AdminBookingsService',
   'AdminDisputesService',
 ]) {
-  if (!adminDashboardModule.includes(marker)) failures.push(`Admin booking/dispute module marker missing: ${marker}`);
+  if (!adminDashboardModule.includes(marker))
+    failures.push(`Admin booking/dispute module marker missing: ${marker}`);
 }
 
-const adminBookingsController = read('src/modules/admin-dashboard/controllers/admin-bookings.controller.ts');
-for (const marker of ["@Permissions('bookings.read')", "@Permissions('bookings.manage')", 'format=csv']) {
-  if (!adminBookingsController.includes(marker)) failures.push(`Admin bookings controller marker missing: ${marker}`);
+const adminBookingsController = read(
+  'src/modules/admin-dashboard/controllers/admin-bookings.controller.ts',
+);
+for (const marker of [
+  "@Permissions('bookings.read')",
+  "@Permissions('bookings.manage')",
+  'format=csv',
+]) {
+  if (!adminBookingsController.includes(marker))
+    failures.push(`Admin bookings controller marker missing: ${marker}`);
 }
 const adminBookingsService = read('src/modules/admin-dashboard/services/admin-bookings.service.ts');
-for (const marker of ['reports.read', 'Resolve active booking disputes before administrative cancellation', 'A settled booking must be handled through dispute/refund resolution']) {
-  if (!adminBookingsService.includes(marker)) failures.push(`Admin bookings service marker missing: ${marker}`);
+for (const marker of [
+  'reports.read',
+  'Resolve active booking disputes before administrative cancellation',
+  'A settled booking must be handled through dispute/refund resolution',
+]) {
+  if (!adminBookingsService.includes(marker))
+    failures.push(`Admin bookings service marker missing: ${marker}`);
 }
 
-const adminDisputesController = read('src/modules/admin-dashboard/controllers/admin-disputes.controller.ts');
-for (const marker of ["@Permissions('support.read')", "@Permissions('support.manage')", 'Refund resolution types additionally require finance.manage']) {
-  if (!adminDisputesController.includes(marker)) failures.push(`Admin disputes controller marker missing: ${marker}`);
+const adminDisputesController = read(
+  'src/modules/admin-dashboard/controllers/admin-disputes.controller.ts',
+);
+for (const marker of [
+  "@Permissions('support.read')",
+  "@Permissions('support.manage')",
+  'Refund resolution types additionally require finance.manage',
+]) {
+  if (!adminDisputesController.includes(marker))
+    failures.push(`Admin disputes controller marker missing: ${marker}`);
 }
 const adminDisputesService = read('src/modules/admin-dashboard/services/admin-disputes.service.ts');
 for (const marker of [
   'finance.manage',
   'A refund resolution is already processing for this dispute',
-  "trackingAvailable: false",
+  'trackingAvailable: false',
   "status: 'processing'",
   'requestEvidence',
   'reviewEvidence',
 ]) {
-  if (!adminDisputesService.includes(marker)) failures.push(`Admin disputes service marker missing: ${marker}`);
+  if (!adminDisputesService.includes(marker))
+    failures.push(`Admin disputes service marker missing: ${marker}`);
 }
 
 const paymentsService = read('src/modules/payments/payments.service.ts');
@@ -357,22 +692,37 @@ for (const marker of [
   if (!paymentsService.includes(marker)) failures.push(`Dispute payment marker missing: ${marker}`);
 }
 
-const bookingController = read('src/modules/bookings/bookings.controller.ts');
-for (const marker of ["@Get(':bookingId/complaints')", "@Post(':bookingId/complaints/:complaintId/evidence')"]) {
-  if (!bookingController.includes(marker)) failures.push(`Participant dispute route marker missing: ${marker}`);
+const participantDisputesController = read(
+  'src/modules/bookings/participant-disputes.controller.ts',
+);
+for (const marker of [
+  "@Get('disputes')",
+  "@Get('disputes/:disputeId')",
+  "@Post('bookings/:bookingId/disputes')",
+  "@Post('disputes/:disputeId/evidence')",
+]) {
+  if (!participantDisputesController.includes(marker))
+    failures.push(`Participant dispute route marker missing: ${marker}`);
 }
 const bookingService = read('src/modules/bookings/bookings.service.ts');
-for (const marker of ['assertBookingAttachmentOwnership', 'res.cloudinary.com', 'disputeEvidenceRequest.updateMany']) {
-  if (!bookingService.includes(marker)) failures.push(`Participant evidence-flow marker missing: ${marker}`);
+for (const marker of [
+  'assertBookingAttachmentOwnership',
+  'res.cloudinary.com',
+  'disputeEvidenceRequest.updateMany',
+]) {
+  if (!bookingService.includes(marker))
+    failures.push(`Participant evidence-flow marker missing: ${marker}`);
 }
 
 if (routes.has('GET /api/admin/customers/bookings')) {
-  failures.push('Semantic duplicate admin-wide booking route remains: GET /api/admin/customers/bookings');
+  failures.push(
+    'Semantic duplicate admin-wide booking route remains: GET /api/admin/customers/bookings',
+  );
 }
 
-
-
-const financeSettingsMigration = read('prisma/migrations/20260810173000_add_finance_platform_settings/migration.sql');
+const financeSettingsMigration = read(
+  'prisma/migrations/20260810173000_add_finance_platform_settings/migration.sql',
+);
 for (const marker of [
   'CREATE TABLE IF NOT EXISTS "PlatformSettings"',
   'ADD COLUMN IF NOT EXISTS "taxAmount"',
@@ -383,13 +733,20 @@ for (const marker of [
   'ADD COLUMN IF NOT EXISTS "reviewedById"',
   "'settings.read'",
 ]) {
-  if (!financeSettingsMigration.includes(marker)) failures.push(`Finance/settings migration marker missing: ${marker}`);
+  if (!financeSettingsMigration.includes(marker))
+    failures.push(`Finance/settings migration marker missing: ${marker}`);
 }
-if (/INSERT\s+INTO\s+"(?:PaymentTransactions|TaskerWithdrawals|CustomerWalletLedger|TaskerWalletLedger|DisputeResolutions)"/i.test(financeSettingsMigration)) {
+if (
+  /INSERT\s+INTO\s+"(?:PaymentTransactions|TaskerWithdrawals|CustomerWalletLedger|TaskerWalletLedger|DisputeResolutions)"/i.test(
+    financeSettingsMigration,
+  )
+) {
   failures.push('Finance/settings migration must not seed operational financial records');
 }
 
-const adminFinanceController = read('src/modules/admin-finance/controllers/admin-finance.controller.ts');
+const adminFinanceController = read(
+  'src/modules/admin-finance/controllers/admin-finance.controller.ts',
+);
 for (const marker of [
   "@Controller('admin/finance')",
   "@Permissions('finance.read')",
@@ -397,17 +754,21 @@ for (const marker of [
   'reports.read is required for finance CSV exports',
   'No provider transfer is fabricated',
 ]) {
-  if (!adminFinanceController.includes(marker)) failures.push(`Admin finance marker missing: ${marker}`);
+  if (!adminFinanceController.includes(marker))
+    failures.push(`Admin finance marker missing: ${marker}`);
 }
 
-const platformSettingsController = read('src/modules/platform-settings/platform-settings.controller.ts');
+const platformSettingsController = read(
+  'src/modules/platform-settings/platform-settings.controller.ts',
+);
 for (const marker of [
   "@Controller('admin/platform-settings')",
   "@Permissions('settings.read')",
   "@Permissions('settings.manage')",
-  'Automatic FX refresh and referral payouts are rejected',
+  'Automatic FX refresh and referral payouts remain rejected',
 ]) {
-  if (!platformSettingsController.includes(marker)) failures.push(`Platform settings marker missing: ${marker}`);
+  if (!platformSettingsController.includes(marker))
+    failures.push(`Platform settings marker missing: ${marker}`);
 }
 
 const platformSettingsService = read('src/modules/platform-settings/platform-settings.service.ts');
@@ -418,8 +779,168 @@ for (const marker of [
   'Referral payouts cannot be enabled',
   'Multi-currency settlement is not enabled',
 ]) {
-  if (!platformSettingsService.includes(marker)) failures.push(`Platform settings runtime marker missing: ${marker}`);
+  if (!platformSettingsService.includes(marker))
+    failures.push(`Platform settings runtime marker missing: ${marker}`);
 }
+
+const servicesSupportMigration = read(
+  'prisma/migrations/20260810190000_add_services_support_center/migration.sql',
+);
+for (const marker of [
+  'ADD COLUMN IF NOT EXISTS "isActive"',
+  'ADD COLUMN IF NOT EXISTS "sortOrder"',
+  'CREATE TABLE IF NOT EXISTS "SupportTickets"',
+  'CREATE TABLE IF NOT EXISTS "SupportTicketMessages"',
+  'SupportTickets_userId_fkey',
+  'SupportTicketMessages_ticketId_fkey',
+]) {
+  if (!servicesSupportMigration.includes(marker))
+    failures.push(`Service/support migration marker missing: ${marker}`);
+}
+if (/INSERT\s+INTO\s+"(?:SupportTickets|SupportTicketMessages)"/i.test(servicesSupportMigration)) {
+  failures.push('Service/support migration must not seed fake operational support records');
+}
+
+const supportController = read('src/modules/support/support.controller.ts');
+for (const marker of [
+  "@Controller('support/tickets')",
+  'channel=ticket creates an asynchronous case',
+  'folder=support-attachments',
+  'No satisfaction percentage is fabricated',
+]) {
+  if (!supportController.includes(marker))
+    failures.push(`Support participant marker missing: ${marker}`);
+}
+
+const adminSupportController = read('src/modules/support/admin-support.controller.ts');
+for (const marker of [
+  "@Controller('admin/support')",
+  "@Permissions('support.read')",
+  "@Permissions('support.manage')",
+  'Financial refunds/payout settlement are deliberately not executed here',
+  'reports.read is required for Support Center CSV exports',
+]) {
+  if (!adminSupportController.includes(marker))
+    failures.push(`Admin Support Center marker missing: ${marker}`);
+}
+
+const adminServicesController = read(
+  'src/modules/admin-services/controllers/admin-services.controller.ts',
+);
+for (const marker of [
+  "@Controller('admin/services')",
+  "@Permissions('services.read')",
+  'view=catalog',
+  'view=pricing',
+  '/api/admin/platform-settings',
+  'settings.read is required for the Service Management pricing view',
+]) {
+  if (!adminServicesController.includes(marker))
+    failures.push(`Admin Service Management marker missing: ${marker}`);
+}
+
+const serviceCode = read('src/modules/services/services.service.ts');
+for (const marker of [
+  'service_category_deactivated',
+  'service_option_deactivated',
+  'isActive: true',
+]) {
+  if (!serviceCode.includes(marker))
+    failures.push(`Service catalogue runtime marker missing: ${marker}`);
+}
+
+const uploadFolderEnum = read('src/modules/uploads/dto/upload-folder.enum.ts');
+if (!uploadFolderEnum.includes("SupportAttachment = 'support-attachments'")) {
+  failures.push('Support attachment Cloudinary folder is not registered');
+}
+const bookingRuntime = read('src/modules/bookings/bookings.service.ts');
+if (!bookingRuntime.includes('where: { slug: serviceSlug, isActive: true }')) {
+  failures.push('Booking quote must reject inactive service categories');
+}
+for (const marker of [
+  'standardMinTaskPrice',
+  'goldMinTaskPrice',
+  'platinumMinTaskPrice',
+  'diamondMinTaskPrice',
+]) {
+  if (!platformSettingsService.includes(marker))
+    failures.push(`Tier minimum-price runtime marker missing: ${marker}`);
+}
+
+const realtimeMigration = read(
+  'prisma/migrations/20260810193000_add_realtime_outbox/migration.sql',
+);
+for (const marker of [
+  'CREATE TABLE "RealtimeOutboxEvents"',
+  'realtime_outbox_pending_idx',
+  'realtime_outbox_room_created_idx',
+]) {
+  if (!realtimeMigration.includes(marker))
+    failures.push(`Realtime outbox migration marker missing: ${marker}`);
+}
+if (/INSERT\s+INTO/i.test(realtimeMigration))
+  failures.push('Realtime migration must not seed fake events');
+
+const realtimeGateway = read('src/modules/realtime/realtime.gateway.ts');
+for (const marker of [
+  '@WebSocketGateway',
+  "@SubscribeMessage('booking:subscribe')",
+  "@SubscribeMessage('conversation:typing')",
+  "@SubscribeMessage('support:typing')",
+  'findActiveById',
+]) {
+  if (!realtimeGateway.includes(marker))
+    failures.push(`Realtime gateway marker missing: ${marker}`);
+}
+const notificationsService = read('src/modules/notifications/notifications.service.ts');
+const conversationsService = read('src/modules/conversations/conversations.service.ts');
+for (const marker of ['notification:created', 'notification:read', 'notifications:read_all']) {
+  if (!notificationsService.includes(marker))
+    failures.push(`Realtime notification marker missing: ${marker}`);
+}
+for (const marker of ['conversation:message', 'conversation:read']) {
+  if (!conversationsService.includes(marker))
+    failures.push(`Realtime conversation marker missing: ${marker}`);
+}
+const reviewsService = read('src/modules/reviews/reviews.service.ts');
+if (!reviewsService.includes("type: 'review_received'"))
+  failures.push('Review creation must create a persisted notification');
+if (
+  !realtimeGateway.includes(
+    'if (participant) await client.join(realtimeRoom.conversation(bookingId));',
+  )
+) {
+  failures.push('Booking participants must join the private conversation room explicitly');
+}
+const adminBookingsRuntime = read('src/modules/admin-dashboard/services/admin-bookings.service.ts');
+if (!adminBookingsRuntime.includes("'booking:updated'"))
+  failures.push('Admin booking cancellation must publish a booking realtime event');
+const reviewMigration = read(
+  'prisma/migrations/20260810194500_add_review_moderation/migration.sql',
+);
+for (const marker of [
+  'moderationStatus',
+  'Reviews_moderatedById_fkey',
+  'reviews.read',
+  'reviews.manage',
+]) {
+  if (!reviewMigration.includes(marker))
+    failures.push(`Review moderation migration marker missing: ${marker}`);
+}
+for (const marker of ["key: 'reviews.read'", "key: 'reviews.manage'"]) {
+  if (!permissionCatalog.includes(marker)) failures.push(`Review RBAC marker missing: ${marker}`);
+}
+for (const deprecatedRoute of [
+  'GET /api/services/get-services',
+  'POST /api/services/add-service',
+  'GET /api/bookings/:bookingId/complaints',
+  'POST /api/bookings/:bookingId/complaints',
+  'POST /api/bookings/:bookingId/complaints/:complaintId/evidence',
+]) {
+  if (routes.has(deprecatedRoute))
+    failures.push(`Deprecated semantic API route remains: ${deprecatedRoute}`);
+}
+
 if (failures.length > 0) {
   console.error(`Static verification failed with ${failures.length} issue(s):`);
   for (const failure of failures) console.error(`- ${failure}`);

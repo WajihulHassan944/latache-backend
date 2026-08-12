@@ -10,12 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiHeader,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -84,7 +79,8 @@ export class PaymentsController {
   @Get('wallet')
   @ApiOperation({
     summary: 'Get the real customer wallet balance and payment aggregates',
-    description: 'A new wallet legitimately returns a zero balance. No synthetic transactions are created.',
+    description:
+      'A new wallet legitimately returns a zero balance. No synthetic transactions are created.',
   })
   wallet(@CurrentUser() user: User): Promise<WalletView> {
     return this.payments.wallet(user.id);
@@ -92,10 +88,7 @@ export class PaymentsController {
 
   @Get('wallet/transactions')
   @ApiOperation({ summary: 'List real customer wallet ledger entries' })
-  walletTransactions(
-    @CurrentUser() user: User,
-    @Query() query: ListPaymentTransactionsQueryDto,
-  ) {
+  walletTransactions(@CurrentUser() user: User, @Query() query: ListPaymentTransactionsQueryDto) {
     return this.payments.walletLedger(user.id, query.page, query.limit);
   }
 

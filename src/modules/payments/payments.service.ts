@@ -14,16 +14,15 @@ import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { WALLET_ENTRY_KIND } from '../tasker-dashboard/tasker-dashboard.constants';
+import { TaskerFinanceService } from '../tasker-finance/tasker-finance.service';
+import type { ConfirmCashCollectionInput } from '../tasker-finance/tasker-finance.types';
 import {
   CUSTOMER_WALLET_ENTRY_KIND,
   PAYMENT_SOURCE,
   PAYMENT_STATUS,
   PAYMENT_TRANSACTION_KIND,
 } from './payments.constants';
-import {
-  ListPaymentTransactionsQueryDto,
-  RetryBookingPaymentDto,
-} from './payments.dto';
+import { ListPaymentTransactionsQueryDto, RetryBookingPaymentDto } from './payments.dto';
 import type {
   BookingPaymentStatusView,
   BookingRefundRequest,
@@ -54,6 +53,7 @@ export class PaymentsService {
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
     private readonly platformSettings: PlatformSettingsService,
+    private readonly taskerFinance: TaskerFinanceService,
   ) {
     this.currency = config.get<string>('payments.currency', 'USD').toUpperCase();
     this.minimumBillableMinutes = config.get<number>('payments.minimumBillableMinutes', 120);
@@ -115,10 +115,7 @@ export class PaymentsService {
     paymentMethodId: string,
   ): Promise<SavedPaymentMethodView> {
     const stripeCustomerId = await this.ensureStripeCustomer(customerId);
-    const method = await this.assertStripePaymentMethodOwnership(
-      stripeCustomerId,
-      paymentMethodId,
-    );
+    const method = await this.assertStripePaymentMethodOwnership(stripeCustomerId, paymentMethodId);
     await this.stripeProvider.client().customers.update(stripeCustomerId, {
       invoice_settings: { default_payment_method: paymentMethodId },
     });
@@ -149,11 +146,7 @@ export class PaymentsService {
         customerId,
         stripePaymentMethodId: paymentMethodId,
         paymentStatus: {
-          in: [
-            PAYMENT_STATUS.Ready,
-            PAYMENT_STATUS.Processing,
-            PAYMENT_STATUS.RequiresAction,
-          ],
+          in: [PAYMENT_STATUS.Ready, PAYMENT_STATUS.Processing, PAYMENT_STATUS.RequiresAction],
         },
         status: { notIn: ['completed', 'cancelled'] },
       },
@@ -267,7 +260,10 @@ export class PaymentsService {
       where: { idempotencyKey: scopedKey },
     });
     if (existing) {
-      if (Number(existing.amount) !== amount || existing.kind !== PAYMENT_TRANSACTION_KIND.WalletTopup) {
+      if (
+        Number(existing.amount) !== amount ||
+        existing.kind !== PAYMENT_TRANSACTION_KIND.WalletTopup
+      ) {
         throw new ConflictException(
           'Idempotency-Key was already used with different top-up parameters',
         );
@@ -275,9 +271,9 @@ export class PaymentsService {
       if (!existing.providerReference) {
         throw new ConflictException('Existing top-up is missing its Stripe reference');
       }
-      const intent = await this.stripeProvider.client().paymentIntents.retrieve(
-        existing.providerReference,
-      );
+      const intent = await this.stripeProvider
+        .client()
+        .paymentIntents.retrieve(existing.providerReference);
       if (!intent.client_secret) {
         throw new ServiceUnavailableException('Stripe top-up client secret is unavailable');
       }
@@ -374,15 +370,20 @@ export class PaymentsService {
       where: { id: bookingId },
       include: {
         workSession: true,
-        complaints: { where: { status: { in: ['open', 'under_investigation', 'escalated'] } }, take: 1 },
+        complaints: {
+          where: { status: { in: ['open', 'under_investigation', 'escalated'] } },
+          take: 1,
+        },
       },
     });
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.status !== 'completed') {
       throw new ConflictException('Only a completed booking can be charged');
     }
-    if (booking.paymentStatus === PAYMENT_STATUS.Paid) {
-      return { bookingId, status: PAYMENT_STATUS.Paid };
+    if (
+      [PAYMENT_STATUS.Paid, PAYMENT_STATUS.CashConfirmed].includes(booking.paymentStatus as never)
+    ) {
+      return { bookingId, status: booking.paymentStatus };
     }
     if (booking.complaints.length > 0) {
       await this.prisma.booking.update({
@@ -398,8 +399,7 @@ export class PaymentsService {
     const elapsedSeconds = Math.max(
       0,
       Math.floor(
-        (booking.workSession.stoppedAt.getTime() - booking.workSession.startedAt.getTime()) /
-          1000,
+        (booking.workSession.stoppedAt.getTime() - booking.workSession.startedAt.getTime()) / 1000,
       ) - booking.workSession.accumulatedPausedSecs,
     );
     const actualMinutes = Math.max(1, Math.ceil(elapsedSeconds / 60));
@@ -429,14 +429,15 @@ export class PaymentsService {
     }
 
     const billableMinutes = Math.max(this.minimumBillableMinutes, actualMinutes);
-    const serviceAmount = roundMoney(Number(booking.hourlyRate) * (billableMinutes / 60));
+    const rawServiceAmount = roundMoney(Number(booking.hourlyRate) * (billableMinutes / 60));
     const pricingCharges = await this.platformSettings.calculatePricingCharges({
-      serviceAmount,
+      serviceAmount: rawServiceAmount,
       taskerId: booking.taskerId,
       serviceId: booking.serviceId,
       bookingDate: booking.bookingDate,
       bookingCreatedAt: booking.createdAt,
     });
+    const serviceAmount = pricingCharges.serviceAmount;
     const platformFeeAmount = pricingCharges.platformFeeAmount;
     const taxAmount = pricingCharges.taxAmount;
     const serviceSurchargeAmount = pricingCharges.serviceSurchargeAmount;
@@ -466,6 +467,18 @@ export class PaymentsService {
       },
     });
 
+    if (booking.paymentSource === PAYMENT_SOURCE.Cash) {
+      await this.prisma.booking.update({
+        where: { id: bookingId },
+        data: {
+          paymentStatus: PAYMENT_STATUS.CashConfirmationRequired,
+          totalChargedAmount: moneyString(totalAmount),
+          paymentFailureReason: null,
+        },
+      });
+      return { bookingId, status: PAYMENT_STATUS.CashConfirmationRequired };
+    }
+
     if (booking.paymentSource === PAYMENT_SOURCE.Wallet) {
       return this.settleBookingFromCustomerWallet(
         bookingId,
@@ -474,11 +487,19 @@ export class PaymentsService {
       );
     }
 
-    return this.createStripeBookingCharge(
-      bookingId,
-      totalAmount,
-      serviceAmount + tipAmount,
-    );
+    return this.createStripeBookingCharge(bookingId, totalAmount, serviceAmount + tipAmount);
+  }
+
+  confirmCashCollection(input: ConfirmCashCollectionInput) {
+    return this.taskerFinance.confirmCashCollection(input);
+  }
+
+  blockTaskerFinanceForDispute(
+    bookingId: number,
+    reason: string,
+    transaction: Prisma.TransactionClient,
+  ): Promise<void> {
+    return this.taskerFinance.blockForDispute(bookingId, reason, transaction);
   }
 
   async retryBookingPayment(
@@ -506,9 +527,9 @@ export class PaymentsService {
         },
       });
     } else if (booking.stripePaymentIntentId) {
-      const intent = await this.stripeProvider.client().paymentIntents.retrieve(
-        booking.stripePaymentIntentId,
-      );
+      const intent = await this.stripeProvider
+        .client()
+        .paymentIntents.retrieve(booking.stripePaymentIntentId);
       if (
         (intent.status === 'requires_action' ||
           intent.status === 'requires_confirmation' ||
@@ -517,9 +538,10 @@ export class PaymentsService {
       ) {
         return {
           bookingId,
-          status: intent.status === 'requires_action'
-            ? PAYMENT_STATUS.RequiresAction
-            : PAYMENT_STATUS.Failed,
+          status:
+            intent.status === 'requires_action'
+              ? PAYMENT_STATUS.RequiresAction
+              : PAYMENT_STATUS.Failed,
           paymentIntentId: intent.id,
           clientSecret: intent.client_secret,
         };
@@ -530,7 +552,8 @@ export class PaymentsService {
 
   async issueDisputeRefund(input: BookingRefundRequest): Promise<BookingRefundResult> {
     const requestedAmount = roundMoney(input.amount);
-    if (requestedAmount <= 0) throw new BadRequestException('Refund amount must be greater than zero');
+    if (requestedAmount <= 0)
+      throw new BadRequestException('Refund amount must be greater than zero');
 
     const prepared = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${input.bookingId} FOR UPDATE`;
@@ -539,7 +562,11 @@ export class PaymentsService {
       if (!booking.totalChargedAmount || Number(booking.totalChargedAmount) <= 0) {
         throw new ConflictException('This booking has no settled charge that can be refunded');
       }
-      if (![PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded].includes(booking.paymentStatus as never)) {
+      if (
+        ![PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded].includes(
+          booking.paymentStatus as never,
+        )
+      ) {
         throw new ConflictException('Only paid or partially refunded bookings can be refunded');
       }
 
@@ -575,7 +602,8 @@ export class PaymentsService {
             customerId: booking.customerId,
             bookingId: booking.id,
             kind: PAYMENT_TRANSACTION_KIND.Refund,
-            provider: booking.paymentSource === PAYMENT_SOURCE.Wallet ? 'internal_wallet' : 'stripe',
+            provider:
+              booking.paymentSource === PAYMENT_SOURCE.Wallet ? 'internal_wallet' : 'stripe',
             status: 'processing',
             amount: moneyString(requestedAmount),
             currency: booking.paymentCurrency,
@@ -607,10 +635,7 @@ export class PaymentsService {
     }
 
     if (prepared.booking.paymentSource === PAYMENT_SOURCE.Wallet) {
-      const settled = await this.settleWalletDisputeRefund(
-        prepared.payment.id,
-        input.resolutionId,
-      );
+      const settled = await this.settleWalletDisputeRefund(prepared.payment.id, input.resolutionId);
       return this.refundResult(settled, input.resolutionId);
     }
 
@@ -620,13 +645,17 @@ export class PaymentsService {
         input.resolutionId,
         'The settled booking has no Stripe PaymentIntent reference',
       );
-      throw new ConflictException('Stripe refund cannot be created because the payment reference is missing');
+      throw new ConflictException(
+        'Stripe refund cannot be created because the payment reference is missing',
+      );
     }
 
     let refund: Stripe.Refund;
     try {
       if (prepared.payment.providerReference) {
-        refund = await this.stripeProvider.client().refunds.retrieve(prepared.payment.providerReference);
+        refund = await this.stripeProvider
+          .client()
+          .refunds.retrieve(prepared.payment.providerReference);
       } else {
         refund = await this.stripeProvider.client().refunds.create(
           {
@@ -660,6 +689,15 @@ export class PaymentsService {
       const booking = await transaction.booking.findUnique({ where: { id: bookingId } });
       if (!booking) throw new NotFoundException('Booking not found');
       if (booking.paymentStatus !== PAYMENT_STATUS.OnHoldDispute) {
+        const activeDisputes = await transaction.taskComplaint.count({
+          where: {
+            bookingId,
+            status: { in: ['open', 'under_investigation', 'escalated'] },
+          },
+        });
+        if (activeDisputes === 0) {
+          await this.taskerFinance.unblockAfterDispute(bookingId, transaction);
+        }
         return { bookingId, shouldFinalize: false, status: booking.paymentStatus };
       }
       const activeDisputes = await transaction.taskComplaint.count({
@@ -675,6 +713,7 @@ export class PaymentsService {
         where: { id: bookingId },
         data: { paymentStatus: PAYMENT_STATUS.Ready, paymentFailureReason: null },
       });
+      await this.taskerFinance.unblockAfterDispute(bookingId, transaction);
       return {
         bookingId,
         shouldFinalize: booking.status === 'completed',
@@ -687,10 +726,7 @@ export class PaymentsService {
       : { bookingId, status: release.status };
   }
 
-  private async settleWalletDisputeRefund(
-    paymentTransactionId: string,
-    resolutionId: string,
-  ) {
+  private async settleWalletDisputeRefund(paymentTransactionId: string, resolutionId: string) {
     return this.prisma.$transaction(async (transaction) => {
       const payment = await transaction.paymentTransaction.findUnique({
         where: { id: paymentTransactionId },
@@ -699,7 +735,9 @@ export class PaymentsService {
       if (payment.status === 'succeeded') return payment;
 
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${payment.bookingId} FOR UPDATE`;
-      const booking = await transaction.booking.findUniqueOrThrow({ where: { id: payment.bookingId } });
+      const booking = await transaction.booking.findUniqueOrThrow({
+        where: { id: payment.bookingId },
+      });
       await this.ensureCustomerWallet(booking.customerId, transaction);
       await transaction.$queryRaw`
         SELECT "customerId" FROM "CustomerWallets"
@@ -777,13 +815,16 @@ export class PaymentsService {
           data: {
             providerRefundId: refund.id,
             providerRefundStatus: String(refund.status),
-            status: status === 'succeeded' ? 'processing' : status === 'failed' ? 'failed' : 'processing',
+            status:
+              status === 'succeeded' ? 'processing' : status === 'failed' ? 'failed' : 'processing',
             failureReason: status === 'failed' ? `Stripe refund status: ${refund.status}` : null,
           },
         });
       }
       if (status === 'succeeded' && payment.bookingId && resolution) {
-        const booking = await transaction.booking.findUniqueOrThrow({ where: { id: payment.bookingId } });
+        const booking = await transaction.booking.findUniqueOrThrow({
+          where: { id: payment.bookingId },
+        });
         await this.applyTaskerRefundClawback(transaction, booking, updatedPayment);
         await this.updateBookingRefundStatus(transaction, booking.id);
         await this.finalizeRefundResolution(
@@ -816,7 +857,7 @@ export class PaymentsService {
       },
     });
     if (!payment) {
-      const paymentTransactionId = refund.metadata.latachePaymentTransactionId;
+      const paymentTransactionId = refund.metadata?.latachePaymentTransactionId;
       if (paymentTransactionId) {
         payment = await transaction.paymentTransaction.findUnique({
           where: { id: paymentTransactionId },
@@ -883,6 +924,9 @@ export class PaymentsService {
     },
     refundPayment: { id: string; amount: Prisma.Decimal },
   ): Promise<void> {
+    if (await this.taskerFinance.applyRefundAdjustment(transaction, booking, refundPayment)) {
+      return;
+    }
     const earningTotal = roundMoney(Number(booking.serviceAmount ?? 0) + Number(booking.tipAmount));
     if (earningTotal <= 0) return;
 
@@ -914,9 +958,10 @@ export class PaymentsService {
     });
     const cumulativeRefunded = roundMoney(Number(settledRefunds._sum.amount ?? 0));
     const isFullyRefunded = totalCharged > 0 && cumulativeRefunded >= totalCharged - 0.005;
-    const proportionalClawback = totalCharged > 0
-      ? roundMoney((Number(refundPayment.amount) / totalCharged) * earningTotal)
-      : roundMoney(Number(refundPayment.amount));
+    const proportionalClawback =
+      totalCharged > 0
+        ? roundMoney((Number(refundPayment.amount) / totalCharged) * earningTotal)
+        : roundMoney(Number(refundPayment.amount));
     const clawback = Math.min(
       isFullyRefunded ? remainingTaskerEarning : proportionalClawback,
       remainingTaskerEarning,
@@ -1032,6 +1077,7 @@ export class PaymentsService {
         responseDueAt: null,
       },
     });
+    await this.taskerFinance.unblockAfterDispute(resolution.complaint.bookingId, transaction);
     await transaction.adminAuditLog.create({
       data: {
         actorId: resolution.actorId,
@@ -1064,15 +1110,22 @@ export class PaymentsService {
 
   private async recordWarningAuditIfNeeded(
     transaction: Prisma.TransactionClient,
-    resolution: { actorId: number; actionType: string; warningTarget: string | null; complaintId: string; summary: string },
+    resolution: {
+      actorId: number;
+      actionType: string;
+      warningTarget: string | null;
+      complaintId: string;
+      summary: string;
+    },
     booking: { customerId: number; taskerId: number },
   ): Promise<void> {
     if (!resolution.actionType.includes('warning') || !resolution.warningTarget) return;
-    const targets = resolution.warningTarget === 'both'
-      ? [booking.customerId, booking.taskerId]
-      : resolution.warningTarget === 'customer'
-        ? [booking.customerId]
-        : [booking.taskerId];
+    const targets =
+      resolution.warningTarget === 'both'
+        ? [booking.customerId, booking.taskerId]
+        : resolution.warningTarget === 'customer'
+          ? [booking.customerId]
+          : [booking.taskerId];
     for (const targetUserId of targets) {
       await transaction.adminAuditLog.create({
         data: {
@@ -1184,7 +1237,8 @@ export class PaymentsService {
     },
     resolutionId: string,
   ): BookingRefundResult {
-    if (!payment.bookingId) throw new ConflictException('Refund transaction is not linked to a booking');
+    if (!payment.bookingId)
+      throw new ConflictException('Refund transaction is not linked to a booking');
     return {
       bookingId: payment.bookingId,
       resolutionId,
@@ -1331,6 +1385,9 @@ export class PaymentsService {
     if (!Number.isInteger(bookingId) || bookingId <= 0) {
       throw new BadRequestException('Stripe booking metadata is invalid');
     }
+    await transaction.$queryRaw`
+      SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE
+    `;
     const booking = await transaction.booking.findUnique({ where: { id: bookingId } });
     if (!booking || booking.stripePaymentIntentId !== intent.id) {
       throw new NotFoundException('Booking payment record not found');
@@ -1338,6 +1395,10 @@ export class PaymentsService {
 
     const paymentRow = await transaction.paymentTransaction.findFirst({
       where: { bookingId, providerReference: intent.id },
+    });
+    const existingEarning = await transaction.taskerEarning.findUnique({
+      where: { bookingId },
+      select: { id: true },
     });
 
     if (eventType === 'payment_intent.payment_failed') {
@@ -1397,18 +1458,20 @@ export class PaymentsService {
       booking.paymentCurrency,
       intent.id,
     );
-    await this.notifications.create(
-      booking.customerId,
-      {
-        category: 'payments',
-        type: 'booking_payment_succeeded',
-        title: 'Task payment completed',
-        body: `${booking.paymentCurrency} ${amountReceived.toFixed(2)} was charged for your completed task.`,
-        entityType: 'booking',
-        entityId: String(bookingId),
-      },
-      transaction,
-    );
+    if (!existingEarning) {
+      await this.notifications.create(
+        booking.customerId,
+        {
+          category: 'payments',
+          type: 'booking_payment_succeeded',
+          title: 'Task payment completed',
+          body: `${booking.paymentCurrency} ${amountReceived.toFixed(2)} was charged for your completed task.`,
+          entityType: 'booking',
+          entityId: String(bookingId),
+        },
+        transaction,
+      );
+    }
   }
 
   private async createStripeBookingCharge(
@@ -1438,9 +1501,14 @@ export class PaymentsService {
       where: { idempotencyKey },
     });
     if (existingTransaction?.providerReference) {
-      const intent = await this.stripeProvider.client().paymentIntents.retrieve(
-        existingTransaction.providerReference,
-      );
+      const intent = await this.stripeProvider
+        .client()
+        .paymentIntents.retrieve(existingTransaction.providerReference);
+      if (intent.status === 'succeeded') {
+        await this.prisma.$transaction((transaction) =>
+          this.handleBookingIntent(transaction, intent, 'payment_intent.succeeded'),
+        );
+      }
       return {
         bookingId,
         status: this.mapStripeIntentStatus(intent.status),
@@ -1479,8 +1547,7 @@ export class PaymentsService {
           data: {
             stripePaymentIntentId: intent.id,
             paymentStatus: this.mapStripeIntentStatus(intent.status),
-            totalChargedAmount:
-              intent.status === 'succeeded' ? moneyString(totalAmount) : null,
+            totalChargedAmount: intent.status === 'succeeded' ? moneyString(totalAmount) : null,
           },
         });
         await transaction.paymentTransaction.upsert({
@@ -1505,6 +1572,9 @@ export class PaymentsService {
             amount: moneyString(totalAmount),
           },
         });
+        if (intent.status === 'succeeded') {
+          await this.handleBookingIntent(transaction, intent, 'payment_intent.succeeded');
+        }
       });
 
       return {
@@ -1634,14 +1704,6 @@ export class PaymentsService {
         });
       }
 
-      await this.creditTaskerWallet(
-        transaction,
-        booking.taskerId,
-        booking.id,
-        taskerEarning,
-        booking.paymentCurrency,
-        `wallet:${bookingId}`,
-      );
       await transaction.booking.update({
         where: { id: bookingId },
         data: {
@@ -1651,6 +1713,14 @@ export class PaymentsService {
           paymentFailureReason: null,
         },
       });
+      await this.creditTaskerWallet(
+        transaction,
+        booking.taskerId,
+        booking.id,
+        taskerEarning,
+        booking.paymentCurrency,
+        `wallet:${bookingId}`,
+      );
       await this.notifications.create(
         booking.customerId,
         {
@@ -1675,66 +1745,18 @@ export class PaymentsService {
     currencyInput: string,
     externalReference: string,
   ): Promise<void> {
-    const amount = roundMoney(amountInput);
-    if (amount <= 0) return;
-    const currency = currencyInput.toUpperCase();
-    await transaction.taskerWallet.upsert({
-      where: { taskerId },
-      create: { taskerId, currency },
-      update: {},
+    void taskerId;
+    void currencyInput;
+    const booking = await transaction.booking.findUniqueOrThrow({
+      where: { id: bookingId },
     });
-    await transaction.$queryRaw`
-      SELECT "taskerId" FROM "TaskerWallets"
-      WHERE "taskerId" = ${taskerId}
-      FOR UPDATE
-    `;
-    const ledgerKey = `booking:${bookingId}:provider-settlement`;
-    const existing = await transaction.taskerWalletLedgerEntry.findUnique({
-      where: { idempotencyKey: ledgerKey },
-    });
-    if (existing) return;
-
-    const prior = await transaction.taskerWalletLedgerEntry.findFirst({
-      where: {
-        taskerId,
-        bookingId,
-        kind: WALLET_ENTRY_KIND.Earning,
-        status: 'settled',
-      },
-    });
-    if (prior) return;
-
-    await transaction.taskerWallet.update({
-      where: { taskerId },
-      data: { availableBalance: { increment: moneyString(amount) } },
-    });
-    await transaction.taskerWalletLedgerEntry.create({
-      data: {
-        taskerId,
-        bookingId,
-        kind: WALLET_ENTRY_KIND.Earning,
-        status: 'settled',
-        amount: moneyString(amount),
-        availableDelta: moneyString(amount),
-        pendingDelta: '0.00',
-        currency,
-        description: `Settled earning for booking #${bookingId}`,
-        externalReference,
-        idempotencyKey: ledgerKey,
-      },
-    });
-    await this.notifications.create(
-      taskerId,
-      {
-        category: 'wallet',
-        type: 'booking_earning_settled',
-        title: 'Payment received',
-        body: `${currency} ${amount.toFixed(2)} is now available in your wallet.`,
-        entityType: 'booking',
-        entityId: String(bookingId),
-      },
+    await this.taskerFinance.createPendingEarning({
+      booking,
+      grossCustomerAmount: roundMoney(Number(booking.totalChargedAmount ?? amountInput)),
+      providerSettlementReference: externalReference,
+      settledAt: new Date(),
       transaction,
-    );
+    });
   }
 
   private async ensureStripeCustomer(customerId: number): Promise<string> {
@@ -1779,9 +1801,7 @@ export class PaymentsService {
   ): Promise<Stripe.PaymentMethod> {
     const method = await this.stripeProvider.client().paymentMethods.retrieve(paymentMethodId);
     const owner =
-      typeof method.customer === 'string'
-        ? method.customer
-        : method.customer?.id ?? null;
+      typeof method.customer === 'string' ? method.customer : (method.customer?.id ?? null);
     if (owner !== stripeCustomerId) {
       throw new BadRequestException(
         'Stripe PaymentMethod does not belong to the authenticated customer',
@@ -1793,10 +1813,7 @@ export class PaymentsService {
     return method;
   }
 
-  private async ensureCustomerWallet(
-    customerId: number,
-    transaction?: Prisma.TransactionClient,
-  ) {
+  private async ensureCustomerWallet(customerId: number, transaction?: Prisma.TransactionClient) {
     const client = transaction ?? this.prisma;
     return client.customerWallet.upsert({
       where: { customerId },

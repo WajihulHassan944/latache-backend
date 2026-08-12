@@ -25,9 +25,7 @@ export class StripeService {
 
   webhookSigningSecret(): string {
     if (!this.webhookSecret) {
-      throw new ServiceUnavailableException(
-        'Stripe webhook verification is not configured',
-      );
+      throw new ServiceUnavailableException('Stripe webhook verification is not configured');
     }
     return this.webhookSecret;
   }

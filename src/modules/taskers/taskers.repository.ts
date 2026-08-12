@@ -2,17 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TaskerSort } from '../../common/enums/tasker-sort.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
-import {
-  dateOnlyFromDate,
-  dateOnlyToDate,
-  todayDateOnly,
-} from '../../common/utils/date.util';
+import { dateOnlyFromDate, dateOnlyToDate, todayDateOnly } from '../../common/utils/date.util';
 import { formatLocation } from '../../common/utils/location.util';
 import { normalizePagination } from '../../common/utils/pagination.util';
 import { to12Hour, to24Hour } from '../../common/utils/time.util';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma, type Service } from '../../generated/prisma/client';
 import { ListTaskersQueryDto } from './dto/list-taskers-query.dto';
+import { LocaleService } from '../localization/locale.service';
 
 type Numeric = number | string | { toString(): string };
 
@@ -59,18 +56,16 @@ export class TaskersRepository {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly locales: LocaleService,
   ) {}
 
-  findServicesBySlugs(
-    slugs: string[],
-    transaction?: Prisma.TransactionClient,
-  ): Promise<Service[]> {
+  findServicesBySlugs(slugs: string[], transaction?: Prisma.TransactionClient): Promise<Service[]> {
     return (transaction ?? this.prisma).service.findMany({
       where: { slug: { in: slugs } },
     });
   }
 
-  async list(query: ListTaskersQueryDto) {
+  async list(query: ListTaskersQueryDto, locale = this.locales.defaultLocale) {
     if ((query.lat === undefined) !== (query.lng === undefined)) {
       throw new Error('LAT_LNG_PAIR_REQUIRED');
     }
@@ -95,17 +90,36 @@ export class TaskersRepository {
       representativeConditions.push(Prisma.sql`s."slug" = ${query.serviceSlug}`);
     }
     if (query.minPrice !== undefined) {
-      representativeConditions.push(
-        Prisma.sql`us."hourlyRate" >= ${query.minPrice}`,
-      );
+      representativeConditions.push(Prisma.sql`us."hourlyRate" >= ${query.minPrice}`);
     }
     if (query.maxPrice !== undefined) {
-      representativeConditions.push(
-        Prisma.sql`us."hourlyRate" <= ${query.maxPrice}`,
-      );
+      representativeConditions.push(Prisma.sql`us."hourlyRate" <= ${query.maxPrice}`);
     }
     if (query.isElite !== undefined) {
       eligibleConditions.push(Prisma.sql`u."isElite" = ${query.isElite}`);
+    }
+    const search = query.search?.trim();
+    if (search) {
+      const normalizedSearch = `%${this.locales.normalizeSearchText(search)}%`;
+      const rawSearch = `%${search}%`;
+      eligibleConditions.push(Prisma.sql`(
+        lower(concat_ws(' ', u."firstName", u."lastName")) LIKE lower(${rawSearch})
+        OR lower(COALESCE(u."bio", '')) LIKE lower(${rawSearch})
+        OR EXISTS (
+          SELECT 1
+          FROM "UserServices" search_us
+          INNER JOIN "Services" search_s ON search_s."id" = search_us."serviceId"
+          LEFT JOIN "ServiceTranslations" search_st
+            ON search_st."serviceId" = search_s."id"
+            AND search_st."locale" IN (${locale}, ${this.locales.defaultLocale})
+          WHERE search_us."userId" = u."id"
+            AND (
+              lower(COALESCE(search_s."name", '')) LIKE lower(${rawSearch})
+              OR search_st."normalizedName" LIKE ${normalizedSearch}
+              OR COALESCE(search_st."normalizedDescription", '') LIKE ${normalizedSearch}
+            )
+        )
+      )`);
     }
 
     if (query.lat !== undefined && query.lng !== undefined) {
@@ -114,9 +128,7 @@ export class TaskersRepository {
       eligibleConditions.push(Prisma.sql`u."serviceAreaLng" IS NOT NULL`);
       eligibleConditions.push(Prisma.sql`u."serviceAreaRadiusKm" IS NOT NULL`);
       eligibleConditions.push(Prisma.sql`${distance} <= ${query.radius ?? 20}`);
-      eligibleConditions.push(
-        Prisma.sql`${distance} <= u."serviceAreaRadiusKm"::float8`,
-      );
+      eligibleConditions.push(Prisma.sql`${distance} <= u."serviceAreaRadiusKm"::float8`);
     }
 
     const representativeWhere = representativeConditions.length
@@ -206,26 +218,32 @@ export class TaskersRepository {
     };
   }
 
-  async getById(id: number, serviceSlug?: string) {
+  async getById(id: number, serviceSlug?: string, locale = this.locales.defaultLocale) {
     const user = await this.prisma.user.findFirst({
       where: { id, role: UserRole.Tasker, accountStatus: 'active', deletedAt: null },
       include: {
         userServices: {
-          include: { service: true },
+          include: {
+            service: {
+              include: {
+                translations: {
+                  where: { locale: { in: [locale, this.locales.defaultLocale] } },
+                },
+              },
+            },
+          },
         },
       },
     });
     if (!user) return null;
 
-    const pricedServices = user.userServices.filter(
-      (entry) => entry.service.slug !== null,
-    );
+    const pricedServices = user.userServices.filter((entry) => entry.service.slug !== null);
     if (!pricedServices.length) return null;
     const cheapest = pricedServices.reduce((current, candidate) =>
       Number(candidate.hourlyRate) < Number(current.hourlyRate) ? candidate : current,
     );
     const primary = serviceSlug
-      ? pricedServices.find((entry) => entry.service.slug === serviceSlug) ?? cheapest
+      ? (pricedServices.find((entry) => entry.service.slug === serviceSlug) ?? cheapest)
       : cheapest;
 
     return {
@@ -242,7 +260,10 @@ export class TaskersRepository {
       serviceSlug: primary.service.slug ?? '',
       services: pricedServices.map((entry) => ({
         id: entry.service.id.toString(),
-        name: entry.service.name ?? '',
+        name:
+          this.locales.selectTranslation(entry.service.translations, locale).translation?.name ??
+          entry.service.name ??
+          '',
         slug: entry.service.slug ?? '',
         icon: entry.service.icon ?? '',
         hourlyRate: Number(entry.hourlyRate),
@@ -254,8 +275,7 @@ export class TaskersRepository {
         lng: user.serviceAreaLng === null ? null : Number(user.serviceAreaLng),
         city: user.serviceAreaCity,
         area: user.serviceAreaArea,
-        radiusKm:
-          user.serviceAreaRadiusKm === null ? null : Number(user.serviceAreaRadiusKm),
+        radiusKm: user.serviceAreaRadiusKm === null ? null : Number(user.serviceAreaRadiusKm),
       }),
       ...(user.aboutMe ? { aboutMe: user.aboutMe } : {}),
       ...(user.skills.length ? { skills: user.skills } : {}),
@@ -296,9 +316,7 @@ export class TaskersRepository {
       timezone: this.config.get<string>('app.timezone', 'Africa/Casablanca'),
       days: [...dayMap.entries()].map(([date, slotsForDay]) => ({
         date,
-        slots: slotsForDay.sort((left, right) =>
-          left.startTime.localeCompare(right.startTime),
-        ),
+        slots: slotsForDay.sort((left, right) => left.startTime.localeCompare(right.startTime)),
       })),
     };
   }

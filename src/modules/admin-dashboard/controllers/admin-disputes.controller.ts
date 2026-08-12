@@ -52,7 +52,8 @@ export class AdminDisputesController {
   @Post(':id/actions')
   @Permissions('support.manage')
   @ApiOperation({
-    summary: 'Single mutation endpoint for investigation, escalation, evidence, and resolution actions',
+    summary:
+      'Single mutation endpoint for investigation, escalation, evidence, and resolution actions',
     description:
       'Supports start_investigation, assign, set_priority, escalate, request_evidence, add_evidence, review_evidence, save_resolution_draft, resolve, and reopen. Refund resolution types additionally require finance.manage. Stripe refunds are real provider calls; wallet refunds are real ledger movements.',
   })
@@ -103,12 +104,10 @@ export class AdminDisputesController {
       },
     },
   })
-  @ApiOkResponse({ description: 'Case action applied or payment-provider refund orchestration started.' })
-  action(
-    @CurrentUser() actor: User,
-    @Param('id') id: string,
-    @Body() dto: AdminDisputeActionDto,
-  ) {
+  @ApiOkResponse({
+    description: 'Case action applied or payment-provider refund orchestration started.',
+  })
+  action(@CurrentUser() actor: User, @Param('id') id: string, @Body() dto: AdminDisputeActionDto) {
     return this.disputes.action(actor, id, dto);
   }
 }

@@ -8,7 +8,7 @@ describe('admin finance and platform-settings architecture', () => {
   it('keeps finance reads consolidated and refund mutation owned by disputes', () => {
     const controller = read('src/modules/admin-finance/controllers/admin-finance.controller.ts');
     expect(controller).toContain("@Controller('admin/finance')");
-    expect(controller).toContain("@Get()");
+    expect(controller).toContain('@Get()');
     expect(controller).toContain("@Post('payouts/:id/actions')");
     expect(controller).not.toContain("@Post('refund");
   });
@@ -25,7 +25,9 @@ describe('admin finance and platform-settings architecture', () => {
     expect(service).toContain('Multi-currency settlement is not enabled');
     expect(service).toContain('Referral payouts cannot be enabled');
     expect(service).toContain('Automatic exchange-rate refresh is not configured');
-    expect(service).toContain('Region-specific radius rules require a verified region/geocoding resolver');
+    expect(service).toContain(
+      'Region-specific radius rules require a verified region/geocoding resolver',
+    );
   });
 
   it('applies commission and tax through the real booking-payment path', () => {

@@ -50,4 +50,18 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(1000)
   bio?: string;
+
+  @ApiPropertyOptional({
+    enum: ['en', 'ar', 'ary'],
+    example: 'ary',
+    description:
+      'Persists the account language used before Accept-Language for dynamic content, notifications, and email. ary is Moroccan Darija.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase().replace('_', '-') : value,
+  )
+  @IsString()
+  @Matches(/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/)
+  preferredLanguage?: string;
 }

@@ -35,8 +35,6 @@ describe('AuthModule dependency graph', () => {
 
   it('registers split auth-domain services', () => {
     const providers = Reflect.getMetadata(MODULE_METADATA.PROVIDERS, AuthModule) as unknown[];
-    expect(providers).toEqual(
-      expect.arrayContaining([AuthRegistrationService, AuthTokenService]),
-    );
+    expect(providers).toEqual(expect.arrayContaining([AuthRegistrationService, AuthTokenService]));
   });
 });

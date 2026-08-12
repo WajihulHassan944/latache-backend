@@ -1,6 +1,7 @@
 export const PAYMENT_SOURCE = {
   Stripe: 'stripe',
   Wallet: 'wallet',
+  Cash: 'cash',
 } as const;
 
 export const PAYMENT_STATUS = {
@@ -15,12 +16,15 @@ export const PAYMENT_STATUS = {
   LegacyUntracked: 'legacy_untracked',
   PartiallyRefunded: 'partially_refunded',
   Refunded: 'refunded',
+  CashConfirmationRequired: 'cash_confirmation_required',
+  CashConfirmed: 'cash_confirmed',
 } as const;
 
 export const PAYMENT_TRANSACTION_KIND = {
   BookingCharge: 'booking_charge',
   WalletTopup: 'wallet_topup',
   Refund: 'refund',
+  CashCollection: 'cash_collection',
 } as const;
 
 export const CUSTOMER_WALLET_ENTRY_KIND = {

@@ -1,10 +1,7 @@
 import 'reflect-metadata';
 import { RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
-import {
-  RegistrationUploadsController,
-  UploadsController,
-} from './uploads.controller';
+import { RegistrationUploadsController, UploadsController } from './uploads.controller';
 
 const assertRoute = (
   controller: object,
@@ -46,11 +43,6 @@ describe('Cloudinary upload route surface', () => {
   });
 
   it('maps the authenticated delete route', () => {
-    assertRoute(
-      UploadsController,
-      UploadsController.prototype.delete,
-      RequestMethod.DELETE,
-      undefined,
-    );
+    assertRoute(UploadsController, UploadsController.prototype.delete, RequestMethod.DELETE, '/');
   });
 });

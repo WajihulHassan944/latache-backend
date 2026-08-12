@@ -23,5 +23,4 @@ export const monthKey = (date: Date): string =>
 export const monthStart = (date = new Date()): Date =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
 
-export const safeJsonArray = (value: unknown): unknown[] =>
-  Array.isArray(value) ? value : [];
+export const safeJsonArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
