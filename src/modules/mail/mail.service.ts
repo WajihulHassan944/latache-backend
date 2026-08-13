@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MAIL_TRANSPORTER } from './mail.constants';
-import type { MailTransporter } from './mail.types';
+import type { MailRecipientAddress, MailTransporter } from './mail.types';
 import {
   adminWelcomeTemplate,
   emailPlainText,
@@ -16,7 +16,6 @@ import {
   passwordResetOtpTemplate,
   verificationEmailTemplate,
 } from './email-templates';
-import { latacheEmailAttachments, type LatacheEmailAttachment } from './email-layout';
 
 @Injectable()
 export class MailService implements OnModuleInit, OnModuleDestroy {
@@ -112,18 +111,42 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     subject: string;
     html: string;
     text: string;
-    attachments?: LatacheEmailAttachment[];
   }): Promise<void> {
     try {
-      await this.transporter.sendMail({
+      const delivery = await this.transporter.sendMail({
         from: this.config.getOrThrow<string>('mail.from'),
-        attachments: params.attachments ?? latacheEmailAttachments(),
         ...params,
       });
+      const requestedRecipient = this.normalizeRecipient(params.to);
+      const acceptedRecipients = delivery.accepted.map((recipient) =>
+        this.normalizeRecipient(recipient),
+      );
+      if (!acceptedRecipients.includes(requestedRecipient)) {
+        throw new Error('SMTP_RECIPIENT_NOT_ACCEPTED');
+      }
+
+      const responseCode = /^\d{3}/.exec(delivery.response ?? '')?.[0] ?? 'unknown';
+      this.logger.log(
+        JSON.stringify({
+          event: 'smtp_delivery_accepted',
+          recipientDomain: requestedRecipient.split('@')[1] ?? 'unknown',
+          messageId: delivery.messageId || 'unknown',
+          responseCode,
+        }),
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = this.safeErrorMessage(error);
       this.logger.error(`SMTP delivery failed: ${message}`);
       throw new ServiceUnavailableException('Email delivery is temporarily unavailable');
     }
+  }
+
+  private normalizeRecipient(recipient: string | MailRecipientAddress): string {
+    return (typeof recipient === 'string' ? recipient : recipient.address).trim().toLowerCase();
+  }
+
+  private safeErrorMessage(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.replace(/[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+\.[A-Za-z]{2,}/g, '<redacted-email>');
   }
 }

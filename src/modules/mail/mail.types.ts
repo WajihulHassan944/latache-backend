@@ -1,5 +1,18 @@
 import type { Transporter, TransportOptions } from 'nodemailer';
 
+export interface MailRecipientAddress {
+  address: string;
+  name?: string;
+}
+
+export interface MailDeliveryResult {
+  messageId: string;
+  accepted: Array<string | MailRecipientAddress>;
+  rejected: Array<string | MailRecipientAddress>;
+  pending?: Array<string | MailRecipientAddress>;
+  response?: string;
+}
+
 export interface MailTransporter {
   sendMail(options: {
     from: string;
@@ -7,13 +20,7 @@ export interface MailTransporter {
     subject: string;
     html: string;
     text: string;
-    attachments?: Array<{
-      filename: string;
-      path: string;
-      cid: string;
-      contentDisposition: 'inline';
-    }>;
-  }): Promise<unknown>;
+  }): Promise<MailDeliveryResult>;
   verify(): Promise<boolean>;
   close(): void;
 }

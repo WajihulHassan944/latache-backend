@@ -63,6 +63,15 @@ describe('Auth Swagger and route surface', () => {
     ]);
   });
 
+  it('publishes the seeded super-admin login as literal JSON values', () => {
+    expect(loginRequestExamples.superAdmin.value).toEqual({
+      email: 'latache.superadmin@yopmail.com',
+      password: 'Admin@12345',
+      expectedRole: 'super_admin',
+      device: 'Super-admin dashboard',
+    });
+  });
+
   it('does not expose any removed legacy path', () => {
     const paths = Object.getOwnPropertyNames(AuthController.prototype)
       .filter((name) => name !== 'constructor')

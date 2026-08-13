@@ -4,9 +4,9 @@
 
 | Component               | Responsibilities                                                                                                                                 | Explicitly not responsible for                                                                                                    |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| PostgreSQL/Prisma       | Bookings, payments, wallet/receivable ledgers, earning clearance state, notifications, chat/support history, audit logs, and the realtime outbox | Cross-replica socket fanout or disposable cache data                                                                              |
+| PostgreSQL/Prisma       | Bookings, payments, wallet/receivable ledgers, earning clearance state, notifications, chat/support history, audit logs, realtime outbox, and durable object-storage deletion tasks | Cross-replica socket fanout or disposable cache data                                                                              |
 | Redis                   | Versioned read caches, Socket.IO adapter pub/sub, BullMQ transport, cross-replica location-write coalescing                                      | Financial balances, provider settlement truth, booking/dispute truth, or durable notifications                                    |
-| BullMQ worker           | Retry-safe periodic scans for mature earnings, stale calls, and dispatched-outbox retention                                                      | Synchronous booking transactions, Stripe result handling, wallet mutations outside their PostgreSQL transactions, or WebRTC media |
+| BullMQ worker           | Retry-safe periodic scans for mature earnings, stale calls, dispatched-outbox retention, and Cloudinary deletion tasks                            | Synchronous booking transactions, Stripe result handling, wallet mutations outside their PostgreSQL transactions, or WebRTC media |
 | Socket.IO Redis adapter | Cross-instance delivery to the existing private/public/admin rooms                                                                               | Durable event production; PostgreSQL's transactional outbox keeps that role                                                       |
 
 Redis cache failure therefore falls through to PostgreSQL. If jobs are enabled, Redis/queue/worker failure is surfaced as unhealthy by `/api/health`; the application does not claim that required maintenance was queued or processed.
@@ -44,6 +44,7 @@ One versioned queue (`latache-maintenance-v1`) has stable scheduler IDs:
 | `finance.release-mature`  | 60 seconds      | Existing PostgreSQL advisory/row locks, persisted earning status, unique idempotency keys, and debt-offset transactions prevent double release |
 | `realtime.expire-calls`   | 5 seconds       | Conditional lifecycle updates make repeat execution a no-op; resulting notifications/events are committed with the state change                |
 | `realtime.cleanup-outbox` | 1 hour          | Deletes bounded batches only where `publishedAt` is older than retention; pending/failed rows can never match                                  |
+| `storage.purge-deleted-assets` | 60 seconds | Conditionally claims persisted deletion tasks; unique public IDs, provider `not found` success, retry backoff, and stale-lock reclamation make duplicate/crashed workers safe |
 
 BullMQ uses exponential retry, observable failed-job logs, configurable concurrency, and retained success/failure history. With `JOBS_ENABLED=false`, development retains the existing PostgreSQL-safe earnings/call interval and an hourly bounded cleanup interval. Production should use the dedicated worker.
 

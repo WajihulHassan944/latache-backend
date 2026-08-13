@@ -1,11 +1,16 @@
 import { ConfigService } from '@nestjs/config';
 import { passwordResetOtpTemplate, verificationEmailTemplate } from './email-templates';
-import { LATACHE_EMAIL_LOGO_URL } from './email-layout';
+import { LATACHE_EMAIL_ASSETS, LATACHE_EMAIL_LOGO_URL } from './email-layout';
 import { MailService } from './mail.service';
 import type { MailTransporter } from './mail.types';
 
 describe('MailService', () => {
-  const sendMail = jest.fn().mockResolvedValue({ messageId: 'email-1' });
+  const sendMail = jest.fn().mockResolvedValue({
+    messageId: 'email-1',
+    accepted: ['a@example.com'],
+    rejected: [],
+    response: '250 2.0.0 queued',
+  });
   const transporter: MailTransporter = {
     sendMail,
     verify: jest.fn().mockResolvedValue(true),
@@ -74,7 +79,7 @@ describe('MailService', () => {
     expect(html).toContain(LATACHE_EMAIL_LOGO_URL);
   });
 
-  it('CID-attaches every generated design asset to delivered mail', async () => {
+  it('uses the hosted artwork without attaching a multi-megabyte payload', async () => {
     await service.sendVerificationEmail({
       to: 'a@example.com',
       name: 'A',
@@ -83,19 +88,33 @@ describe('MailService', () => {
     });
     expect(sendMail).toHaveBeenCalledTimes(1);
     const options = sendMail.mock.calls[0]?.[0] as {
-      attachments?: Array<{ cid: string; path: string }>;
+      html: string;
+      attachments?: unknown[];
     };
-    expect(options.attachments).toHaveLength(3);
-    expect(options.attachments?.map((attachment) => attachment.cid)).toEqual([
-      'latache-email-header@latache',
-      'latache-security-shield@latache',
-      'latache-email-footer@latache',
-    ]);
-    expect(options.attachments?.every((attachment) => attachment.path.endsWith('.png'))).toBe(true);
+    expect(options.attachments).toBeUndefined();
+    expect(options.html).toContain(LATACHE_EMAIL_ASSETS.header.url);
+    expect(options.html).toContain(LATACHE_EMAIL_ASSETS.shield.url);
+    expect(options.html).toContain(LATACHE_EMAIL_ASSETS.footer.url);
+    expect(options.html).toContain('align="center" alt=""');
+    expect(options.html).toContain(`background="${LATACHE_EMAIL_ASSETS.footer.url}"`);
+    expect(options.html).not.toContain('background:#efc58e');
   });
 
   it('awaits Nodemailer and maps SMTP errors to a service error', async () => {
     sendMail.mockRejectedValueOnce(new Error('rejected'));
+    await expect(
+      service.sendVerificationEmail({ to: 'a@example.com', name: 'A', otp: 123456 }),
+    ).rejects.toThrow('Email delivery is temporarily unavailable');
+  });
+
+  it('does not claim delivery when SMTP did not accept the requested recipient', async () => {
+    sendMail.mockResolvedValueOnce({
+      messageId: 'email-rejected',
+      accepted: [],
+      rejected: ['a@example.com'],
+      response: '550 recipient rejected',
+    });
+
     await expect(
       service.sendVerificationEmail({ to: 'a@example.com', name: 'A', otp: 123456 }),
     ).rejects.toThrow('Email delivery is temporarily unavailable');

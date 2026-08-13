@@ -164,6 +164,18 @@ export class UploadsService {
     };
   }
 
+  /** Internal deletion path for public IDs read from Latache-owned persisted records. */
+  async purgeManagedAsset(
+    publicId: string,
+    resourceType: CloudinaryResourceType = 'image',
+  ): Promise<string> {
+    const normalized = publicId.trim();
+    if (!normalized.startsWith(`${this.baseFolder()}/`)) {
+      throw new ForbiddenException('Only Latache Cloudinary assets can be purged');
+    }
+    return this.destroy(normalized, resourceType);
+  }
+
   conversationAttachmentCapabilities() {
     return {
       uploadFolder: UploadFolder.ConversationAttachment,

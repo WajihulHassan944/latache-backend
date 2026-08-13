@@ -1215,3 +1215,27 @@ model RealtimeOutboxEvent {
   @@index([publishedAt, createdAt, id], map: "realtime_outbox_cleanup_cursor_idx")
   @@map("RealtimeOutboxEvents")
 }
+
+model ObjectStorageDeletionTask {
+  id            String    @id @default(cuid()) @db.VarChar(40)
+  provider      String    @default("cloudinary") @db.VarChar(32)
+  publicId      String    @db.VarChar(500)
+  resourceType  String    @default("image") @db.VarChar(16)
+  status        String    @default("pending") @db.VarChar(24)
+  entityType    String    @db.VarChar(64)
+  entityId      String    @db.VarChar(120)
+  requestedById Int?
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @db.Timestamptz(6)
+  lockedAt      DateTime? @db.Timestamptz(6)
+  lockToken     String?   @db.VarChar(64)
+  lastError     String?   @db.VarChar(1000)
+  completedAt   DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@unique([provider, publicId, resourceType], map: "storage_deletion_provider_public_resource_unique")
+  @@index([status, nextAttemptAt, createdAt], map: "storage_deletion_pending_idx")
+  @@index([entityType, entityId], map: "storage_deletion_entity_idx")
+  @@map("ObjectStorageDeletionTasks")
+}

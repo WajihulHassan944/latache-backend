@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -33,6 +34,7 @@ import {
 } from '../dto';
 import { AdminAnalyticsService } from '../services/admin-analytics.service';
 import { AdminTaskersService } from '../services/admin-taskers.service';
+import { PermanentDeleteDto } from '../../account-deletion/dto/permanent-delete.dto';
 
 @ApiTags('22 Admin Dashboard - Taskers')
 @ApiBearerAuth('bearer')
@@ -89,6 +91,25 @@ export class AdminTaskersController {
   @ApiNotFoundResponse({ description: 'Tasker not found.' })
   details(@Param('id', ParseIntPipe) id: number) {
     return this.taskers.details(id);
+  }
+
+  @Delete(':id')
+  @Permissions('taskers.delete')
+  @ApiOperation({
+    summary: 'Permanently delete an eligible Tasker and managed assets',
+    description:
+      'Irreversible hard deletion. Requires the exact confirmation phrase. Protected bookings, earnings, wallet/platform ledgers, cash receivables, withdrawals, disputes, reviews, or other immutable history block deletion. Cloudinary deletion is durable and retryable.',
+  })
+  @ApiOkResponse({ description: 'Tasker and eligible dependent records permanently deleted.' })
+  @ApiConflictResponse({
+    description: 'ACCOUNT_PURGE_BLOCKED with the exact protected-resource counts.',
+  })
+  permanentlyDelete(
+    @CurrentUser() actor: User,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: PermanentDeleteDto,
+  ) {
+    return this.taskers.permanentlyDelete(actor, id, dto.reason);
   }
 
   @Post(':id/verification')

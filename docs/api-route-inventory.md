@@ -1,11 +1,19 @@
-# API route inventory — v3.17.0
+# API route inventory — v3.18.0
+
+## v3.18 permanent deletion changes
+
+- Added `DELETE /api/admin/customers/:id` with `customers.delete`.
+- Added `DELETE /api/admin/taskers/:id` with `taskers.delete`.
+- Existing `DELETE /api/rbac/admins/:id` is now an irreversible purge with `admins.delete`.
+- Delete requests require `confirmation=PERMANENT_DELETE` and an audit reason; protected financial/shared records return `ACCOUNT_PURGE_BLOCKED`.
+- Existing Service, Service Option, custom RBAC role, Elite badge, payout-method, and Tasker-skill DELETE routes now physically delete eligible records instead of writing a soft-delete state.
 
 ## v3.17 email and Darija changes
 
 - No new or duplicate API routes were introduced.
 - Existing registration/Admin-create requests and `PATCH /api/auth/me` accept `preferredLanguage=en|ar|ary`; `ary` is Moroccan Darija.
 - Existing translated Service, Service Option, Elite, and public Platform Setting mutations accept `locale=ary` when it is enabled in `SUPPORTED_LOCALES`.
-- All current transactional mail methods now use the same responsive design shell and CID assets.
+- All current transactional mail methods use the same responsive design shell and hosted Cloudinary artwork without SMTP image attachments.
 
 ## v3.16 performance changes
 

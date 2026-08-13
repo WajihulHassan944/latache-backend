@@ -348,21 +348,19 @@ export class TaskerWalletService {
 
   async deletePayoutMethod(taskerId: number, id: string): Promise<{ deleted: true; id: string }> {
     const method = await this.requirePayoutMethod(taskerId, id);
-    const pending = await this.prisma.taskerWithdrawal.count({
-      where: {
-        taskerId,
-        payoutMethodId: id,
-        status: { in: [WITHDRAWAL_STATUS.PendingReview, WITHDRAWAL_STATUS.Processing] },
-      },
+    const withdrawals = await this.prisma.taskerWithdrawal.count({
+      where: { taskerId, payoutMethodId: id },
     });
-    if (pending > 0) {
-      throw new ConflictException('This payout method has an active withdrawal request');
+    if (withdrawals > 0) {
+      throw new ConflictException({
+        code: 'PAYOUT_METHOD_PURGE_BLOCKED',
+        message:
+          'This payout method is referenced by withdrawal history and cannot be permanently deleted.',
+        withdrawalCount: withdrawals,
+      });
     }
     await this.prisma.$transaction(async (transaction) => {
-      await transaction.taskerPayoutMethod.update({
-        where: { id },
-        data: { deletedAt: new Date(), status: 'removed', isDefault: false },
-      });
+      await transaction.taskerPayoutMethod.delete({ where: { id } });
       if (method.isDefault) {
         const replacement = await transaction.taskerPayoutMethod.findFirst({
           where: { taskerId, id: { not: id }, deletedAt: null, status: 'active' },

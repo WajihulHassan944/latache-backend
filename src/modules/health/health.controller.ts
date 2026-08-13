@@ -12,6 +12,7 @@ import { AppCacheService } from '../../infrastructure/redis/app-cache.service';
 import { PerformanceJobsService } from '../../infrastructure/jobs/performance-jobs.service';
 import { PerformanceMetricsService } from '../../infrastructure/observability/performance-metrics.service';
 import { RealtimeDispatcherService } from '../realtime/realtime-dispatcher.service';
+import { ObjectStorageDeletionService } from '../account-deletion/object-storage-deletion.service';
 
 @ApiTags('health')
 @Controller('health')
@@ -24,13 +25,14 @@ export class HealthController {
     private readonly metrics: PerformanceMetricsService,
     private readonly outbox: RealtimeDispatcherService,
     private readonly config: ConfigService,
+    private readonly storageDeletion: ObjectStorageDeletionService,
   ) {}
 
   @Get()
   @ApiOperation({
     summary: 'API dependency and background-processing health',
     description:
-      'Checks PostgreSQL, Redis, BullMQ backlog/worker presence and the durable realtime outbox. No connection strings or credentials are exposed. Redis cache-only failure is degraded; Redis/queue failure is unhealthy when configured as required.',
+      'Checks PostgreSQL, Redis, BullMQ backlog/worker presence, the durable realtime outbox, and pending/failed object-storage deletion tasks. No connection strings or credentials are exposed. Redis cache-only failure is degraded; Redis/queue failure is unhealthy when configured as required.',
   })
   @ApiOkResponse({ description: 'Healthy or safely degraded service.' })
   @ApiServiceUnavailableResponse({
@@ -45,11 +47,16 @@ export class HealthController {
       database = 'down';
     }
 
-    const [redis, queue, outbox] = await Promise.all([
+    const [redis, queue, outbox, assetDeletion] = await Promise.all([
       this.redis.health(),
       this.jobs.health(),
       database === 'up'
         ? this.outbox.backlog().catch(() => ({ pending: -1, failed: -1, oldestPendingAt: null }))
+        : Promise.resolve({ pending: -1, failed: -1, oldestPendingAt: null }),
+      database === 'up'
+        ? this.storageDeletion
+            .backlog()
+            .catch(() => ({ pending: -1, failed: -1, oldestPendingAt: null }))
         : Promise.resolve({ pending: -1, failed: -1, oldestPendingAt: null }),
     ]);
     const jobsRequired = this.config.get<boolean>('jobs.enabled', false);
@@ -61,7 +68,11 @@ export class HealthController {
       queueWorkerMissing;
     const degraded =
       !requiredFailure &&
-      ((redis.enabled && redis.status !== 'up') || outbox.failed > 0 || outbox.pending < 0);
+      ((redis.enabled && redis.status !== 'up') ||
+        outbox.failed > 0 ||
+        outbox.pending < 0 ||
+        assetDeletion.failed > 0 ||
+        assetDeletion.pending < 0);
     const body = {
       status: requiredFailure ? 'error' : degraded ? 'degraded' : 'ok',
       application: 'up',
@@ -70,6 +81,7 @@ export class HealthController {
       redis,
       queue: { ...queue, workerRequiredButMissing: queueWorkerMissing },
       realtimeOutbox: outbox,
+      objectStorageDeletion: assetDeletion,
       cache: this.cache.stats(),
       metrics: this.metrics.snapshot(),
       timestamp,

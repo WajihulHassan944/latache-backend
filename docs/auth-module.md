@@ -134,3 +134,16 @@ Admin@12345
 ```
 
 Override both values in a production secret store. Re-running the seed intentionally resets the canonical password to the configured value.
+
+Use literal JSON in Swagger or frontend requests:
+
+```json
+{
+  "email": "latache.superadmin@yopmail.com",
+  "password": "Admin@12345",
+  "expectedRole": "super_admin",
+  "device": "Super-admin dashboard"
+}
+```
+
+Do not paste Markdown link notation such as `[address](mailto:address)` and do not add backslashes before `@` or `_`. The API origin from `APP_BASE_URL` is automatically accepted for same-origin Swagger requests; browser frontends on a different origin must still be listed in `CORS_ORIGINS`.

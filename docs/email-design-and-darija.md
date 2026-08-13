@@ -8,7 +8,11 @@ The logo is loaded from the requested canonical URL:
 
 `https://latache-web.vercel.app/images/logo-full.svg`
 
-The original generated header panorama, security shield, and dune footer are stored under `src/modules/mail/assets`. Nodemailer attaches them inline with stable content IDs, so they do not require a public asset host. Nest copies them into `dist/modules/mail/assets` for production builds. No standalone HTML, Handlebars, or EJS templates are used.
+The header panorama, security shield, and dune footer use the supplied versioned Cloudinary URLs. They are ordinary decorative remote images shared by every recipient; the email contains no recipient-specific image token and no multi-megabyte CID attachment. The center content and plain-text alternative remain usable when a mail client initially blocks remote images. No standalone HTML, Handlebars, or EJS templates are used.
+
+The canonical build is rooted at `src` and emits `dist/main.js`. Email delivery has no runtime filesystem dependency, which avoids Windows/Railway/Docker asset-path differences and keeps the SMTP message small.
+
+`npm run build` removes only the generated `dist` directory before compilation. This is important when upgrading from an older build that emitted `dist/src/main.js`: no stale JavaScript can keep using obsolete mail behavior.
 
 Current flows covered by the shell:
 
@@ -37,6 +41,11 @@ Darija and Arabic email documents are RTL. OTPs, email addresses, temporary pass
 ```env
 SUPPORTED_LOCALES=en,ar,ary
 DEFAULT_LOCALE=en
+SMTP_CONNECTION_TIMEOUT_MS=10000
+SMTP_GREETING_TIMEOUT_MS=10000
+SMTP_SOCKET_TIMEOUT_MS=30000
 ```
+
+After a successful provider handoff the service logs `smtp_delivery_accepted` with a recipient domain, Nodemailer message ID, and SMTP response code. This confirms SMTP acceptance, not inbox placement. Production senders must still configure SPF, DKIM, and DMARC with their mail provider and keep `SMTP_FROM` authorized for `SMTP_USER`.
 
 No Prisma migration is required. `preferredLanguage` is already a configurable BCP-47 string, and translated resources already use `(resourceId, locale)` rows. Existing records remain valid; Darija translations are created only when administrators submit real content.

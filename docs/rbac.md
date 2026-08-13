@@ -10,7 +10,7 @@ Version 3.4 introduces a database-backed administrator role model. The permissio
 - display `name` and description
 - permission-key array
 - system/custom classification
-- active and soft-delete state
+- active state; the legacy nullable `deletedAt` column remains schema-compatible, but DELETE now physically removes eligible custom roles
 
 `Users.rbacRoleId` links an administrator to a role. Existing `Users.adminRole` and `Users.permissions` remain as denormalized effective-access snapshots for API compatibility and fast authorization. `Users.inheritsRolePermissions` distinguishes administrators who follow the role from administrators with an explicit least-privilege subset.
 
@@ -47,6 +47,8 @@ Role codes are immutable. The canonical `super_admin` role cannot be modified. S
 | DELETE | `/api/rbac/admins/:id`        | Super admin or admin with `admins.delete`                 |
 
 The current caller cannot modify their own assignment/status through these management routes, and the canonical super-admin account is immutable. Delegated administrators can manage only targets whose effective permissions are a subset of their own access.
+
+Administrator DELETE requires the explicit `PERMANENT_DELETE` confirmation phrase and an audit reason. It physically removes an eligible administrator and managed assets. Protected authored/shared records return `ACCOUNT_PURGE_BLOCKED`; status deactivation remains a separate lifecycle operation.
 
 ## Administrator creation
 

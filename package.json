@@ -1,7 +1,7 @@
 {
   "name": "latache-backend-nestjs-prisma",
-  "version": "3.17.0",
-  "description": "Latache API with premium shared email design, scalable en/ar/ary localization, Redis/BullMQ, multi-instance Socket.IO, provider-backed finance, Prisma/PostgreSQL, Stripe, and RBAC",
+  "version": "3.18.0",
+  "description": "Latache API with permanent RBAC-controlled deletion, durable Cloudinary cleanup, premium shared email design, en/ar/ary localization, Redis/BullMQ, multi-instance Socket.IO, provider-backed finance, Prisma/PostgreSQL, Stripe, and RBAC",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
@@ -9,7 +9,8 @@
   },
   "scripts": {
     "postinstall": "prisma generate",
-    "build": "prisma generate && nest build",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && prisma generate && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"prisma/**/*.ts\" \"scripts/**/*.ts\" \"docs/**/*.md\"",
     "start": "node --enable-source-maps dist/main.js",
     "start:prod": "node --enable-source-maps dist/main.js",

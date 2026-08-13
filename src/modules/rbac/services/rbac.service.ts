@@ -39,6 +39,8 @@ import {
   type RbacRoleWithAdminCount,
 } from '../repositories/rbac.repository';
 import { RbacAccessService } from './rbac-access.service';
+import { AccountDeletionService } from '../../account-deletion/account-deletion.service';
+import { PrismaService } from '../../../database/prisma.service';
 
 @Injectable()
 export class RbacService {
@@ -46,6 +48,8 @@ export class RbacService {
     private readonly repository: RbacRepository,
     private readonly access: RbacAccessService,
     private readonly audit: AdminAuditService,
+    private readonly accountDeletion: AccountDeletionService,
+    private readonly prisma: PrismaService,
   ) {}
 
   permissions(): SuccessEnvelope<PermissionCatalogView> {
@@ -167,7 +171,7 @@ export class RbacService {
     );
   }
 
-  async deleteRole(id: string): Promise<SuccessEnvelope<null>> {
+  async deleteRole(actor: User, id: string): Promise<SuccessEnvelope<null>> {
     const role = await this.access.requireRoleById(id);
     this.assertMutableRole(role);
     if (role.isSystem) {
@@ -178,7 +182,19 @@ export class RbacService {
         'Role cannot be deleted while administrators are assigned to it',
       );
     }
-    await this.repository.softDeleteRole(role.id);
+    await this.prisma.$transaction(async (tx) => {
+      await this.repository.deleteRole(role.id, tx);
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'rbac_role_permanently_deleted',
+          entityType: 'rbac_role',
+          entityId: role.id,
+          metadata: { code: role.code, irreversible: true },
+        },
+        tx,
+      );
+    });
     return success(null, 'Administrator role deleted successfully.');
   }
 
@@ -316,21 +332,11 @@ export class RbacService {
     return success(this.toAdmin(updated), 'Administrator profile updated successfully.');
   }
 
-  async deleteAdmin(actor: User, adminId: number): Promise<SuccessEnvelope<null>> {
+  async deleteAdmin(actor: User, adminId: number, reason: string) {
     const admin = await this.requireAdmin(adminId);
     this.assertActorPermission(actor, 'admins.delete');
     this.assertManageableAdmin(actor, admin);
-    await this.repository.softDeleteAdmin(admin.id);
-    await this.audit.record({
-      actorId: actor.id,
-      targetUserId: admin.id,
-      action: 'administrator_deleted',
-      entityType: 'administrator',
-      entityId: admin.id,
-      reason: 'Administrator account soft-deleted by an authorized administrator.',
-      metadata: { previousStatus: admin.accountStatus, adminRole: admin.adminRole },
-    });
-    return success(null, 'Administrator account deleted successfully.');
+    return this.accountDeletion.permanentlyDelete(actor, admin.id, UserRole.Admin, reason);
   }
 
   async updateAdminStatus(

@@ -55,6 +55,7 @@ import {
   UpdateRolePermissionsDto,
 } from '../dto';
 import { RbacService } from '../services/rbac.service';
+import { PermanentDeleteDto } from '../../account-deletion/dto/permanent-delete.dto';
 
 @ApiTags('03 RBAC - Roles & Permissions')
 @ApiBearerAuth('bearer')
@@ -259,13 +260,13 @@ export class RbacController {
   @ApiOperation({
     summary: 'Delete a custom administrator role',
     description:
-      'Performs a soft delete. System roles and roles currently assigned to administrators cannot be deleted.',
+      'Permanently deletes the role. System roles and roles currently assigned to administrators cannot be deleted.',
   })
-  @ApiOkResponse({ description: 'Role soft-deleted.' })
+  @ApiOkResponse({ description: 'Role permanently deleted.' })
   @ApiBadRequestResponse({ description: 'Administrators remain assigned to the role.' })
   @ApiForbiddenResponse({ description: 'System or super-admin role deletion attempted.' })
-  deleteRole(@Param('id') id: string): Promise<SuccessEnvelope<null>> {
-    return this.rbac.deleteRole(id);
+  deleteRole(@CurrentUser() actor: User, @Param('id') id: string): Promise<SuccessEnvelope<null>> {
+    return this.rbac.deleteRole(actor, id);
   }
 
   @Get('admins')
@@ -375,17 +376,19 @@ export class RbacController {
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('admins.delete')
   @ApiOperation({
-    summary: 'Soft-delete an administrator account',
+    summary: 'Permanently delete an eligible administrator account',
     description:
-      'Revokes active sessions and records deletedAt. The current caller and canonical super administrator are protected. This does not physically remove audit or relational history.',
+      'Irreversible hard deletion with explicit confirmation. The current caller and canonical Super Admin are protected. Authored records belonging to other users block deletion; managed Cloudinary assets are deleted through the durable purge worker.',
   })
-  @ApiOkResponse({ description: 'Administrator account soft-deleted.' })
+  @ApiOkResponse({ description: 'Administrator account permanently deleted.' })
+  @ApiConflictResponse({ description: 'ACCOUNT_PURGE_BLOCKED with protected record counts.' })
   @ApiForbiddenResponse({ description: 'Missing admins.delete or protected administrator target.' })
   @ApiNotFoundResponse({ description: 'Administrator not found.' })
   deleteAdmin(
     @CurrentUser() actor: User,
     @Param('id', ParseIntPipe) id: number,
-  ): Promise<SuccessEnvelope<null>> {
-    return this.rbac.deleteAdmin(actor, id);
+    @Body() dto: PermanentDeleteDto,
+  ) {
+    return this.rbac.deleteAdmin(actor, id, dto.reason);
   }
 }

@@ -186,10 +186,10 @@ export class TaskerProfileService {
     };
   }
 
-  async deactivateSkill(
+  async deleteSkill(
     taskerId: number,
     serviceId: number,
-  ): Promise<{ deactivated: true; serviceId: string }> {
+  ): Promise<{ deleted: true; serviceId: string }> {
     await this.requireTasker(taskerId);
     const existing = await this.prisma.userService.findUnique({
       where: { userId_serviceId: { userId: taskerId, serviceId } },
@@ -203,7 +203,7 @@ export class TaskerProfileService {
       },
     });
     if (activeBookings > 0) {
-      throw new ConflictException('This skill cannot be deactivated while active bookings use it');
+      throw new ConflictException('This skill cannot be deleted while active bookings use it');
     }
     await this.prisma.$transaction(async (transaction) => {
       await transaction.userService.delete({
@@ -211,7 +211,7 @@ export class TaskerProfileService {
       });
       await this.syncTaskerSkillSnapshot(taskerId, transaction);
     });
-    return { deactivated: true, serviceId: String(serviceId) };
+    return { deleted: true, serviceId: String(serviceId) };
   }
 
   async deactivateAccount(taskerId: number): Promise<{ deactivated: true }> {
@@ -250,7 +250,6 @@ export class TaskerProfileService {
         data: {
           accountStatus: AccountStatus.Deactivated,
           isProfilePublic: false,
-          deletedAt: new Date(),
         },
       });
       await this.sessions.revokeAll(taskerId, transaction);

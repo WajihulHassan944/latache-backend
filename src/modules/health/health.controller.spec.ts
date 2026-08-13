@@ -33,6 +33,9 @@ const controller = (redisRequired: boolean, jobsEnabled = false) =>
       get: (key: string, fallback: unknown) =>
         key === 'jobs.enabled' ? jobsEnabled : key === 'app.serviceMode' ? 'api' : fallback,
     } as never,
+    {
+      backlog: jest.fn().mockResolvedValue({ pending: 0, failed: 0, oldestPendingAt: null }),
+    } as never,
   );
 
 describe('HealthController failure policy', () => {

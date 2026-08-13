@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiForbiddenResponse,
   ApiHeader,
   ApiOperation,
@@ -118,15 +119,16 @@ export class ServicesController {
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('services.manage')
   @ApiOperation({
-    summary: 'Deactivate a service option',
+    summary: 'Permanently delete an unused service option',
     description:
-      'Existing bookings keep their historical option reference; the option is hidden from future booking flows.',
+      'Irreversible deletion. Existing booking references block the operation and return SERVICE_OPTION_PURGE_BLOCKED.',
   })
+  @ApiConflictResponse({ description: 'SERVICE_OPTION_PURGE_BLOCKED with booking count.' })
   deleteServiceOption(
     @CurrentUser() actor: User,
     @Param() params: ServiceOptionParamDto,
   ): Promise<unknown> {
-    return this.services.deactivateOption(actor, params.serviceId, params.optionId);
+    return this.services.deleteOption(actor, params.serviceId, params.optionId);
   }
 
   @Post()
@@ -165,14 +167,12 @@ export class ServicesController {
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('services.manage')
   @ApiOperation({
-    summary: 'Deactivate a service category',
+    summary: 'Permanently delete an unused service category',
     description:
-      'This is a soft catalogue deactivation. Existing bookings/tasker history remain intact.',
+      'Irreversible deletion of the canonical service, options, translations, tasker assignments and managed image. Existing booking history blocks deletion and returns SERVICE_PURGE_BLOCKED.',
   })
-  deactivateService(
-    @CurrentUser() actor: User,
-    @Param() params: ServiceIdParamDto,
-  ): Promise<unknown> {
-    return this.services.deactivate(actor, params.serviceId);
+  @ApiConflictResponse({ description: 'SERVICE_PURGE_BLOCKED with booking count.' })
+  deleteService(@CurrentUser() actor: User, @Param() params: ServiceIdParamDto): Promise<unknown> {
+    return this.services.delete(actor, params.serviceId);
   }
 }

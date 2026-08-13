@@ -1,27 +1,37 @@
 {
-  "release": "3.17.0",
-  "focus": "Shared premium transactional-email design and Moroccan Darija localization",
-  "checkedAtUtc": "2026-08-12T10:28:28Z",
+  "release": "3.18.0",
+  "focus": "RBAC-controlled permanent deletion, durable Cloudinary cleanup, and shared email layout correction",
+  "checkedAtUtc": "2026-08-12T12:24:25Z",
   "staticChecks": {
-    "apiRoutes": 197,
-    "uniqueApiRoutes": 197,
+    "apiRoutes": 199,
+    "uniqueApiRoutes": 199,
     "duplicateApiRoutes": 0,
     "legacyDuplicateRoutes": 0,
     "staticProjectVerifier": "passed"
   },
   "migration": {
-    "name": null,
-    "kind": "not_required",
+    "name": "20260812233000_add_permanent_deletion_controls",
+    "kind": "additive",
     "prismaValidate": "passed",
     "prismaGenerate": "passed",
     "appliedToExternalDatabase": false,
-    "reason": "The existing preferred-language string and locale-keyed translation rows already support ary without a schema change. Existing unapplied migrations still deploy normally."
+    "reason": "Adds durable object-storage deletion tasks and grants the new Customer/Tasker delete permissions to the canonical Super Admin role without resetting or rewriting operational data."
   },
   "emailDesign": {
     "sharedTypeScriptShell": true,
     "standaloneHtmlTemplates": 0,
-    "generatedCidAssets": 3,
-    "assetsCopiedToProductionBuild": true,
+    "generatedCidAssets": 0,
+    "hostedCloudinaryAssets": 3,
+    "smtpArtworkAttachments": 0,
+    "verificationEmailMimeBytes": 10426,
+    "assetsCopiedToProductionBuild": false,
+    "canonicalNestBuildLayout": "dist/main.js",
+    "runtimeFilesystemDependency": false,
+    "shieldTableCentered": true,
+    "footerUsesHostedBackgroundImage": true,
+    "flatFooterBackgroundRemoved": true,
+    "smtpRecipientAcceptanceRequired": true,
+    "smtpTimeoutsConfigurable": true,
     "canonicalLogoUrl": "https://latache-web.vercel.app/images/logo-full.svg",
     "coveredFlows": [
       "verification_otp",
@@ -39,13 +49,20 @@
     "darijaTransactionalEmail": true,
     "englishFallbackRetained": true
   },
+  "swaggerAndCors": {
+    "apiBaseOriginAutomaticallyAllowed": true,
+    "configuredOriginsNormalized": true,
+    "rejectedCrossOriginRequestsDoNotThrowApplicationErrors": true,
+    "literalSuperAdminRequestExample": true,
+    "markdownCredentialArtifactsAccepted": false
+  },
   "verification": {
     "command": "npm run verify",
     "strictTypeScript": "passed",
     "nestBuild": "passed",
     "eslint": "passed",
-    "jestSuites": 29,
-    "jestTests": 126,
+    "jestSuites": 32,
+    "jestTests": 137,
     "jestResult": "passed",
     "healthE2eCommand": "npm run test:e2e -- --runInBand test/health.e2e-spec.ts",
     "healthE2eTests": 1,
@@ -67,6 +84,19 @@
     "postgresFinancialAuthorityRetained": true,
     "realtimeRoomPrivacyRetained": true,
     "legacyRoutesReintroduced": false
+  },
+  "permanentDeletion": {
+    "customerDeletePermission": "customers.delete",
+    "taskerDeletePermission": "taskers.delete",
+    "adminDeletePermission": "admins.delete",
+    "explicitConfirmationRequired": true,
+    "selfAndSuperAdminProtected": true,
+    "postgresRowLockAndTransactionalRecheck": true,
+    "protectedFinancialHistoryBlocked": true,
+    "durableCloudinaryDeletionOutbox": true,
+    "bullMqRetryJob": "storage.purge-deleted-assets",
+    "staleWorkerLockRecovery": true,
+    "softDeleteWritesRemainingInDeleteFlows": 0
   },
   "security": {
     "envFilePackaged": false,

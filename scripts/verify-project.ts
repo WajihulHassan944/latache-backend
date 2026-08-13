@@ -33,6 +33,7 @@ const requiredFiles = [
   'prisma/migrations/20260812143000_add_tasker_earning_clearance_cash_accounting/migration.sql',
   'prisma/migrations/20260812190000_add_multilingual_architecture/migration.sql',
   'prisma/migrations/20260812223000_add_performance_indexes/migration.sql',
+  'prisma/migrations/20260812233000_add_permanent_deletion_controls/migration.sql',
   'src/infrastructure/redis/redis.service.ts',
   'src/infrastructure/redis/app-cache.service.ts',
   'src/infrastructure/jobs/performance-jobs.service.ts',
@@ -82,11 +83,11 @@ const requiredFiles = [
   'src/modules/tasker-finance/tasker-finance.service.ts',
   'src/modules/tasker-finance/tasker-earnings.worker.ts',
   'src/modules/localization/locale.service.ts',
+  'src/common/utils/cors.util.ts',
   'src/modules/notifications/notification-template.service.ts',
   'src/modules/mail/email-layout.ts',
-  'src/modules/mail/assets/latache-email-header.png',
-  'src/modules/mail/assets/latache-security-shield.png',
-  'src/modules/mail/assets/latache-email-footer.png',
+  'src/modules/account-deletion/account-deletion.service.ts',
+  'src/modules/account-deletion/object-storage-deletion.service.ts',
   'docs/auth-module.md',
   'docs/admin-dashboard.md',
   'docs/elite-tasker-program.md',
@@ -101,16 +102,30 @@ const requiredFiles = [
   'docs/multilingual-architecture.md',
   'docs/performance-architecture.md',
   'docs/email-design-and-darija.md',
+  'docs/permanent-deletion.md',
 ];
 for (const file of requiredFiles) requireFile(file);
 
 const packageJson = JSON.parse(read('package.json')) as {
   version?: string;
+  scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
-if (packageJson.version !== '3.17.0')
-  failures.push(`Expected package version 3.17.0, received ${packageJson.version ?? '<missing>'}`);
+if (packageJson.version !== '3.18.0')
+  failures.push(`Expected package version 3.18.0, received ${packageJson.version ?? '<missing>'}`);
+if (!packageJson.scripts?.build?.includes('npm run clean')) {
+  failures.push('Production build must remove stale dist output before compiling');
+}
+const buildConfig = read('tsconfig.build.json');
+for (const marker of [
+  '"rootDir": "./src"',
+  '"tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"',
+  '"include": ["src/**/*.ts"]',
+]) {
+  if (!buildConfig.includes(marker))
+    failures.push(`Canonical Nest build-layout marker missing: ${marker}`);
+}
 const dependencies: Record<string, string> = {
   ...(packageJson.dependencies ?? {}),
   ...(packageJson.devDependencies ?? {}),
@@ -194,6 +209,7 @@ for (const marker of [
   'model EliteTierTranslation {',
   'model EliteBenefitTranslation {',
   'model EliteBadgeTranslation {',
+  'model ObjectStorageDeletionTask {',
   'preferredLanguage',
   'templateKey',
   'templateParams',
@@ -273,12 +289,14 @@ for (const expected of [
   'GET /api/admin/customers/payments',
   'GET /api/admin/customers/reports',
   'PATCH /api/admin/customers/:id/status',
+  'DELETE /api/admin/customers/:id',
   'GET /api/admin/taskers',
   'GET /api/admin/taskers/pending-verification',
   'GET /api/admin/taskers/performance',
   'GET /api/admin/taskers/earnings',
   'POST /api/admin/taskers/:id/verification',
   'PATCH /api/admin/taskers/:id/status',
+  'DELETE /api/admin/taskers/:id',
   'GET /api/admin/bookings',
   'GET /api/admin/bookings/:id',
   'POST /api/admin/bookings/:id/actions',
@@ -408,27 +426,46 @@ for (const marker of [
   "app.setGlobalPrefix('api')",
   "startsWith('/api/payments/webhooks/stripe')",
   "SwaggerModule.setup('api/docs'",
-  ".setVersion('3.17.0')",
+  ".setVersion('3.18.0')",
   'RealtimeIoAdapter',
   'connectToRedis',
   'compression',
+  'buildAllowedOrigins',
+  'normalizeHttpOrigin',
 ]) {
   if (!main.includes(marker)) failures.push(`Bootstrap marker missing: ${marker}`);
+}
+if (main.includes("new Error('Origin is not allowed by CORS')")) {
+  failures.push('CORS rejection must not abort same-origin Swagger/API requests');
+}
+
+const corsUtility = read('src/common/utils/cors.util.ts');
+for (const marker of ['url.origin', "url.protocol !== 'http:'", 'apiBaseUrl']) {
+  if (!corsUtility.includes(marker)) failures.push(`CORS utility marker missing: ${marker}`);
 }
 
 const emailLayout = read('src/modules/mail/email-layout.ts');
 const mailService = read('src/modules/mail/mail.service.ts');
 for (const marker of [
   'https://latache-web.vercel.app/images/logo-full.svg',
+  'https://res.cloudinary.com/daflot6fo/image/upload/v1786533881/latache-email-header_hcqhvb.png',
+  'https://res.cloudinary.com/daflot6fo/image/upload/v1786533881/latache-security-shield_oioyd1.png',
+  'https://res.cloudinary.com/daflot6fo/image/upload/v1786533881/latache-email-footer_abofsj.png',
   'data-latache-email-shell="v1"',
-  'latache-email-header@latache',
-  'latache-security-shield@latache',
-  'latache-email-footer@latache',
+  'align="center" alt=""',
+  'background="${LATACHE_EMAIL_ASSETS.footer.url}"',
 ]) {
   if (!emailLayout.includes(marker)) failures.push(`Shared email design marker missing: ${marker}`);
 }
-if (!mailService.includes('latacheEmailAttachments()')) {
-  failures.push('All transactional email must attach the generated design assets');
+if (emailLayout.includes('background:#efc58e')) {
+  failures.push('Email footer must use the hosted footer image as its background, not a flat fill');
+}
+for (const marker of [
+  "event: 'smtp_delivery_accepted'",
+  'SMTP_RECIPIENT_NOT_ACCEPTED',
+  'recipientDomain',
+]) {
+  if (!mailService.includes(marker)) failures.push(`SMTP delivery marker missing: ${marker}`);
 }
 if (!read('src/config/configuration.ts').includes("['en', 'ar', 'ary']")) {
   failures.push('English, Arabic, and Darija must be enabled by default');
@@ -494,6 +531,29 @@ for (const marker of [
 ]) {
   if (!taskerFinanceMigration.includes(marker))
     failures.push(`Tasker-finance migration marker missing: ${marker}`);
+}
+
+const permanentDeletionMigration = read(
+  'prisma/migrations/20260812233000_add_permanent_deletion_controls/migration.sql',
+);
+for (const marker of [
+  'CREATE TABLE "ObjectStorageDeletionTasks"',
+  'storage_deletion_provider_public_resource_unique',
+  "'customers.delete'",
+  "'taskers.delete'",
+]) {
+  if (!permanentDeletionMigration.includes(marker))
+    failures.push(`Permanent-deletion migration marker missing: ${marker}`);
+}
+const accountDeletionService = read('src/modules/account-deletion/account-deletion.service.ts');
+for (const marker of [
+  'ACCOUNT_PURGE_BLOCKED',
+  'FOR UPDATE',
+  'account_permanently_deleted',
+  'this.storage.enqueue',
+]) {
+  if (!accountDeletionService.includes(marker))
+    failures.push(`Permanent-deletion safety marker missing: ${marker}`);
 }
 if (/INSERT\s+INTO/i.test(taskerFinanceMigration)) {
   failures.push('Tasker-finance migration must not seed fake operational or financial records');
@@ -841,8 +901,8 @@ for (const marker of [
 
 const serviceCode = read('src/modules/services/services.service.ts');
 for (const marker of [
-  'service_category_deactivated',
-  'service_option_deactivated',
+  'service_category_permanently_deleted',
+  'service_option_permanently_deleted',
   'isActive: true',
 ]) {
   if (!serviceCode.includes(marker))

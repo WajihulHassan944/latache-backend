@@ -123,11 +123,8 @@ export class RbacRepository {
     });
   }
 
-  softDeleteRole(id: string): Promise<RbacRole> {
-    return this.prisma.rbacRole.update({
-      where: { id },
-      data: { isActive: false, deletedAt: new Date() },
-    });
+  deleteRole(id: string, transaction?: Prisma.TransactionClient): Promise<RbacRole> {
+    return (transaction ?? this.prisma).rbacRole.delete({ where: { id } });
   }
 
   async listAdmins(
@@ -187,20 +184,6 @@ export class RbacRepository {
       where: { id },
       data,
       include: { rbacRole: true },
-    });
-  }
-
-  async softDeleteAdmin(id: number): Promise<User> {
-    return this.prisma.$transaction(async (transaction: Prisma.TransactionClient) => {
-      const user = await transaction.user.update({
-        where: { id },
-        data: { accountStatus: AccountStatus.Deactivated, deletedAt: new Date() },
-      });
-      await transaction.refreshToken.updateMany({
-        where: { userId: id, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      return user;
     });
   }
 

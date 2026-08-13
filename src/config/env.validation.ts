@@ -114,6 +114,30 @@ export const validateEnvironment = (environment: Environment): Environment => {
   validateInteger(errors, 'SMTP_PORT', environment.SMTP_PORT, 587, 1, 65_535);
   validateInteger(
     errors,
+    'SMTP_CONNECTION_TIMEOUT_MS',
+    environment.SMTP_CONNECTION_TIMEOUT_MS,
+    10_000,
+    1_000,
+    120_000,
+  );
+  validateInteger(
+    errors,
+    'SMTP_GREETING_TIMEOUT_MS',
+    environment.SMTP_GREETING_TIMEOUT_MS,
+    10_000,
+    1_000,
+    120_000,
+  );
+  validateInteger(
+    errors,
+    'SMTP_SOCKET_TIMEOUT_MS',
+    environment.SMTP_SOCKET_TIMEOUT_MS,
+    30_000,
+    1_000,
+    300_000,
+  );
+  validateInteger(
+    errors,
     'DB_TRANSACTION_MAX_WAIT_MS',
     environment.DB_TRANSACTION_MAX_WAIT_MS,
     15_000,
@@ -259,6 +283,38 @@ export const validateEnvironment = (environment: Environment): Environment => {
     10 * 1024 * 1024,
     1024,
     100 * 1024 * 1024,
+  );
+  validateInteger(
+    errors,
+    'OBJECT_STORAGE_PURGE_BATCH_SIZE',
+    environment.OBJECT_STORAGE_PURGE_BATCH_SIZE,
+    100,
+    1,
+    1_000,
+  );
+  validateInteger(
+    errors,
+    'OBJECT_STORAGE_PURGE_RETRY_BASE_SECONDS',
+    environment.OBJECT_STORAGE_PURGE_RETRY_BASE_SECONDS,
+    60,
+    1,
+    86_400,
+  );
+  validateInteger(
+    errors,
+    'OBJECT_STORAGE_PURGE_WORKER_INTERVAL_MS',
+    environment.OBJECT_STORAGE_PURGE_WORKER_INTERVAL_MS,
+    60_000,
+    5_000,
+    86_400_000,
+  );
+  validateInteger(
+    errors,
+    'OBJECT_STORAGE_PURGE_LOCK_TIMEOUT_MS',
+    environment.OBJECT_STORAGE_PURGE_LOCK_TIMEOUT_MS,
+    300_000,
+    30_000,
+    86_400_000,
   );
   validateInteger(
     errors,

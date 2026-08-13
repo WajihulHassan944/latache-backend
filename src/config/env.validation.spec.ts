@@ -29,6 +29,16 @@ describe('validateEnvironment', () => {
     ).toThrow(/PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES/);
   });
 
+  it('rejects unsafe SMTP timeout values', () => {
+    expect(() =>
+      validateEnvironment({
+        ...valid(),
+        SMTP_CONNECTION_TIMEOUT_MS: '0',
+        SMTP_SOCKET_TIMEOUT_MS: '999999',
+      }),
+    ).toThrow(/SMTP_CONNECTION_TIMEOUT_MS/);
+  });
+
   it('requires independent long secrets in production', () => {
     expect(() =>
       validateEnvironment({

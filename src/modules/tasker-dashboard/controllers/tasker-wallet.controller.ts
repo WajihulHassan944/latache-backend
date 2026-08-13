@@ -168,8 +168,12 @@ export class TaskerWalletController {
   }
 
   @Delete('payout-methods/:id')
-  @ApiOperation({ summary: 'Soft-delete a payout method when no active withdrawal references it' })
-  @ApiConflictResponse({ description: 'An active withdrawal still references this method.' })
+  @ApiOperation({
+    summary: 'Permanently delete a payout method with no withdrawal history',
+    description:
+      'Encrypted payout details are physically removed. Any historical withdrawal reference blocks deletion so financial records remain consistent.',
+  })
+  @ApiConflictResponse({ description: 'Withdrawal history still references this method.' })
   deletePayoutMethod(
     @CurrentUser() user: User,
     @Param() params: StringIdParamDto,

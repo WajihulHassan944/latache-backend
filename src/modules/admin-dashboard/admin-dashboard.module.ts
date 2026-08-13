@@ -17,9 +17,17 @@ import { AdminBookingsService } from './services/admin-bookings.service';
 import { AdminDisputesService } from './services/admin-disputes.service';
 import { AdminReviewsService } from './services/admin-reviews.service';
 import { AdminAnalyticsCacheInterceptor } from './admin-analytics-cache.interceptor';
+import { AccountDeletionModule } from '../account-deletion/account-deletion.module';
 
 @Module({
-  imports: [AuthModule, NotificationsModule, AdminAuditModule, PaymentsModule, RealtimeModule],
+  imports: [
+    AuthModule,
+    NotificationsModule,
+    AdminAuditModule,
+    PaymentsModule,
+    RealtimeModule,
+    AccountDeletionModule,
+  ],
   controllers: [
     AdminAnalyticsController,
     AdminCustomersController,

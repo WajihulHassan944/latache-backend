@@ -18,6 +18,7 @@ import type {
   TaskerVerificationActionDto,
 } from '../dto';
 import { fullName, money, pagination } from '../admin-dashboard.utils';
+import { AccountDeletionService } from '../../account-deletion/account-deletion.service';
 
 @Injectable()
 export class AdminTaskersService {
@@ -26,7 +27,12 @@ export class AdminTaskersService {
     private readonly sessions: AuthSessionsRepository,
     private readonly notifications: NotificationsService,
     private readonly audit: AdminAuditService,
+    private readonly accountDeletion: AccountDeletionService,
   ) {}
+
+  permanentlyDelete(actor: User, taskerId: number, reason: string) {
+    return this.accountDeletion.permanentlyDelete(actor, taskerId, UserRole.Tasker, reason);
+  }
 
   async list(query: ListAdminTaskersDto) {
     return this.listInternal(query, false);

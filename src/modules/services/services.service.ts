@@ -15,6 +15,7 @@ import { LocaleService } from '../localization/locale.service';
 import type { TranslationDto } from '../localization/translation.dto';
 import { ConfigService } from '@nestjs/config';
 import { AppCacheService, CacheNamespace } from '../../infrastructure/redis/app-cache.service';
+import { ObjectStorageDeletionService } from '../account-deletion/object-storage-deletion.service';
 
 export interface ServiceResponse {
   id: string;
@@ -43,6 +44,7 @@ export class ServicesService {
     private readonly locales: LocaleService,
     private readonly cache: AppCacheService,
     private readonly config: ConfigService,
+    private readonly storage: ObjectStorageDeletionService,
   ) {}
 
   async list(query: ListServicesQueryDto, locale: string) {
@@ -245,30 +247,35 @@ export class ServicesService {
     return this.serializeAdmin(updated);
   }
 
-  async deactivate(actor: User, serviceId: number): Promise<{ deactivated: true; id: string }> {
+  async delete(actor: User, serviceId: number): Promise<{ deleted: true; id: string }> {
     const service = await this.prisma.service.findUnique({ where: { id: serviceId } });
     if (!service) throw new NotFoundException('Service not found');
-    if (!service.isActive) return { deactivated: true, id: String(serviceId) };
-    await this.prisma.$transaction(async (transaction) => {
-      await transaction.service.update({
-        where: { id: serviceId },
-        data: { isActive: false },
+    const bookings = await this.prisma.booking.count({ where: { serviceId } });
+    if (bookings > 0) {
+      throw new ConflictException({
+        code: 'SERVICE_PURGE_BLOCKED',
+        message: 'This service is referenced by booking history and cannot be permanently deleted.',
+        bookingCount: bookings,
       });
+    }
+    const assets = this.storage.extractManagedAssets(service.icon);
+    await this.prisma.$transaction(async (transaction) => {
+      await this.storage.enqueue(transaction, assets, 'service', serviceId, actor.id);
+      await transaction.service.delete({ where: { id: serviceId } });
       await this.audit.record(
         {
           actorId: actor.id,
-          action: 'service_category_deactivated',
+          action: 'service_category_permanently_deleted',
           entityType: 'service',
           entityId: serviceId,
-          metadata: {
-            note: 'Existing bookings are retained; the category is removed only from future discovery/booking flows.',
-          },
+          metadata: { slug: service.slug, irreversible: true, assetCount: assets.length },
         },
         transaction,
       );
     });
+    await this.storage.attemptImmediate('service', serviceId, assets.length);
     await this.invalidateServiceCaches();
-    return { deactivated: true, id: String(serviceId) };
+    return { deleted: true, id: String(serviceId) };
   }
 
   async listOptions(serviceId: number, locale: string) {
@@ -393,34 +400,39 @@ export class ServicesService {
     return result;
   }
 
-  async deactivateOption(
+  async deleteOption(
     actor: User,
     serviceId: number,
     optionId: number,
-  ): Promise<{ deactivated: true; id: string }> {
+  ): Promise<{ deleted: true; id: string }> {
     const option = await this.prisma.serviceOption.findFirst({
       where: { id: optionId, serviceId },
     });
     if (!option) throw new NotFoundException('Service option not found');
-    if (!option.isActive) return { deactivated: true, id: String(optionId) };
-    await this.prisma.$transaction(async (transaction) => {
-      await transaction.serviceOption.update({
-        where: { id: optionId },
-        data: { isActive: false },
+    const bookings = await this.prisma.booking.count({ where: { serviceOptionId: optionId } });
+    if (bookings > 0) {
+      throw new ConflictException({
+        code: 'SERVICE_OPTION_PURGE_BLOCKED',
+        message:
+          'This service option is referenced by booking history and cannot be permanently deleted.',
+        bookingCount: bookings,
       });
+    }
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.serviceOption.delete({ where: { id: optionId } });
       await this.audit.record(
         {
           actorId: actor.id,
-          action: 'service_option_deactivated',
+          action: 'service_option_permanently_deleted',
           entityType: 'service_option',
           entityId: optionId,
-          metadata: { serviceId },
+          metadata: { serviceId, slug: option.slug, irreversible: true },
         },
         transaction,
       );
     });
     await this.invalidateServiceCaches();
-    return { deactivated: true, id: String(optionId) };
+    return { deleted: true, id: String(optionId) };
   }
 
   private async invalidateServiceCaches(): Promise<void> {

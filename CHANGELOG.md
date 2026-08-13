@@ -1,3 +1,34 @@
+# v3.18.0 — Permanent deletion controls and email layout correction
+
+- Added explicit RBAC permissions and irreversible Customer/Tasker/Admin purge APIs with confirmation phrases, audit reasons, row locking, blocker rechecks, and stable `ACCOUNT_PURGE_BLOCKED` responses.
+- Added durable PostgreSQL-backed Cloudinary deletion tasks plus immediate cleanup and a retry-safe BullMQ worker job.
+- Converted custom-role, unused Service/Service Option, Elite badge, payout-method, and Tasker-skill DELETE flows from soft deactivation to permanent deletion with dependency guards.
+- Kept suspension/ban/deactivation as account lifecycle state rather than falsely representing it as deletion.
+- Centered the shared email shield using email-client-safe table alignment and made the hosted dunes artwork the direct background of the whole footer.
+- Added migration `20260812233000_add_permanent_deletion_controls`, Swagger documentation, tests and static regressions.
+
+# v3.17.2 — Hosted email artwork and verified SMTP acceptance
+
+- Replaced multi-megabyte inline CID artwork with the supplied Cloudinary header, shield, and footer URLs while retaining the hosted Latache logo and shared dynamic email shell.
+- Removed local mail artwork and Nest asset-copy configuration, eliminating email asset paths and reducing each SMTP message from several megabytes to a small HTML/text payload.
+- Added strict inspection of Nodemailer's accepted-recipient result; the API no longer reports successful delivery when SMTP did not accept the requested recipient.
+- Added structured, non-secret SMTP acceptance diagnostics with recipient domain, message ID, and SMTP response code.
+- Added configurable connection, greeting, and socket timeouts so SMTP stalls fail predictably instead of holding registration for about 45 seconds.
+- Updated Neon examples to `sslmode=verify-full`, preserving certificate and hostname verification while removing the current `pg-connection-string` compatibility warning.
+- No API, Prisma migration, financial, realtime, RBAC, or localization behavior changed.
+
+# v3.17.1 — Portable email assets and Swagger login connectivity
+
+- Fixed transactional email CID assets failing with `ENOENT` when compiled JavaScript is emitted under `dist/src/modules/mail` but Nest copies assets to `dist/modules/mail/assets`.
+- Restricted the Nest production TypeScript build root to `src`, restoring the canonical `dist/main.js` and colocated `dist/modules/...` layout expected by package scripts and Docker.
+- Made `npm run build` clear only the generated `dist` directory first, preventing stale `dist/src` JavaScript from surviving an upgrade and being started accidentally.
+- Moved TypeScript incremental build metadata into `dist`, ensuring a clean build cannot incorrectly skip JavaScript emission after `dist` is removed.
+- Added ordered runtime resolution for colocated build assets, `dist/modules`, `dist/src/modules`, and source-mode assets on Windows/Linux.
+- Added regression coverage for the exact `dist/src` versus `dist/modules` layout and local Windows project layout.
+- Normalized configured HTTP origins, included the API/Swagger origin automatically, and made rejected cross-origin requests omit CORS authorization without throwing an application error.
+- Locked the Swagger Super Admin example to literal JSON credentials so copied documentation cannot introduce Markdown `mailto:` links or backslash escapes.
+- No API, database, financial, realtime, RBAC, or localization behavior changed.
+
 # v3.17.0 — Premium shared email design and Moroccan Darija
 
 - Rebuilt every transactional email on one responsive, Outlook-compatible TypeScript layout matching the supplied premium copper/cream desert design.

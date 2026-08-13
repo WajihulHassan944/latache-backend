@@ -1,11 +1,25 @@
 # Latache Backend — NestJS, Prisma and Nodemailer
 
-Latache backend implemented with NestJS 11, strict TypeScript, Prisma/PostgreSQL, Nodemailer SMTP, Cloudinary uploads, and database-backed RBAC. Version 3.17 adds one premium generated-asset email shell plus Moroccan Darija (`ary`) while preserving v3.16 Redis/queue/realtime scaling, v3.15 translation rows, and v3.14 provider-settled Tasker earning clearance/cash accounting.
+Latache backend implemented with NestJS 11, strict TypeScript, Prisma/PostgreSQL, Nodemailer SMTP, Cloudinary uploads, and database-backed RBAC. Version 3.17 adds one premium email shell plus Moroccan Darija (`ary`) while preserving v3.16 Redis/queue/realtime scaling, v3.15 translation rows, and v3.14 provider-settled Tasker earning clearance/cash accounting.
+
+### v3.18.0 permanent deletion and email layout update
+
+Authorized administrators now have explicit irreversible Customer/Tasker/Admin deletion controls. Protected booking, provider, ledger, payout, dispute, review and shared conversation history returns a detailed `409 ACCOUNT_PURGE_BLOCKED` instead of being silently destroyed. Eligible database rows are hard-deleted and Latache-managed Cloudinary assets use a durable PostgreSQL deletion outbox with BullMQ retries. See [Permanent deletion](docs/permanent-deletion.md).
+
+The shared email shield now uses email-client-safe centering, and the hosted dunes image is the direct footer background behind social/copyright content with no solid footer fill.
+
+### v3.17.2 email delivery hotfix
+
+The shared email design now references the supplied Cloudinary header, shield, and footer assets instead of attaching roughly 4.6 MB of source PNGs to every SMTP message. Registration no longer spends tens of seconds uploading decorative artwork. Nodemailer results are checked to ensure the requested recipient was actually accepted, and a safe `smtp_delivery_accepted` log records only the recipient domain, message ID, and response code. Configurable SMTP timeouts bound provider/network stalls.
+
+### v3.17.1 email asset and Swagger connectivity hotfix
+
+The production TypeScript build is rooted at `src`, so Nest emits the canonical `dist/main.js` expected by the existing package/Docker start commands. `npm run build` first removes only the generated `dist` directory so stale `dist/src` output cannot survive an upgrade. Version 3.17.2 subsequently removed the filesystem mail-asset dependency entirely by using hosted artwork. CORS origins are normalized, the `APP_BASE_URL` origin is allowed for Swagger, and the seeded Super Admin example is documented as literal JSON without Markdown escaping.
 
 ## v3.17 email design and Darija
 
 - Every current transactional email uses one responsive TypeScript layout matching the supplied copper/cream desert design; only the center content changes per mail.
-- Generated header, shield, and footer PNGs are packaged with the application and sent as CID attachments. The canonical header logo uses `https://latache-web.vercel.app/images/logo-full.svg`.
+- Header, shield, and footer artwork uses the supplied Cloudinary URLs, so SMTP sends no heavyweight image attachments. The canonical header logo uses `https://latache-web.vercel.app/images/logo-full.svg`.
 - Verification OTP, password-reset OTP, and administrator welcome mail have escaped dynamic HTML, plain-text alternatives, and localized subjects.
 - Moroccan Darija uses `ary`; `ary-MA` resolves to it. User preference, `Accept-Language`, Admin translation management, notifications, and email all support it.
 - English remains the default/canonical fallback. No Prisma migration is required because locale persistence was already extensible.
@@ -151,6 +165,8 @@ Endpoints:
 
 Swagger is enabled when `SWAGGER_ENABLED=true`.
 
+Swagger requests use the API origin declared by `APP_BASE_URL`, which the server permits automatically. Add only separate browser frontend origins to `CORS_ORIGINS` (comma-separated). Login JSON must contain raw values; Markdown `mailto:` notation and backslash escapes copied from formatted chat text are not credentials.
+
 ## Required environment configuration
 
 ```env
@@ -171,6 +187,9 @@ SMTP_SECURE=false
 SMTP_USER=
 SMTP_PASSWORD=
 SMTP_FROM=Latache <no-reply@latache.local>
+SMTP_CONNECTION_TIMEOUT_MS=10000
+SMTP_GREETING_TIMEOUT_MS=10000
+SMTP_SOCKET_TIMEOUT_MS=30000
 
 OTP_EXPIRES_IN_MINUTES=5
 PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES=15
@@ -196,14 +215,14 @@ Use `SMTP_SECURE=true` for implicit TLS on port 465. Use `SMTP_SECURE=false` for
 Keep Neon credentials only in `.env` or the deployment secret manager:
 
 ```env
-DATABASE_URL=postgresql://neondb_owner:YOUR_PASSWORD@YOUR_NEON_HOST/neondb?sslmode=require
+DATABASE_URL=postgresql://neondb_owner:YOUR_PASSWORD@YOUR_NEON_HOST/neondb?sslmode=verify-full
 ```
 
 For a pooled runtime connection, set the direct migration connection separately:
 
 ```env
-DATABASE_URL=postgresql://USER:PASSWORD@YOUR_POOLER_HOST/neondb?sslmode=require
-DIRECT_URL=postgresql://USER:PASSWORD@YOUR_DIRECT_HOST/neondb?sslmode=require
+DATABASE_URL=postgresql://USER:PASSWORD@YOUR_POOLER_HOST/neondb?sslmode=verify-full
+DIRECT_URL=postgresql://USER:PASSWORD@YOUR_DIRECT_HOST/neondb?sslmode=verify-full
 ```
 
 `prisma.config.ts` prefers `DIRECT_URL` for CLI migrations and otherwise uses `DATABASE_URL`.
@@ -214,6 +233,9 @@ DIRECT_URL=postgresql://USER:PASSWORD@YOUR_DIRECT_HOST/neondb?sslmode=require
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
 SMTP_SECURE=true
+SMTP_CONNECTION_TIMEOUT_MS=10000
+SMTP_GREETING_TIMEOUT_MS=10000
+SMTP_SOCKET_TIMEOUT_MS=30000
 SMTP_USER=your-account@gmail.com
 SMTP_PASSWORD=your-google-app-password
 SMTP_FROM=Latache <your-account@gmail.com>

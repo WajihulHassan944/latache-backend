@@ -28,7 +28,8 @@ export const loginRequestExamples = {
   },
   superAdmin: {
     summary: 'Seeded super-administrator login',
-    description: 'Development seed only. Override this password in staging and production.',
+    description:
+      'Development seed only. Send the displayed values as literal JSON (without Markdown links or backslash escapes) and override the password in staging and production.',
     value: {
       email: 'latache.superadmin@yopmail.com',
       password: 'Admin@12345',

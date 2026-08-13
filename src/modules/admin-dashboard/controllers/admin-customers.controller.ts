@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -11,6 +12,7 @@ import {
 import {
   ApiBearerAuth,
   ApiForbiddenResponse,
+  ApiConflictResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -31,6 +33,7 @@ import {
   ListAdminCustomersDto,
 } from '../dto';
 import { AdminCustomersService } from '../services/admin-customers.service';
+import { PermanentDeleteDto } from '../../account-deletion/dto/permanent-delete.dto';
 
 @ApiTags('21 Admin Dashboard - Customers')
 @ApiBearerAuth('bearer')
@@ -73,6 +76,25 @@ export class AdminCustomersController {
   @ApiNotFoundResponse({ description: 'Customer not found.' })
   details(@Param('id', ParseIntPipe) id: number) {
     return this.customers.details(id);
+  }
+
+  @Delete(':id')
+  @Permissions('customers.delete')
+  @ApiOperation({
+    summary: 'Permanently delete an eligible customer and managed assets',
+    description:
+      'Irreversible hard deletion. Requires the exact confirmation phrase. The operation is rejected when the customer owns protected bookings, provider payments, wallet ledger entries, disputes, reviews, or other immutable history. Cloudinary deletion is durable and retryable.',
+  })
+  @ApiOkResponse({ description: 'Customer and eligible dependent records permanently deleted.' })
+  @ApiConflictResponse({
+    description: 'ACCOUNT_PURGE_BLOCKED with the exact protected-resource counts.',
+  })
+  permanentlyDelete(
+    @CurrentUser() actor: User,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: PermanentDeleteDto,
+  ) {
+    return this.customers.permanentlyDelete(actor, id, dto.reason);
   }
 
   @Get(':id/bookings')

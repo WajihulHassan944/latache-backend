@@ -194,6 +194,18 @@ export default () => {
         10 * 1024 * 1024,
       ),
     },
+    objectStorageDeletion: {
+      batchSize: asPositiveInteger(process.env.OBJECT_STORAGE_PURGE_BATCH_SIZE, 100),
+      retryBaseSeconds: asPositiveInteger(process.env.OBJECT_STORAGE_PURGE_RETRY_BASE_SECONDS, 60),
+      workerIntervalMs: asPositiveInteger(
+        process.env.OBJECT_STORAGE_PURGE_WORKER_INTERVAL_MS,
+        60_000,
+      ),
+      lockTimeoutMs: asPositiveInteger(
+        process.env.OBJECT_STORAGE_PURGE_LOCK_TIMEOUT_MS,
+        5 * 60_000,
+      ),
+    },
     mail: {
       host: process.env.SMTP_HOST,
       port: asPositiveInteger(process.env.SMTP_PORT, 587),
@@ -203,6 +215,9 @@ export default () => {
       from: process.env.SMTP_FROM,
       tlsRejectUnauthorized: asBoolean(process.env.SMTP_TLS_REJECT_UNAUTHORIZED, true),
       verifyOnBootstrap: asBoolean(process.env.SMTP_VERIFY_ON_BOOTSTRAP, false),
+      connectionTimeoutMs: asPositiveInteger(process.env.SMTP_CONNECTION_TIMEOUT_MS, 10_000),
+      greetingTimeoutMs: asPositiveInteger(process.env.SMTP_GREETING_TIMEOUT_MS, 10_000),
+      socketTimeoutMs: asPositiveInteger(process.env.SMTP_SOCKET_TIMEOUT_MS, 30_000),
     },
   };
 };

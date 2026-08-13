@@ -9,6 +9,7 @@ import { AppCacheService } from '../src/infrastructure/redis/app-cache.service';
 import { PerformanceJobsService } from '../src/infrastructure/jobs/performance-jobs.service';
 import { PerformanceMetricsService } from '../src/infrastructure/observability/performance-metrics.service';
 import { RealtimeDispatcherService } from '../src/modules/realtime/realtime-dispatcher.service';
+import { ObjectStorageDeletionService } from '../src/modules/account-deletion/object-storage-deletion.service';
 
 describe('HealthController (e2e)', () => {
   let app: INestApplication;
@@ -66,6 +67,16 @@ describe('HealthController (e2e)', () => {
               key === 'jobs.enabled' ? true : key === 'app.serviceMode' ? 'api' : fallback,
           },
         },
+        {
+          provide: ObjectStorageDeletionService,
+          useValue: {
+            backlog: jest.fn().mockResolvedValue({
+              pending: 0,
+              failed: 0,
+              oldestPendingAt: null,
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -84,5 +95,6 @@ describe('HealthController (e2e)', () => {
     expect(response.body.redis.status).toBe('up');
     expect(response.body.queue.workers).toBe(1);
     expect(response.body.realtimeOutbox.pending).toBe(0);
+    expect(response.body.objectStorageDeletion.pending).toBe(0);
   });
 });

@@ -74,20 +74,20 @@ export class TaskerProfileController {
   }
 
   @Delete('skills/:id')
-  @ApiOperation({ summary: 'Deactivate a tasker skill' })
+  @ApiOperation({ summary: 'Permanently remove a Tasker skill assignment' })
   @ApiConflictResponse({ description: 'Active bookings still depend on this skill.' })
-  deactivateSkill(
+  deleteSkill(
     @CurrentUser() user: User,
     @Param() params: NumericIdParamDto,
-  ): Promise<{ deactivated: true; serviceId: string }> {
-    return this.profile.deactivateSkill(user.id, params.id);
+  ): Promise<{ deleted: true; serviceId: string }> {
+    return this.profile.deleteSkill(user.id, params.id);
   }
 
   @Delete()
   @ApiOperation({
     summary: 'Deactivate the tasker account safely',
     description:
-      'Blocks deactivation while active tasks, wallet balances, or pending withdrawals exist. Revokes all active sessions on success.',
+      'This is an account lifecycle action, not deletion: it changes accountStatus and revokes sessions without setting deletedAt or erasing financial history. Administrators use the explicit permanent-delete control for eligible accounts.',
   })
   @ApiOkResponse({ description: 'Tasker account deactivated.' })
   @ApiConflictResponse({ description: 'Operational or financial obligations remain.' })

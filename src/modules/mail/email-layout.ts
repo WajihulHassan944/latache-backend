@@ -1,36 +1,18 @@
-import { resolve } from 'node:path';
 import { escapeHtml } from '../../common/utils/html.util';
 
 export const LATACHE_EMAIL_LOGO_URL = 'https://latache-web.vercel.app/images/logo-full.svg';
 
 export const LATACHE_EMAIL_ASSETS = {
   header: {
-    filename: 'latache-email-header.png',
-    cid: 'latache-email-header@latache',
+    url: 'https://res.cloudinary.com/daflot6fo/image/upload/v1786533881/latache-email-header_hcqhvb.png',
   },
   shield: {
-    filename: 'latache-security-shield.png',
-    cid: 'latache-security-shield@latache',
+    url: 'https://res.cloudinary.com/daflot6fo/image/upload/v1786533881/latache-security-shield_oioyd1.png',
   },
   footer: {
-    filename: 'latache-email-footer.png',
-    cid: 'latache-email-footer@latache',
+    url: 'https://res.cloudinary.com/daflot6fo/image/upload/v1786533881/latache-email-footer_abofsj.png',
   },
 } as const;
-
-export interface LatacheEmailAttachment {
-  filename: string;
-  path: string;
-  cid: string;
-  contentDisposition: 'inline';
-}
-
-export const latacheEmailAttachments = (): LatacheEmailAttachment[] =>
-  Object.values(LATACHE_EMAIL_ASSETS).map((asset) => ({
-    ...asset,
-    path: resolve(__dirname, 'assets', asset.filename),
-    contentDisposition: 'inline',
-  }));
 
 export type EmailLocale = 'en' | 'ar' | 'ary';
 
@@ -142,7 +124,7 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
       <td align="center" style="padding:20px 10px">
         <table data-latache-email-shell="v1" role="presentation" class="email-frame" width="720" cellspacing="0" cellpadding="0" border="0" style="width:720px;max-width:720px;background:#fffdf8;border-radius:20px;overflow:hidden;box-shadow:0 12px 34px rgba(74,35,16,.12)">
           <tr>
-            <td background="cid:${LATACHE_EMAIL_ASSETS.header.cid}" valign="top" style="height:300px;background-color:#6a2a13;background-image:url('cid:${LATACHE_EMAIL_ASSETS.header.cid}');background-position:center;background-size:cover;border-radius:20px 20px 0 0">
+            <td background="${LATACHE_EMAIL_ASSETS.header.url}" valign="top" style="height:300px;background-color:#6a2a13;background-image:url('${LATACHE_EMAIL_ASSETS.header.url}');background-position:center;background-size:cover;border-radius:20px 20px 0 0">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td valign="top" style="padding:30px 28px;text-align:left;direction:ltr">
@@ -157,7 +139,13 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
           </tr>
           <tr>
             <td class="email-pad" style="padding:0 56px 14px;background:#fffdf8;text-align:center">
-              <img src="cid:${LATACHE_EMAIL_ASSETS.shield.cid}" width="190" alt="" style="display:block;width:190px;max-width:52%;height:auto;margin:-34px auto 2px;border:0">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%">
+                <tr>
+                  <td align="center" style="text-align:center;direction:ltr">
+                    <img src="${LATACHE_EMAIL_ASSETS.shield.url}" width="190" align="center" alt="" style="display:block;width:190px;max-width:52%;height:auto;margin:-34px auto 2px;border:0">
+                  </td>
+                </tr>
+              </table>
               ${params.content}
             </td>
           </tr>
@@ -200,8 +188,7 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
             </td>
           </tr>
           <tr>
-            <td style="background:#efc58e;text-align:center">
-              <img src="cid:${LATACHE_EMAIL_ASSETS.footer.cid}" width="720" alt="" style="display:block;width:100%;height:auto;border:0">
+            <td background="${LATACHE_EMAIL_ASSETS.footer.url}" valign="bottom" style="background-image:url('${LATACHE_EMAIL_ASSETS.footer.url}');background-position:center bottom;background-repeat:no-repeat;background-size:cover;text-align:center;padding-top:166px">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td style="padding:18px 24px 10px;text-align:center;direction:ltr">
@@ -212,7 +199,7 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding:12px 28px 24px;border-top:1px solid rgba(106,42,19,.35);color:#6a2a13;font-size:12px;line-height:20px;text-align:center">
+                  <td style="padding:12px 28px 24px;border-top:1px solid rgba(106,42,19,.35);color:#6a2a13;font-size:12px;line-height:20px;text-align:center;text-shadow:0 1px 0 rgba(255,244,221,.45)">
                     &copy; ${year} Latache. ${copy.rights}<br><em>${copy.footerTagline}</em>
                   </td>
                 </tr>

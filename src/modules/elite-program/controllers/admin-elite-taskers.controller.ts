@@ -140,14 +140,15 @@ export class AdminEliteTaskersController {
   @Delete('program/badges/:badgeId')
   @Permissions('elite.manage')
   @ApiOperation({
-    summary: 'Deactivate an Elite badge definition',
-    description: 'Historical tasker badge assignments are retained rather than hard-deleted.',
+    summary: 'Permanently delete an Elite badge definition',
+    description:
+      'Irreversibly deletes the badge, translations, current assignments and its managed Cloudinary asset. Requires elite.manage.',
   })
-  deactivateBadge(
+  deleteBadge(
     @CurrentUser() actor: User,
     @Param('badgeId') badgeId: string,
   ): Promise<Record<string, unknown>> {
-    return this.elite.deactivateBadge(actor, badgeId);
+    return this.elite.deleteBadge(actor, badgeId);
   }
 
   @Get('performance')

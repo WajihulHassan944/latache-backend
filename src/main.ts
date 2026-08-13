@@ -9,6 +9,7 @@ import compression from 'compression';
 import { AppModule } from './app.module';
 import { RealtimeIoAdapter } from './modules/realtime/realtime-io.adapter';
 import { RedisService } from './infrastructure/redis/redis.service';
+import { buildAllowedOrigins, normalizeHttpOrigin } from './common/utils/cors.util';
 
 interface ValidationErrorNode {
   property: string;
@@ -91,15 +92,19 @@ async function bootstrap(): Promise<void> {
   express.set('trust proxy', config.get<boolean>('app.trustProxy', false));
   express.set('etag', 'weak');
 
-  const allowedOrigins = new Set(config.get<string[]>('app.corsOrigins', []));
+  const allowedOrigins = buildAllowedOrigins(
+    config.get<string[]>('app.corsOrigins', []),
+    config.get<string>('app.baseUrl'),
+  );
   const realtimeAdapter = new RealtimeIoAdapter(app, allowedOrigins, app.get(RedisService));
   await realtimeAdapter.connectToRedis();
   app.useWebSocketAdapter(realtimeAdapter);
   app.enableCors({
     credentials: true,
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.has(origin)) return callback(null, true);
-      return callback(new Error('Origin is not allowed by CORS'), false);
+      if (!origin) return callback(null, true);
+      const normalizedOrigin = normalizeHttpOrigin(origin);
+      return callback(null, Boolean(normalizedOrigin && allowedOrigins.has(normalizedOrigin)));
     },
   });
 
@@ -127,7 +132,7 @@ async function bootstrap(): Promise<void> {
         .setDescription(
           'Production API for Latache customers, taskers and administrators. Dynamic catalogue content supports English (en), Arabic (ar), and Moroccan Darija (ary) through a saved user preference or Accept-Language with English/canonical fallback. UI labels and machine-readable domain codes remain frontend-owned and language-neutral. Shared role-aware APIs preserve provider-backed finance, transactional realtime, and persisted notification semantics.',
         )
-        .setVersion('3.17.0')
+        .setVersion('3.18.0')
         .addTag('01 Auth', 'Customer, tasker, admin, super-admin, session, and password flows')
         .addTag(
           '02 Uploads',

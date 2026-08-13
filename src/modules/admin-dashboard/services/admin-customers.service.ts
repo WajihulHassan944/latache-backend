@@ -27,6 +27,7 @@ import {
   percentage,
   resolveAdminDateRange,
 } from '../admin-dashboard.utils';
+import { AccountDeletionService } from '../../account-deletion/account-deletion.service';
 
 const ACTIVE_DISPUTE_STATUSES = ['open', 'under_investigation', 'escalated'] as const;
 
@@ -37,7 +38,12 @@ export class AdminCustomersService {
     private readonly sessions: AuthSessionsRepository,
     private readonly notifications: NotificationsService,
     private readonly audit: AdminAuditService,
+    private readonly accountDeletion: AccountDeletionService,
   ) {}
+
+  permanentlyDelete(actor: User, customerId: number, reason: string) {
+    return this.accountDeletion.permanentlyDelete(actor, customerId, UserRole.Customer, reason);
+  }
 
   async list(query: ListAdminCustomersDto) {
     const { page, limit, skip } = pagination(query.page, query.limit);

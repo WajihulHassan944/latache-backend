@@ -67,7 +67,7 @@ Content-Type: application/json
 
 Persisted notifications retain canonical-English compatibility `title`/`body` fallbacks and also store `templateKey`, structured `templateParams`, and `renderedLocale`. Known templates render in English, Modern Standard Arabic, or Moroccan Darija before realtime outbox enqueue and re-render on inbox reads; an unknown/missing translation safely uses canonical English. Notification type/category/entity codes remain language-neutral.
 
-Verification OTP, password-reset OTP, and administrator welcome emails use the shared premium TypeScript shell with English, Arabic, and Darija subjects/text alternatives, escaped HTML, and RTL direction for `ar`/`ary`. Generated art is packaged as CID attachments and the requested hosted Latache SVG is used as the logo. No standalone HTML files are used. See `email-design-and-darija.md`.
+Verification OTP, password-reset OTP, and administrator welcome emails use the shared premium TypeScript shell with English, Arabic, and Darija subjects/text alternatives, escaped HTML, and RTL direction for `ar`/`ary`. Decorative art uses the supplied versioned Cloudinary URLs and the requested hosted Latache SVG is used as the logo, avoiding heavyweight SMTP attachments. No standalone HTML files are used. See `email-design-and-darija.md`.
 
 ## Search
 

@@ -40,7 +40,7 @@ export const PERMISSION_CATALOG = [
       {
         key: 'admins.delete',
         label: 'Delete administrators',
-        description: 'Deactivate or delete administrator accounts when policy allows.',
+        description: 'Permanently delete eligible administrator accounts when policy allows.',
       },
     ],
   },
@@ -74,6 +74,12 @@ export const PERMISSION_CATALOG = [
         label: 'Manage customers',
         description: 'Update customer account lifecycle and profile data.',
       },
+      {
+        key: 'customers.delete',
+        label: 'Permanently delete customers',
+        description:
+          'Irreversibly delete eligible customer accounts and managed assets. Protected financial and booking history blocks deletion.',
+      },
     ],
   },
   {
@@ -89,6 +95,12 @@ export const PERMISSION_CATALOG = [
         key: 'taskers.manage',
         label: 'Manage taskers',
         description: 'Approve, reject, suspend, or update tasker accounts.',
+      },
+      {
+        key: 'taskers.delete',
+        label: 'Permanently delete taskers',
+        description:
+          'Irreversibly delete eligible Tasker accounts and managed assets. Protected financial and booking history blocks deletion.',
       },
     ],
   },

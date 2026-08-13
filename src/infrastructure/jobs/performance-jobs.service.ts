@@ -6,11 +6,13 @@ import { RealtimeDispatcherService } from '../../modules/realtime/realtime-dispa
 import { TaskerEarningsWorker } from '../../modules/tasker-finance/tasker-earnings.worker';
 import { PerformanceMetricsService } from '../observability/performance-metrics.service';
 import { RedisService } from '../redis/redis.service';
+import { ObjectStorageDeletionService } from '../../modules/account-deletion/object-storage-deletion.service';
 
 const JOB_NAMES = {
   ReleaseEarnings: 'finance.release-mature',
   ExpireCalls: 'realtime.expire-calls',
   CleanupOutbox: 'realtime.cleanup-outbox',
+  PurgeDeletedAssets: 'storage.purge-deleted-assets',
 } as const;
 
 export interface QueueHealth {
@@ -42,6 +44,7 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly earnings: TaskerEarningsWorker,
     private readonly realtime: RealtimeDispatcherService,
     private readonly metrics: PerformanceMetricsService,
+    private readonly storageDeletion: ObjectStorageDeletionService,
   ) {
     this.enabled = this.config.get<boolean>('jobs.enabled', false);
     this.workerEnabled = this.config.get<boolean>('jobs.workerEnabled', false);
@@ -152,6 +155,13 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { every: this.config.get<number>('jobs.outboxCleanupIntervalMs', 3_600_000) },
         { name: JOB_NAMES.CleanupOutbox, data: {} },
       ),
+      queue.upsertJobScheduler(
+        'purge-deleted-assets-v1',
+        {
+          every: this.config.get<number>('objectStorageDeletion.workerIntervalMs', 60_000),
+        },
+        { name: JOB_NAMES.PurgeDeletedAssets, data: {} },
+      ),
     ]);
   }
 
@@ -201,6 +211,8 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return { expired: await this.realtime.expireStaleCalls() };
       case JOB_NAMES.CleanupOutbox:
         return { deleted: await this.realtime.cleanupPublished() };
+      case JOB_NAMES.PurgeDeletedAssets:
+        return { deleted: await this.storageDeletion.processPending() };
       default: {
         throw new Error(`Unsupported maintenance job: ${job.name}`);
       }

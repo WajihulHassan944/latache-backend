@@ -41,6 +41,7 @@ import {
 import { LocaleService } from '../../localization/locale.service';
 import type { TranslationDto } from '../../localization/translation.dto';
 import type { EliteBenefitTranslationDto } from '../dto/elite-benefits.dto';
+import { ObjectStorageDeletionService } from '../../account-deletion/object-storage-deletion.service';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 
@@ -85,6 +86,7 @@ export class EliteProgramService {
     private readonly locales: LocaleService,
     private readonly cache: AppCacheService,
     private readonly config: ConfigService,
+    private readonly storage: ObjectStorageDeletionService,
   ) {}
 
   async overview(query: AdminDateRangeQueryDto): Promise<Record<string, unknown>> {
@@ -917,19 +919,27 @@ export class EliteProgramService {
     return { badge: this.serializeBadge(badge) };
   }
 
-  async deactivateBadge(actor: User, badgeId: string): Promise<Record<string, unknown>> {
+  async deleteBadge(actor: User, badgeId: string): Promise<Record<string, unknown>> {
     const badge = await this.prisma.eliteBadge.findUnique({ where: { id: badgeId } });
     if (!badge) throw new NotFoundException('Elite badge not found');
-    await this.prisma.eliteBadge.update({ where: { id: badgeId }, data: { isActive: false } });
-    await this.audit.record({
-      actorId: actor.id,
-      action: 'elite_badge_deactivated',
-      entityType: 'elite_badge',
-      entityId: badgeId,
-      metadata: { code: badge.code },
+    const assets = this.storage.extractManagedAssets(badge.assetUrl);
+    await this.prisma.$transaction(async (tx) => {
+      await this.storage.enqueue(tx, assets, 'elite_badge', badgeId, actor.id);
+      await tx.eliteBadge.delete({ where: { id: badgeId } });
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'elite_badge_permanently_deleted',
+          entityType: 'elite_badge',
+          entityId: badgeId,
+          metadata: { code: badge.code, irreversible: true, assetCount: assets.length },
+        },
+        tx,
+      );
     });
+    await this.storage.attemptImmediate('elite_badge', badgeId, assets.length);
     await this.invalidateProgramCache();
-    return { deactivated: true, badgeId };
+    return { deleted: true, badgeId };
   }
 
   private async invalidateProgramCache(): Promise<void> {

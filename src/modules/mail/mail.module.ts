@@ -24,6 +24,9 @@ import { asMailTransporter, type MailTransporter } from './mail.types';
           tls: {
             rejectUnauthorized: config.get<boolean>('mail.tlsRejectUnauthorized', true),
           },
+          connectionTimeout: config.get<number>('mail.connectionTimeoutMs', 10_000),
+          greetingTimeout: config.get<number>('mail.greetingTimeoutMs', 10_000),
+          socketTimeout: config.get<number>('mail.socketTimeoutMs', 30_000),
         };
 
         return asMailTransporter(nodemailer.createTransport(transportOptions));
