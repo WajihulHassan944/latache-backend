@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/
 import { ConfigService } from '@nestjs/config';
 import { compare, hash } from 'bcryptjs';
 import { AccountStatus } from '../../../common/enums/account-status.enum';
-import { UserRole } from '../../../common/enums/user-role.enum';
 import { generateNumericCode } from '../../../common/utils/crypto.util';
 import { serializeUser, type PublicUser } from '../../../common/utils/user.util';
 import { PrismaService } from '../../../database/prisma.service';
@@ -19,6 +18,7 @@ import type {
 } from '../dto';
 import { AuthRepository } from '../repositories/auth.repository';
 import { AuthSessionsRepository } from '../repositories/auth-sessions.repository';
+import { AuthCodeService } from './auth-code.service';
 
 const GENERIC_RESET_MESSAGE =
   'If an eligible account exists, password reset instructions have been sent.';
@@ -34,13 +34,13 @@ export class AuthPasswordService {
     private readonly mail: MailService,
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly authCodes: AuthCodeService,
   ) {}
 
   async verifyEmail(
     userId: number,
     dto: VerifyEmailDto,
   ): Promise<SuccessEnvelope<{ user: PublicUser }>> {
-    const code = Number(dto.otp);
     const result = await this.prisma.$transaction(async (transaction: Prisma.TransactionClient) => {
       const user = await this.repository.findUserByIdForUpdate(userId, transaction);
       if (!user || user.deletedAt) return { kind: 'invalid' as const };
@@ -49,7 +49,7 @@ export class AuthPasswordService {
         return { kind: 'blocked' as const };
       }
 
-      if (!this.isActiveVerificationCode(user, code)) {
+      if (!this.isActiveVerificationCode(user, dto.otp)) {
         await transaction.user.update({
           where: { id: user.id },
           data: { otpAttempts: { increment: 1 } },
@@ -62,10 +62,10 @@ export class AuthPasswordService {
         data: {
           isVerified: true,
           otp: null,
+          otpHash: null,
           otpExpires: null,
           otpAttempts: 0,
-          accountStatus:
-            user.role === UserRole.Tasker ? AccountStatus.PendingApproval : AccountStatus.Active,
+          accountStatus: AccountStatus.Active,
         },
       });
       return { kind: 'success' as const, user: updated };
@@ -94,7 +94,8 @@ export class AuthPasswordService {
 
     const otp = generateNumericCode(6);
     await this.repository.updateUser(user.id, {
-      otp,
+      otp: null,
+      otpHash: this.authCodes.hash('email-verification', otp),
       otpExpires: this.verificationOtpExpiry(),
       otpAttempts: 0,
     });
@@ -119,7 +120,8 @@ export class AuthPasswordService {
 
     const resetCode = generateNumericCode(6);
     await this.repository.updateUser(user.id, {
-      passwordResetCode: resetCode,
+      passwordResetCode: null,
+      passwordResetCodeHash: this.authCodes.hash('password-reset', resetCode),
       passwordResetCodeExpires: this.passwordResetOtpExpiry(),
       passwordResetAttempts: 0,
     });
@@ -136,7 +138,6 @@ export class AuthPasswordService {
   async verifyResetOtp(
     dto: VerifyResetOtpDto,
   ): Promise<SuccessEnvelope<{ purpose: 'PASSWORD_RESET'; verified: true }>> {
-    const code = Number(dto.otp);
     const outcome = await this.prisma.$transaction(
       async (transaction: Prisma.TransactionClient) => {
         const existing = await this.repository.findUserByEmail(dto.email, transaction);
@@ -147,7 +148,7 @@ export class AuthPasswordService {
         if (user.passwordResetAttempts >= MAX_OTP_ATTEMPTS) {
           return { kind: 'blocked' as const };
         }
-        if (!this.isActiveResetCode(user, code)) {
+        if (!this.isActiveResetCode(user, dto.otp)) {
           await transaction.user.update({
             where: { id: user.id },
             data: { passwordResetAttempts: { increment: 1 } },
@@ -169,7 +170,6 @@ export class AuthPasswordService {
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<SuccessEnvelope<null>> {
-    const code = Number(dto.otp);
     const outcome = await this.prisma.$transaction(
       async (transaction: Prisma.TransactionClient) => {
         const existing = await this.repository.findUserByEmail(dto.email, transaction);
@@ -179,7 +179,7 @@ export class AuthPasswordService {
         if (user.passwordResetAttempts >= MAX_OTP_ATTEMPTS) {
           return { kind: 'blocked' as const };
         }
-        if (!this.isActiveResetCode(user, code)) {
+        if (!this.isActiveResetCode(user, dto.otp)) {
           await transaction.user.update({
             where: { id: user.id },
             data: { passwordResetAttempts: { increment: 1 } },
@@ -195,6 +195,7 @@ export class AuthPasswordService {
           data: {
             password: await hash(dto.newPassword, this.bcryptRounds()),
             passwordResetCode: null,
+            passwordResetCodeHash: null,
             passwordResetCodeExpires: null,
             passwordResetAttempts: 0,
             mustChangePassword: false,
@@ -240,15 +241,20 @@ export class AuthPasswordService {
     return success(null, 'Password changed successfully. Sign in again on your devices.');
   }
 
-  private isActiveVerificationCode(user: User, code: number): boolean {
-    return Boolean(user.otp === code && user.otpExpires && user.otpExpires.getTime() > Date.now());
+  private isActiveVerificationCode(user: User, code: string): boolean {
+    if (!user.otpExpires || user.otpExpires.getTime() <= Date.now()) return false;
+    return (
+      this.authCodes.matches('email-verification', code, user.otpHash) || user.otp === Number(code)
+    );
   }
 
-  private isActiveResetCode(user: User, code: number): boolean {
-    return Boolean(
-      user.passwordResetCode === code &&
-        user.passwordResetCodeExpires &&
-        user.passwordResetCodeExpires.getTime() > Date.now(),
+  private isActiveResetCode(user: User, code: string): boolean {
+    if (!user.passwordResetCodeExpires || user.passwordResetCodeExpires.getTime() <= Date.now()) {
+      return false;
+    }
+    return (
+      this.authCodes.matches('password-reset', code, user.passwordResetCodeHash) ||
+      user.passwordResetCode === Number(code)
     );
   }
 

@@ -21,6 +21,8 @@ import {
   AdminSendSupportMessageDto,
   AdminSupportActionDto,
   AdminSupportQueryDto,
+  ListSupportMessagesQueryDto,
+  MarkSupportReadDto,
   SupportTicketParamDto,
 } from './dto/support.dto';
 import { SupportService } from './support.service';
@@ -70,9 +72,16 @@ export class AdminSupportController {
 
   @Get(':id/messages')
   @Permissions('support.read')
-  @ApiOperation({ summary: 'Get live-chat/ticket message history including internal notes' })
-  messages(@Param() params: SupportTicketParamDto): Promise<unknown> {
-    return this.support.adminMessages(params.id);
+  @ApiOperation({
+    summary: 'Get live-chat/ticket message history including internal notes',
+    description:
+      'Supports cursor or page pagination. Reading history has no write side effect; use the read endpoint after rendering. Internal notes remain restricted to authorized support administrators.',
+  })
+  messages(
+    @Param() params: SupportTicketParamDto,
+    @Query() query: ListSupportMessagesQueryDto,
+  ): Promise<unknown> {
+    return this.support.adminMessages(params.id, query);
   }
 
   @Post(':id/messages')
@@ -80,7 +89,7 @@ export class AdminSupportController {
   @ApiOperation({
     summary: 'Reply to the user or add an internal support note',
     description:
-      'A public first reply records firstResponseAt for real response-time reporting. Internal notes never notify the customer/tasker.',
+      'A public first reply records firstResponseAt for real response-time reporting. Internal notes never notify the customer/tasker or enter the public room. Supply clientMessageId for retry-safe delivery.',
   })
   send(
     @CurrentUser() actor: User,
@@ -88,6 +97,17 @@ export class AdminSupportController {
     @Body() dto: AdminSendSupportMessageDto,
   ): Promise<unknown> {
     return this.support.adminSend(actor, params.id, dto);
+  }
+
+  @Post(':id/read')
+  @Permissions('support.read')
+  @ApiOperation({ summary: 'Mark participant replies as read through an optional message' })
+  markRead(
+    @CurrentUser() actor: User,
+    @Param() params: SupportTicketParamDto,
+    @Body() dto: MarkSupportReadDto,
+  ): Promise<unknown> {
+    return this.support.adminMarkRead(actor, params.id, dto);
   }
 
   @Post(':id/actions')

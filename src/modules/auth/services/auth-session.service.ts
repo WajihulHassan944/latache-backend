@@ -15,6 +15,7 @@ export class AuthSessionService {
           device: session.device,
           ipAddress: session.ipAddress,
           userAgent: session.userAgent,
+          activeRole: session.activeRole,
           lastUsedAt: session.lastUsedAt,
           createdAt: session.createdAt,
           expiresAt: session.expiresAt,

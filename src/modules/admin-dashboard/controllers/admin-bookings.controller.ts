@@ -43,7 +43,7 @@ export class AdminBookingsController {
   @ApiOperation({
     summary: 'Booking Management list, tabs, summary metrics, and CSV export',
     description:
-      'One endpoint powers All, Pending, Accepted, In Progress, Completed, Cancelled, and Disputed tabs. Accepted maps to the canonical confirmed status; Disputed is derived from unresolved complaint records. format=csv returns the same filtered dataset as CSV.',
+      'One endpoint powers All, Pending, Accepted, In Progress, Completed, Cancelled, and Disputed tabs. In Progress includes awaiting_customer_approval and exposes its approval deadline. Accepted maps to the canonical confirmed status; Disputed is derived from unresolved complaint records. format=csv returns the same filtered dataset as CSV.',
   })
   @ApiProduces('application/json', 'text/csv')
   async list(
@@ -70,7 +70,7 @@ export class AdminBookingsController {
   @ApiOperation({
     summary: 'Get complete admin booking context',
     description:
-      'Returns participants, service, lifecycle timestamps, payment transactions, active/historical disputes, work session, location, and audit history without duplicating payment or dispute mutation APIs.',
+      'Returns participants, service, completion submission/approval timestamps, payment transactions, active/historical disputes, work session, location, and audit history without duplicating payment or dispute mutation APIs.',
   })
   details(@Param('id', ParseIntPipe) id: number) {
     return this.bookings.details(id);

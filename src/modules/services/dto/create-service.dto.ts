@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Length,
@@ -43,6 +44,20 @@ export class CreateServiceDto {
   @IsString()
   @Length(1, 2048)
   icon!: string;
+
+  @ApiProperty({ example: 15, minimum: 0.01, description: 'Minimum Tasker hourly rate in the current platform currency.' })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(1000000)
+  minimumHourlyRate!: number;
+
+  @ApiProperty({ example: 100, minimum: 0.01, description: 'Maximum Tasker hourly rate in the current platform currency.' })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(1000000)
+  maximumHourlyRate!: number;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()
@@ -99,6 +114,22 @@ export class UpdateServiceDto {
   @IsString()
   @Length(1, 2048)
   icon?: string;
+
+  @ApiPropertyOptional({ minimum: 0.01, description: 'Minimum Tasker hourly rate in the current platform currency.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(1000000)
+  minimumHourlyRate?: number;
+
+  @ApiPropertyOptional({ minimum: 0.01, description: 'Maximum Tasker hourly rate in the current platform currency.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(1000000)
+  maximumHourlyRate?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -1,6 +1,9 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
@@ -9,6 +12,7 @@ import {
   ListConversationCallsQueryDto,
   ListConversationsQueryDto,
   ListMessagesQueryDto,
+  MarkConversationReadDto,
   SendMessageDto,
 } from './conversations.dto';
 import { ConversationsService } from './conversations.service';
@@ -18,13 +22,16 @@ import type {
   ConversationCapabilitiesView,
   ConversationListView,
   ConversationMessageView,
+  ConversationReadResultView,
+  ConversationUnreadCountView,
   ConversationView,
   MessageListView,
 } from './conversations.types';
 
 @ApiTags('07 Conversations')
 @ApiBearerAuth('bearer')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.Customer, UserRole.Tasker)
 @Controller('conversations')
 export class ConversationsController {
   constructor(private readonly conversations: ConversationsService) {}
@@ -49,7 +56,13 @@ export class ConversationsController {
     @CurrentUser() user: User,
     @Query() query: ListConversationsQueryDto,
   ): Promise<ConversationListView> {
-    return this.conversations.list(user.id, query);
+    return this.conversations.list(user, query);
+  }
+
+  @Get('unread-count')
+  @ApiOperation({ summary: 'Get total unread booking-chat messages for the current participant' })
+  unreadCount(@CurrentUser() user: User): Promise<ConversationUnreadCountView> {
+    return this.conversations.unreadCount(user);
   }
 
   @Get(':bookingId/messages')
@@ -59,14 +72,14 @@ export class ConversationsController {
     @Param() params: BookingConversationParamDto,
     @Query() query: ListMessagesQueryDto,
   ): Promise<MessageListView> {
-    return this.conversations.messages(user.id, params.bookingId, query);
+    return this.conversations.messages(user, params.bookingId, query);
   }
 
   @Post(':bookingId/messages')
   @ApiOperation({
     summary: 'Send text and/or verified Cloudinary attachments',
     description:
-      'Supports one or multiple image/document attachments. Upload them first through the shared Uploads API using folder=conversation-attachments. The server revalidates ownership, Cloudinary existence, MIME type, per-file size, total message size, and duplicate references before persisting the message.',
+      'Supports one or multiple image/document attachments. Upload them first through the shared Uploads API using folder=conversation-attachments. The server revalidates ownership, Cloudinary existence, MIME type, per-file size, total message size, and duplicate references before persisting the message. Supply a stable clientMessageId for retry-safe mobile/offline delivery.',
   })
   send(
     @CurrentUser() user: User,
@@ -81,8 +94,9 @@ export class ConversationsController {
   markRead(
     @CurrentUser() user: User,
     @Param() params: BookingConversationParamDto,
-  ): Promise<{ updated: number }> {
-    return this.conversations.markRead(user.id, params.bookingId);
+    @Body() dto: MarkConversationReadDto,
+  ): Promise<ConversationReadResultView> {
+    return this.conversations.markRead(user, params.bookingId, dto);
   }
 
   @Get(':bookingId/calls')
@@ -118,7 +132,7 @@ export class ConversationsController {
     @Param() params: BookingConversationParamDto,
     @Query() query: ListConversationCallsQueryDto,
   ): Promise<ConversationCallListView> {
-    return this.conversations.listCalls(user.id, params.bookingId, query);
+    return this.conversations.listCalls(user, params.bookingId, query);
   }
 
   @Get(':bookingId/calls/:callId')
@@ -127,7 +141,7 @@ export class ConversationsController {
     @CurrentUser() user: User,
     @Param() params: ConversationCallParamDto,
   ): Promise<ConversationCallView> {
-    return this.conversations.getCall(user.id, params.bookingId, params.callId);
+    return this.conversations.getCall(user, params.bookingId, params.callId);
   }
 
   @Get(':bookingId')
@@ -136,6 +150,6 @@ export class ConversationsController {
     @CurrentUser() user: User,
     @Param() params: BookingConversationParamDto,
   ): Promise<ConversationView> {
-    return this.conversations.summary(user.id, params.bookingId);
+    return this.conversations.summary(user, params.bookingId);
   }
 }

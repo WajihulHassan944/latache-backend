@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -11,7 +11,9 @@ import { BookingParamDto } from './dto/booking-actions.dto';
 import { AddComplaintEvidenceDto, FileComplaintDto } from './dto/file-complaint.dto';
 import {
   ListParticipantDisputesQueryDto,
+  ParticipantDisputeActionDto,
   ParticipantDisputeParamDto,
+  SubmitDisputeSatisfactionDto,
 } from './dto/participant-disputes.dto';
 
 @ApiTags('05 Bookings & Tasks')
@@ -39,24 +41,30 @@ export class ParticipantDisputesController {
   }
 
   @Post('bookings/:bookingId/disputes')
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description: 'Recommended 8-120 character client retry key. Reusing it for the same request returns the existing dispute; reuse for another booking is rejected.',
+  })
   @ApiOperation({
     summary: 'Open a booking dispute as Customer or Tasker',
     description:
-      'Creates one real dispute record and places unsettled payment on hold. Admin investigation continues through /api/admin/disputes.',
+      'Creates at most one active dispute per booking inside the configured post-completion filing window. The booking row is locked before case creation, Idempotency-Key retries are replay-safe, and financial clearance is held without fabricating payment state. Admin investigation continues through /api/admin/disputes.',
   })
   create(
     @CurrentUser() user: User,
     @Param() params: BookingParamDto,
     @Body() dto: FileComplaintDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.bookings.fileComplaint(user.id, params.bookingId, dto);
+    return this.bookings.fileComplaint(user, params.bookingId, dto, idempotencyKey);
   }
 
   @Post('disputes/:disputeId/evidence')
   @ApiOperation({
     summary: 'Submit requested evidence to an owned dispute',
     description:
-      'Cloudinary metadata must belong to the authenticated account. Pending evidence requests are fulfilled transactionally.',
+      'Every attachment must resolve to the exact authenticated account-owned Latache Cloudinary resource (publicId and secure URL are provider-verified). Case-wide evidence item/byte limits are enforced and pending/overdue requests are fulfilled transactionally.',
   })
   evidence(
     @CurrentUser() user: User,
@@ -65,4 +73,28 @@ export class ParticipantDisputesController {
   ) {
     return this.bookings.addUserDisputeEvidence(user, params.disputeId, dto);
   }
+  @Post('disputes/:disputeId/actions')
+  @ApiOperation({
+    summary: 'Withdraw, respond to a settlement, appeal, or comment on an owned dispute',
+    description:
+      'Participant actions are persisted as immutable dispute history. Appeals and withdrawals re-apply/release financial holds transactionally where applicable.',
+  })
+  participantAction(
+    @CurrentUser() user: User,
+    @Param() params: ParticipantDisputeParamDto,
+    @Body() dto: ParticipantDisputeActionDto,
+  ) {
+    return this.bookings.participantDisputeAction(user, params.disputeId, dto);
+  }
+
+  @Post('disputes/:disputeId/satisfaction')
+  @ApiOperation({ summary: 'Submit or update a 1-5 satisfaction rating after dispute closure' })
+  satisfaction(
+    @CurrentUser() user: User,
+    @Param() params: ParticipantDisputeParamDto,
+    @Body() dto: SubmitDisputeSatisfactionDto,
+  ) {
+    return this.bookings.submitDisputeSatisfaction(user, params.disputeId, dto);
+  }
+
 }

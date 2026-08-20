@@ -19,6 +19,8 @@ import { AuthProfileService } from './services/auth-profile.service';
 import { AuthRegistrationService } from './services/auth-registration.service';
 import { AuthSessionService } from './services/auth-session.service';
 import { AuthTokenService } from './services/auth-token.service';
+import { AuthCodeService } from './services/auth-code.service';
+import { AuthRoleService } from './services/auth-role.service';
 
 @Module({
   imports: [JwtModule.register({}), UsersModule, MailModule, RbacCoreModule, AdminAuditModule],
@@ -31,6 +33,8 @@ import { AuthTokenService } from './services/auth-token.service';
     AuthProfileService,
     AuthSessionService,
     AuthTokenService,
+    AuthCodeService,
+    AuthRoleService,
     AuthRepository,
     AuthSessionsRepository,
     JwtIdentityGuard,
@@ -47,6 +51,7 @@ import { AuthTokenService } from './services/auth-token.service';
     RolesGuard,
     PermissionsGuard,
     AuthSessionsRepository,
+    AuthRoleService,
     JwtModule,
     UsersModule,
   ],

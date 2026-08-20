@@ -1,5 +1,6 @@
 export interface NotificationView {
   id: string;
+  audienceRole: string | null;
   category: string;
   type: string;
   title: string;

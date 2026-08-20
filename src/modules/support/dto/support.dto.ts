@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -9,6 +10,7 @@ import {
   IsString,
   Length,
   Max,
+  MaxLength,
   Min,
   ValidateIf,
   ValidateNested,
@@ -27,6 +29,17 @@ const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
 export class CreateSupportTicketDto {
+  @ApiPropertyOptional({
+    example: '01JSUPPORT9A4R7X2K6M8Q5T3V1',
+    description:
+      'Stable client-generated request ID. Retrying the same ticket creation returns the original ticket.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(8, 80)
+  clientRequestId?: string;
+
   @ApiPropertyOptional({ enum: SUPPORT_CHANNELS, default: 'ticket' })
   @IsOptional()
   @IsIn(SUPPORT_CHANNELS)
@@ -122,11 +135,22 @@ export class SupportTicketParamDto {
 }
 
 export class SendSupportMessageDto {
+  @ApiPropertyOptional({
+    example: '01JSUPPORTMSG7X2K6M8Q5T3V1Z0',
+    description:
+      'Stable client-generated ID used to make message retries idempotent. Reuse with different content returns 409.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(8, 80)
+  clientMessageId?: string;
+
   @ApiPropertyOptional({ example: 'Here is the booking reference and a screenshot.' })
   @IsOptional()
   @Transform(trim)
   @IsString()
-  @Length(1, 5000)
+  @MaxLength(5000)
   body?: string;
 
   @ApiPropertyOptional({ type: [CloudinaryAssetRefDto], maxItems: 5 })
@@ -136,6 +160,47 @@ export class SendSupportMessageDto {
   @ValidateNested({ each: true })
   @Type(() => CloudinaryAssetRefDto)
   attachments?: CloudinaryAssetRefDto[];
+}
+
+export class ListSupportMessagesQueryDto {
+  @ApiPropertyOptional({
+    example: 'cm5supportmessage123',
+    description:
+      'Message ID returned as nextCursor. Cursor mode takes precedence over page and is recommended.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 40)
+  cursor?: string;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ default: 50, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+export class MarkSupportReadDto {
+  @ApiPropertyOptional({
+    example: 'cm5supportmessage123',
+    description:
+      'Marks eligible inbound messages through this visible message. Omit to mark all current eligible messages.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 40)
+  throughMessageId?: string;
 }
 
 export class SupportTicketUserActionDto {
@@ -297,6 +362,6 @@ export class AdminSendSupportMessageDto extends SendSupportMessageDto {
     description: 'Internal notes are visible only to authorized support administrators.',
   })
   @IsOptional()
-  @Type(() => Boolean)
+  @IsBoolean()
   internalNote?: boolean;
 }

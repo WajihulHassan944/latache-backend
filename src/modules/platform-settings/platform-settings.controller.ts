@@ -30,7 +30,7 @@ export class PlatformSettingsController {
   @ApiOperation({
     summary: 'Get one or more platform-settings sections',
     description:
-      'One read API powers General, Currency, Tax, Booking Rules, Service Radius, Commission Rules, Tasker Finance clearance/debt policy, Referral Rules, and the read-only Elite Program settings tab. Elite writes continue through the existing Elite Program API to avoid duplicated policy ownership.',
+      'One read API powers General, Currency, Tax, Booking Rules (including the completion-approval window), Service Radius, Commission Rules, Tasker Finance clearance/debt policy, Referral Rules, and the read-only Elite Program settings tab. Currency exposes five application-managed market presets (US/USD, Morocco/MAD, Pakistan/PKR, France/EUR, Spain/EUR); exactly one market is operational at a time. Elite writes continue through the existing Elite Program API to avoid duplicated policy ownership.',
   })
   @ApiOkResponse({
     description: 'Requested platform policy sections and runtime capability flags.',
@@ -44,11 +44,19 @@ export class PlatformSettingsController {
   @ApiOperation({
     summary: 'Update one or several platform-settings sections atomically',
     description:
-      'Only supplied fields are merged. Commission and global-tax policies affect NEW final booking charges. taskerFinance controls future earning clearance and cash-debt restriction policy; it never rewrites settled accounting snapshots. Automatic FX refresh and referral payouts remain rejected until real integrations exist.',
+      'Only supplied fields are merged. Currency, Referral/Rewards, and Commission/Elite-pricing policy changes are Super-Admin-only. Currency selects one of five application-managed static market presets; a cross-ISO switch is blocked while unsettled financial positions exist. Referral policy is snapshotted on new attributions and never rewrites settled rewards.',
   })
   @ApiBody({
     type: UpdatePlatformSettingsDto,
     examples: {
+      currency: {
+        summary: 'Select Morocco as the operational market',
+        value: {
+          currency: {
+            primaryMarket: 'morocco',
+          },
+        },
+      },
       commission: {
         summary: 'Update commission rules',
         value: {
@@ -85,6 +93,31 @@ export class PlatformSettingsController {
             cashDisputeClearanceDays: 14,
             maximumOutstandingPlatformDebt: 250,
             blockCashBookingsAtDebtLimit: true,
+          },
+        },
+      },
+      referral: {
+        summary: 'Enable a configured Customer referral policy for future claims only',
+        value: {
+          referral: {
+            clientReferralEnabled: true,
+            uniqueCodesEnabled: true,
+            clientReferralBonus: 10,
+            referredClientDiscountPercent: 10,
+            referredClientDiscountMaxAmount: 25,
+            minimumCustomerChargeAmount: 5,
+            minimumQualifyingBookingAmount: 25,
+            referralExpiryDays: 90,
+            rewardClearanceDays: 14,
+            maxClientReferrals: 0,
+          },
+        },
+      },
+      completionApproval: {
+        summary: 'Configure the Customer review window for future Tasker submissions',
+        value: {
+          bookingRules: {
+            completionApprovalHours: 24,
           },
         },
       },

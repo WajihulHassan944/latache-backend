@@ -93,12 +93,11 @@ export class AdminDisputeEvidenceDto {
   @Length(1, 255)
   name!: string;
 
-  @ApiPropertyOptional({ example: 'latache/booking-attachments/customer/42/abc' })
-  @IsOptional()
+  @ApiProperty({ example: 'latache/booking-attachments/admin/42/abc' })
   @Transform(trim)
   @IsString()
-  @MaxLength(500)
-  publicId?: string;
+  @Length(1, 500)
+  publicId!: string;
 
   @ApiProperty({ example: 'https://res.cloudinary.com/demo/image/upload/example.webp' })
   @Transform(trim)
@@ -147,7 +146,9 @@ export const ADMIN_DISPUTE_ACTIONS = [
   'add_evidence',
   'review_evidence',
   'save_resolution_draft',
+  'propose_resolution',
   'resolve',
+  'confirm_cash_refund',
   'reopen',
 ] as const;
 
@@ -254,10 +255,44 @@ export class AdminDisputeActionDto {
   @IsIn(['customer', 'tasker', 'both'])
   warningTarget?: 'customer' | 'tasker' | 'both';
 
-  @ApiPropertyOptional({ default: true })
+  @ApiPropertyOptional({
+    default: true,
+    description: 'Retained for backward compatibility. Participant lifecycle notifications for applied dispute outcomes are mandatory and cannot be suppressed.',
+  })
   @IsOptional()
   @IsBoolean()
   notifyParties?: boolean = true;
+
+
+  @ApiPropertyOptional({
+    example: '2026-08-21',
+    description: 'UTC response deadline used by propose_resolution.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  proposalResponseDueDate?: string;
+
+  @ApiPropertyOptional({
+    example: 'BANK-TRANSFER-20260818-001',
+    description: 'Real manual transfer/bank reference used by confirm_cash_refund.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(255)
+  manualTransferReference?: string;
+
+  @ApiPropertyOptional({
+    example: 'Transfer verified against bank statement by finance administrator.',
+    description: 'Auditable confirmation notes used by confirm_cash_refund.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(5)
+  @MaxLength(2000)
+  confirmationNotes?: string;
 
   @ApiPropertyOptional({
     example:

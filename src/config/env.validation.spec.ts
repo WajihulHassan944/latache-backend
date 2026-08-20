@@ -50,6 +50,19 @@ describe('validateEnvironment', () => {
     ).toThrow(/at least 32 characters/);
   });
 
+  it('does not allow production to silently disable Redis-backed scheduled work', () => {
+    expect(() =>
+      validateEnvironment({
+        ...valid(),
+        NODE_ENV: 'production',
+        JWT_SECRET: 'production-access-secret-1234567890',
+        JWT_SECRET_ADMIN: 'production-admin-secret-12345678901',
+        OTP_HASH_SECRET: 'production-otp-hash-secret-1234567890',
+        CHAT_CALLS_ENABLED: 'false',
+      }),
+    ).toThrow(/automatic booking completion cannot be silently disabled/);
+  });
+
   it('requires the default locale to be configured and supported', () => {
     expect(() =>
       validateEnvironment({

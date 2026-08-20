@@ -31,10 +31,11 @@ export class AdminServicesService {
         userServices: {
           where: {
             user: {
-              role: 'tasker',
+              roles: { has: 'tasker' },
               accountStatus: 'active',
               onboardingStatus: 'approved',
               deletedAt: null,
+              taskerProfile: { is: { status: 'active' } },
             },
           },
           include: {
@@ -158,10 +159,11 @@ export class AdminServicesService {
             userServices: {
               where: {
                 user: {
-                  role: 'tasker',
+                  roles: { has: 'tasker' },
                   accountStatus: 'active',
                   onboardingStatus: 'approved',
                   deletedAt: null,
+                  taskerProfile: { is: { status: 'active' } },
                 },
               },
               select: { userId: true },
@@ -179,10 +181,11 @@ export class AdminServicesService {
           where: {
             service: { isActive: true },
             user: {
-              role: 'tasker',
+              roles: { has: 'tasker' },
               accountStatus: 'active',
               onboardingStatus: 'approved',
               deletedAt: null,
+              taskerProfile: { is: { status: 'active' } },
             },
           },
           distinct: ['userId'],

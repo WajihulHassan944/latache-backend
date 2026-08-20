@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -12,6 +13,7 @@ import { isUtf8 } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import { basename, extname } from 'node:path';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { PrismaService } from '../../database/prisma.service';
 import type { User } from '../../generated/prisma/client';
 import { CLOUDINARY_CLIENT } from './cloudinary.constants';
 import {
@@ -20,6 +22,12 @@ import {
   CONVERSATION_ATTACHMENT_MAX_TOTAL_SIZE_BYTES,
   CONVERSATION_ATTACHMENT_MIME_TYPES,
 } from './conversation-attachment.constants';
+import {
+  SUPPORT_ATTACHMENT_MAX_FILES,
+  SUPPORT_ATTACHMENT_MAX_FILE_SIZE_BYTES,
+  SUPPORT_ATTACHMENT_MAX_TOTAL_SIZE_BYTES,
+  SUPPORT_ATTACHMENT_MIME_TYPES,
+} from './support-attachment.constants';
 import { RegistrationUploadFolder, UploadFolder, UploadResourceType } from './dto';
 import type {
   BufferedUploadFile,
@@ -57,10 +65,13 @@ export class UploadsService {
 
   private readonly conversationMimeTypes = new Set<string>(CONVERSATION_ATTACHMENT_MIME_TYPES);
 
+  private readonly supportMimeTypes = new Set<string>(SUPPORT_ATTACHMENT_MIME_TYPES);
+
   constructor(
     @Inject(CLOUDINARY_CLIENT)
     private readonly cloudinary: CloudinaryClient,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   uploadRegistrationFile(
@@ -101,18 +112,26 @@ export class UploadsService {
     const maximumFiles =
       dto.folder === UploadFolder.ConversationAttachment
         ? this.config.get<number>('chat.attachmentMaxFiles', CONVERSATION_ATTACHMENT_MAX_FILES)
-        : 5;
+        : dto.folder === UploadFolder.SupportAttachment
+          ? SUPPORT_ATTACHMENT_MAX_FILES
+          : 5;
     if (files.length > maximumFiles) {
       throw new BadRequestException(`A maximum of ${maximumFiles} files is allowed`);
     }
 
     const validated = files.map((file) => this.validateFile(file, dto.folder));
-    if (dto.folder === UploadFolder.ConversationAttachment) {
+    if (
+      dto.folder === UploadFolder.ConversationAttachment ||
+      dto.folder === UploadFolder.SupportAttachment
+    ) {
       const totalBytes = validated.reduce((total, file) => total + file.size, 0);
-      const maximumTotalBytes = this.config.get<number>(
-        'chat.attachmentMaxTotalSizeBytes',
-        CONVERSATION_ATTACHMENT_MAX_TOTAL_SIZE_BYTES,
-      );
+      const maximumTotalBytes =
+        dto.folder === UploadFolder.ConversationAttachment
+          ? this.config.get<number>(
+              'chat.attachmentMaxTotalSizeBytes',
+              CONVERSATION_ATTACHMENT_MAX_TOTAL_SIZE_BYTES,
+            )
+          : SUPPORT_ATTACHMENT_MAX_TOTAL_SIZE_BYTES;
       if (totalBytes > maximumTotalBytes) {
         throw new PayloadTooLargeException(
           `Attachment batch exceeds the ${this.megabytes(maximumTotalBytes)} MB total limit`,
@@ -152,6 +171,7 @@ export class UploadsService {
     dto: { publicId: string; resourceType?: UploadResourceType },
   ): Promise<DeleteUploadSuccessResponse> {
     this.assertDeleteAccess(user, dto.publicId);
+    await this.assertChatAssetNotReferenced(dto.publicId);
     const resourceType = dto.resourceType ?? UploadResourceType.Image;
     const result = await this.destroy(dto.publicId, resourceType);
     return {
@@ -197,16 +217,104 @@ export class UploadsService {
     };
   }
 
+  supportAttachmentCapabilities() {
+    return {
+      uploadFolder: UploadFolder.SupportAttachment,
+      singleUploadEndpoint: '/api/uploads/single',
+      multipleUploadEndpoint: '/api/uploads/multiple',
+      maxFilesPerMessage: SUPPORT_ATTACHMENT_MAX_FILES,
+      maxFileSizeBytes: Math.min(
+        this.config.get<number>('cloudinary.maxFileSizeBytes', 10 * 1024 * 1024),
+        SUPPORT_ATTACHMENT_MAX_FILE_SIZE_BYTES,
+      ),
+      maxTotalSizeBytes: SUPPORT_ATTACHMENT_MAX_TOTAL_SIZE_BYTES,
+      allowedMimeTypes: [...this.supportMimeTypes],
+    };
+  }
+
+  async verifyDisputeAttachments(
+    user: User,
+    references: Array<{
+      publicId: string;
+      secureUrl: string;
+      resourceType?: string;
+      mimeType?: string;
+      originalFileName?: string;
+    }>,
+  ): Promise<ConversationAttachmentReference[]> {
+    const globalMaximum = this.config.get<number>('cloudinary.maxFileSizeBytes', 10 * 1024 * 1024);
+    return this.verifyManagedChatAttachments(
+      user,
+      UploadFolder.BookingAttachment,
+      references,
+      this.documentMimeTypes,
+      {
+        maxFilesPerMessage: 10,
+        maxFileSizeBytes: globalMaximum,
+        maxTotalSizeBytes: 100 * 1024 * 1024,
+      },
+    );
+  }
+
+  verifySupportAttachments(
+    user: User,
+    references: Array<{
+      publicId: string;
+      secureUrl: string;
+      resourceType?: string;
+      mimeType?: string;
+      originalFileName?: string;
+    }>,
+  ): Promise<ConversationAttachmentReference[]> {
+    const capabilities = this.supportAttachmentCapabilities();
+    return this.verifyManagedChatAttachments(
+      user,
+      UploadFolder.SupportAttachment,
+      references,
+      this.supportMimeTypes,
+      capabilities,
+    );
+  }
+
   async verifyConversationAttachments(
     user: User,
     references: ConversationAttachmentReference[],
   ): Promise<ConversationAttachmentReference[]> {
-    if (references.length === 0) return [];
     if (![UserRole.Customer, UserRole.Tasker].includes(user.role as UserRole)) {
       throw new ForbiddenException('Only booking participants can send conversation attachments');
     }
-
     const capabilities = this.conversationAttachmentCapabilities();
+    return this.verifyManagedChatAttachments(
+      user,
+      UploadFolder.ConversationAttachment,
+      references,
+      this.conversationMimeTypes,
+      capabilities,
+    );
+  }
+
+  private async verifyManagedChatAttachments(
+    user: User,
+    folder:
+      | UploadFolder.ConversationAttachment
+      | UploadFolder.SupportAttachment
+      | UploadFolder.BookingAttachment,
+    references: Array<{
+      publicId: string;
+      secureUrl: string;
+      resourceType?: string;
+      mimeType?: string;
+      originalFileName?: string;
+    }>,
+    allowedMimeTypes: ReadonlySet<string>,
+    capabilities: {
+      maxFilesPerMessage: number;
+      maxFileSizeBytes: number;
+      maxTotalSizeBytes: number;
+    },
+  ): Promise<ConversationAttachmentReference[]> {
+    if (references.length === 0) return [];
+    this.assertFolderAccess(user, folder);
     if (references.length > capabilities.maxFilesPerMessage) {
       throw new BadRequestException(
         `A message can contain at most ${capabilities.maxFilesPerMessage} attachments`,
@@ -214,7 +322,7 @@ export class UploadsService {
     }
 
     const uniqueIds = new Set<string>();
-    const expectedPrefix = `${this.baseFolder()}/${UploadFolder.ConversationAttachment}/${this.ownerNamespace(user)}/`;
+    const expectedPrefix = `${this.baseFolder()}/${folder}/${this.ownerNamespace(user)}/`;
     const normalized: ConversationAttachmentReference[] = [];
     let totalBytes = 0;
 
@@ -224,51 +332,45 @@ export class UploadsService {
       }
       uniqueIds.add(reference.publicId);
       if (!reference.publicId.startsWith(expectedPrefix)) {
-        throw new ForbiddenException('Conversation attachment does not belong to this account');
+        throw new ForbiddenException('Managed attachment does not belong to this account');
       }
-      if (!this.conversationMimeTypes.has(reference.mimeType)) {
-        throw new UnsupportedMediaTypeException('Conversation attachment type is not supported');
-      }
-      this.assertFileNameMatchesMime(reference.originalFileName, reference.mimeType);
       this.assertCloudinaryUrl(reference.secureUrl);
 
-      const expectedResourceType = this.resourceTypeFor(reference.mimeType);
-      if (reference.resourceType !== expectedResourceType) {
-        throw new BadRequestException('Attachment resource type does not match its MIME type');
-      }
-
-      let resource;
-      try {
-        resource = await this.cloudinary.api.resource(reference.publicId, {
-          resource_type: expectedResourceType,
-        });
-      } catch {
-        throw new BadRequestException(
-          'Conversation attachment could not be verified in Cloudinary',
-        );
-      }
+      const resource = await this.findManagedResource(reference.publicId, reference.resourceType);
+      const context = resource.context?.custom;
+      const mimeType = context?.mime_type;
       if (
         resource.public_id !== reference.publicId ||
-        resource.resource_type !== expectedResourceType
-      ) {
-        throw new BadRequestException('Cloudinary attachment metadata does not match the request');
-      }
-      const context = resource.context?.custom;
-      if (
         !context ||
         context.owner_namespace !== this.ownerNamespace(user) ||
-        context.upload_folder !== UploadFolder.ConversationAttachment ||
-        context.mime_type !== reference.mimeType
+        context.upload_folder !== folder ||
+        !mimeType
       ) {
+        throw new BadRequestException('Managed attachment ownership metadata is invalid');
+      }
+      if (!allowedMimeTypes.has(mimeType)) {
+        throw new UnsupportedMediaTypeException('Managed attachment type is not supported');
+      }
+
+      const expectedResourceType = this.resourceTypeFor(mimeType);
+      if (
+        resource.resource_type !== expectedResourceType ||
+        (reference.resourceType && reference.resourceType !== expectedResourceType) ||
+        (reference.mimeType && reference.mimeType !== mimeType)
+      ) {
+        throw new BadRequestException('Managed attachment metadata does not match the request');
+      }
+
+      const originalFileName = this.sanitizeOriginalName(
+        context.original_file_name || reference.originalFileName || 'attachment',
+      );
+      this.assertFileNameMatchesMime(originalFileName, mimeType);
+      this.assertCloudinaryUrl(resource.secure_url);
+      if (resource.secure_url !== reference.secureUrl) {
         throw new BadRequestException(
-          'Conversation attachment ownership or MIME metadata is invalid',
+          'Managed attachment URL does not exactly match the verified Cloudinary resource',
         );
       }
-      const originalFileName = this.sanitizeOriginalName(
-        context.original_file_name || reference.originalFileName,
-      );
-      this.assertFileNameMatchesMime(originalFileName, reference.mimeType);
-      this.assertCloudinaryUrl(resource.secure_url);
       if (resource.bytes > capabilities.maxFileSizeBytes) {
         throw new PayloadTooLargeException(
           `Attachment exceeds the ${this.megabytes(capabilities.maxFileSizeBytes)} MB per-file limit`,
@@ -286,11 +388,70 @@ export class UploadsService {
         resourceType: expectedResourceType,
         bytes: resource.bytes,
         originalFileName,
-        mimeType: reference.mimeType,
+        mimeType,
         ...(resource.format ? { format: resource.format } : {}),
       });
     }
     return normalized;
+  }
+
+  private async findManagedResource(publicId: string, hint?: string) {
+    const candidates: CloudinaryResourceType[] =
+      hint === 'image' || hint === 'raw' ? [hint] : ['image', 'raw'];
+    for (const resourceType of candidates) {
+      try {
+        return await this.cloudinary.api.resource(publicId, { resource_type: resourceType });
+      } catch (error) {
+        const status = this.cloudinaryErrorStatus(error);
+        if (status !== 404) {
+          throw new ServiceUnavailableException({
+            code: 'CLOUDINARY_VERIFY_FAILED',
+            message: 'Managed attachment verification is temporarily unavailable',
+          });
+        }
+        // A public ID can be either an image or raw document; try the other valid type on 404.
+      }
+    }
+    throw new BadRequestException('Managed attachment could not be verified in Cloudinary');
+  }
+
+  private cloudinaryErrorStatus(error: unknown): number | null {
+    if (!error || typeof error !== 'object') return null;
+    for (const field of ['http_code', 'statusCode', 'status'] as const) {
+      const value = (error as Record<string, unknown>)[field];
+      if (typeof value === 'number') return value;
+    }
+    const nested = (error as { error?: unknown }).error;
+    if (nested && nested !== error) return this.cloudinaryErrorStatus(nested);
+    return null;
+  }
+
+  private async assertChatAssetNotReferenced(publicId: string): Promise<void> {
+    const [result] = await this.prisma.$queryRaw<Array<{ referenced: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM "TaskMessages"
+        WHERE "attachments" @> jsonb_build_array(jsonb_build_object('publicId', ${publicId}))
+        UNION ALL
+        SELECT 1 FROM "SupportTickets"
+        WHERE "attachments" @> jsonb_build_array(jsonb_build_object('publicId', ${publicId}))
+        UNION ALL
+        SELECT 1 FROM "SupportTicketMessages"
+        WHERE "attachments" @> jsonb_build_array(jsonb_build_object('publicId', ${publicId}))
+        UNION ALL
+        SELECT 1 FROM "DisputeEvidence"
+        WHERE "publicId" = ${publicId}
+        UNION ALL
+        SELECT 1 FROM "TaskComplaints"
+        WHERE "attachments" @> jsonb_build_array(jsonb_build_object('publicId', ${publicId}))
+      ) AS "referenced"
+    `;
+    if (result?.referenced) {
+      throw new ConflictException({
+        code: 'MANAGED_ASSET_IN_USE',
+        message:
+          'This asset is referenced by persisted chat/support/dispute history and cannot be deleted independently.',
+      });
+    }
   }
 
   private async uploadBuffer(
@@ -381,7 +542,9 @@ export class UploadsService {
               CONVERSATION_ATTACHMENT_MAX_FILE_SIZE_BYTES,
             ),
           )
-        : globalMaximum;
+        : folder === UploadFolder.SupportAttachment
+          ? Math.min(globalMaximum, SUPPORT_ATTACHMENT_MAX_FILE_SIZE_BYTES)
+          : globalMaximum;
     if (file.size > maximum) {
       throw new PayloadTooLargeException(`File exceeds the ${this.megabytes(maximum)} MB limit`);
     }

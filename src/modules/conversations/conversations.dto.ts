@@ -123,6 +123,17 @@ export class ConversationAttachmentDto {
 
 export class SendMessageDto {
   @ApiPropertyOptional({
+    example: '01JCHAT9A4R7X2K6M8Q5T3V1Z0',
+    description:
+      'Stable client-generated ID used to make retries idempotent. Reusing it with different content returns 409.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(8, 80)
+  clientMessageId?: string;
+
+  @ApiPropertyOptional({
     example: 'I attached the updated scope of work. Please confirm receipt.',
   })
   @IsOptional()
@@ -143,6 +154,19 @@ export class SendMessageDto {
   @ValidateNested({ each: true })
   @Type(() => ConversationAttachmentDto)
   attachments?: ConversationAttachmentDto[];
+}
+
+export class MarkConversationReadDto {
+  @ApiPropertyOptional({
+    example: 'cm5message123',
+    description:
+      'Marks inbound messages only through this visible message. Omit to mark every current inbound message as read.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 40)
+  throughMessageId?: string;
 }
 
 export class BookingConversationParamDto {

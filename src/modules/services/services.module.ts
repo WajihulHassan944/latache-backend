@@ -4,9 +4,10 @@ import { AuthModule } from '../auth/auth.module';
 import { ServicesController } from './services.controller';
 import { ServicesService } from './services.service';
 import { AccountDeletionModule } from '../account-deletion/account-deletion.module';
+import { PlatformSettingsModule } from '../platform-settings/platform-settings.module';
 
 @Module({
-  imports: [AuthModule, AdminAuditModule, AccountDeletionModule],
+  imports: [AuthModule, AdminAuditModule, AccountDeletionModule, PlatformSettingsModule],
   controllers: [ServicesController],
   providers: [ServicesService],
   exports: [ServicesService],

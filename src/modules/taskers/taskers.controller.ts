@@ -11,6 +11,9 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ListTaskersQueryDto } from './dto/list-taskers-query.dto';
@@ -35,7 +38,8 @@ export class TaskersController {
   @Post('onboarding')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.Tasker)
   submitOnboarding(@CurrentUser() user: User, @Body() dto: SubmitOnboardingDto) {
     return this.taskers.submitOnboarding(user.id, dto);
   }

@@ -26,4 +26,20 @@ describe('NotificationTemplateService', () => {
       }),
     ).toMatchObject({ locale: 'ary', fallback: false, title: 'الربح باقي كيتصفى' });
   });
+
+  it('localizes referral qualification and reward-clearance notifications', () => {
+    expect(
+      templates.render('referral_qualified', 'ar', { title: 'Qualified', body: 'Qualified' }),
+    ).toMatchObject({ locale: 'ar', fallback: false, title: 'تأهلت الإحالة' });
+    expect(
+      templates.render('referral_reward_available', 'ary', {
+        title: 'Available',
+        body: 'Available',
+      }),
+    ).toMatchObject({
+      locale: 'ary',
+      fallback: false,
+      title: 'مكافأة الإحالة ولات متوفرة',
+    });
+  });
 });

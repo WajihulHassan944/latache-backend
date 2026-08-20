@@ -4,6 +4,7 @@ export const TASKER_BOOKING_STATUS = {
   EnRoute: 'en_route',
   Arrived: 'arrived',
   InProgress: 'in_progress',
+  AwaitingCustomerApproval: 'awaiting_customer_approval',
   Completed: 'completed',
   Cancelled: 'cancelled',
 } as const;
@@ -20,6 +21,7 @@ export const TASKER_ONGOING_STATUSES = [
   TASKER_BOOKING_STATUS.EnRoute,
   TASKER_BOOKING_STATUS.Arrived,
   TASKER_BOOKING_STATUS.InProgress,
+  TASKER_BOOKING_STATUS.AwaitingCustomerApproval,
 ] as const;
 
 export const TASKER_HISTORY_STATUSES = [

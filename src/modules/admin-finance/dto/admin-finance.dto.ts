@@ -12,6 +12,7 @@ export class AdminFinanceQueryDto {
       'revenue',
       'earnings',
       'cash_receivables',
+      'chargebacks',
     ],
     default: 'overview',
   })
@@ -24,6 +25,7 @@ export class AdminFinanceQueryDto {
     'revenue',
     'earnings',
     'cash_receivables',
+    'chargebacks',
   ])
   view?:
     | 'overview'
@@ -32,7 +34,8 @@ export class AdminFinanceQueryDto {
     | 'payouts'
     | 'revenue'
     | 'earnings'
-    | 'cash_receivables';
+    | 'cash_receivables'
+    | 'chargebacks';
 
   @ApiPropertyOptional({ example: 'pending_review' })
   @IsOptional()

@@ -1,3 +1,5 @@
+export * from './add-customer-role.dto';
+export * from './add-tasker-role.dto';
 export * from './change-password.dto';
 export * from './create-admin.dto';
 export * from './email.dto';
@@ -12,3 +14,4 @@ export * from './session-param.dto';
 export * from './update-profile.dto';
 export * from './verify-email.dto';
 export * from './verify-reset-otp.dto';
+export * from './switch-role.dto';

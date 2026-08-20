@@ -5,6 +5,7 @@ import { AccountStatus } from '../../../common/enums/account-status.enum';
 import { ADMINISTRATIVE_ROLES, UserRole } from '../../../common/enums/user-role.enum';
 import type { AccessTokenPayload } from '../../../common/types/jwt-payload';
 import { generateOpaqueToken, hashOpaqueToken } from '../../../common/utils/crypto.util';
+import { hasUserRole, userRoles } from '../../../common/utils/user-role.util';
 import { PrismaService } from '../../../database/prisma.service';
 import type { Prisma, User } from '../../../generated/prisma/client';
 import { AuthRepository } from '../repositories/auth.repository';
@@ -36,7 +37,12 @@ export class AuthTokenService {
     user: User,
     metadata: SessionMetadata = {},
     transaction?: Prisma.TransactionClient,
+    activeRole?: UserRole,
   ): Promise<AuthTokens> {
+    const selectedRole = activeRole ?? (user.role as UserRole);
+    if (!hasUserRole(user, selectedRole)) {
+      throw new UnauthorizedException('Selected role is not enabled for this account');
+    }
     const refreshToken = generateOpaqueToken();
     const session = await this.sessions.create(
       {
@@ -45,6 +51,7 @@ export class AuthTokenService {
         device: metadata.device ?? null,
         ipAddress: metadata.ipAddress?.slice(0, 64) ?? null,
         userAgent: metadata.userAgent?.slice(0, 512) ?? null,
+        activeRole: selectedRole,
         lastUsedAt: new Date(),
         expiresAt: this.refreshExpiry(),
       },
@@ -52,7 +59,7 @@ export class AuthTokenService {
     );
 
     return {
-      accessToken: await this.signAccessToken(user, session.id),
+      accessToken: await this.signAccessToken(user, session.id, selectedRole),
       refreshToken,
       tokenType: 'Bearer',
     };
@@ -93,6 +100,7 @@ export class AuthTokenService {
             device: metadata.device ?? stored.device,
             ipAddress: metadata.ipAddress?.slice(0, 64) ?? stored.ipAddress,
             userAgent: metadata.userAgent?.slice(0, 512) ?? stored.userAgent,
+            activeRole: this.resolveRefreshRole(user, stored.activeRole),
             lastUsedAt: new Date(),
             expiresAt: this.refreshExpiry(),
           },
@@ -111,7 +119,11 @@ export class AuthTokenService {
         return {
           kind: 'success' as const,
           tokens: {
-            accessToken: await this.signAccessToken(user, replacementSession.id),
+            accessToken: await this.signAccessToken(
+              user,
+              replacementSession.id,
+              this.resolveRefreshRole(user, replacementSession.activeRole),
+            ),
             refreshToken: replacement,
             tokenType: 'Bearer' as const,
           },
@@ -138,12 +150,15 @@ export class AuthTokenService {
     );
   }
 
-  private signAccessToken(user: User, sessionId: number): Promise<string> {
-    const role = user.role as UserRole;
+  private signAccessToken(user: User, sessionId: number, role: UserRole): Promise<string> {
+    if (!hasUserRole(user, role)) {
+      throw new UnauthorizedException('Selected role is no longer enabled for this account');
+    }
     const payload: AccessTokenPayload = {
       sub: user.id,
       id: user.id,
       role,
+      roles: userRoles(user),
       permissions: user.permissions,
       sessionId,
       isVerified: user.isVerified,
@@ -157,6 +172,14 @@ export class AuthTokenService {
         '15m',
       ) as JwtSignOptions['expiresIn'],
     });
+  }
+
+  private resolveRefreshRole(user: User, storedRole: string | null): UserRole {
+    const candidate = (storedRole || user.role) as UserRole;
+    if (!hasUserRole(user, candidate)) {
+      throw new UnauthorizedException('Session role is no longer enabled for this account');
+    }
+    return candidate;
   }
 
   private accessSecret(role: UserRole): string {

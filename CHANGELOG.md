@@ -1,3 +1,103 @@
+# v3.26.2
+
+- Fixed multi-role dispute/Admin TypeScript role-field typing regressions reported after v3.26.1.
+- Disciplinary-action responses now read the persisted `targetRole` field.
+- Admin dispute list typing now includes the persisted `filedByRole`.
+- Warning-strike target collections are explicitly restricted to Customer/Tasker marketplace roles.
+- No API, schema, migration, or environment changes.
+- Build/tests/lint/Prisma validation were not run per request.
+
+# v3.26.1 — TypeScript source hotfix
+
+- Fixed participant dispute Prisma payload typing by using a mutable resolution-status filter instead of a readonly tuple in `PARTICIPANT_DISPUTE_INCLUDE`; this restores relation-aware payload inference for dispute list/detail views.
+- Fixed legacy dispute-evidence byte aggregation by explicitly using a numeric reducer accumulator for Prisma JSON attachment data.
+- Normalized indexed Elite tier lookups to `null` so automatic badge synchronization never receives `undefined`.
+- Fixed Elite settled-earnings reporting to group ledger totals by currency and normalize them to canonical USD before aggregation, ranking and eligibility metrics.
+- Restored the required `settledEarningsCurrency: 'USD'` marker when deserializing Elite metrics snapshots.
+- No API, database-schema, migration or environment-setting change.
+- Build, lint, Jest, E2E and Prisma generation/validation were not run at the requester’s instruction.
+
+# v3.26.0 — Multi-role Customer/Tasker identity
+
+- Replaced the single-marketplace-role assumption with one canonical User identity plus explicit `roles[]`, `CustomerProfile`, and `TaskerProfile` state. Existing email uniqueness remains identity-wide.
+- Added authenticated role enrollment for Customer → Tasker and Tasker → Customer without duplicating credentials, email verification, or User rows.
+- Added active-role login/session semantics and Customer/Tasker role switching; refresh-token sessions persist the selected marketplace role.
+- Updated role guards, JWT identity handling and profile serialization for role membership rather than permanent `User.role` assumptions.
+- Updated booking discovery/dashboard paths for dual-role identities and explicitly reject self-booking where Customer and Tasker resolve to the same User.
+- Scoped Customer/Tasker moderation, dispute strikes, ratings/review context and profile lifecycle independently while retaining identity-level audit compatibility.
+- Scoped support requester context, notifications, private chat/realtime/WebRTC authorization and retry keys to the active marketplace role/context.
+- Preserved separate Customer wallet versus Tasker earning/payout accounting even when both profiles share one User ID.
+- Changed referral attribution uniqueness to `(referredUserId, program)` so one identity can participate independently in Customer and Tasker referral programs while self-referral remains prohibited.
+- Added additive migration `20260819130000_multi_role_identity_profiles`.
+- Build, lint, Jest, E2E, Prisma generation/validation and migration execution were not run at the requester’s instruction.
+
+# v3.25.0 — Super Admin referral policy and enforceable Elite perk catalog
+
+- Referral/Rewards commercial policy is now Super-Admin-owned. `clientReferralBonus`, referred-Customer discount policy, `taskerReferralBonus`, `referredTaskerBonus`, qualification floors, caps, expiry and clearance remain on the canonical `referral` Platform Settings section; non-Super-Admin writes are rejected.
+- Commission/Elite-pricing policy is also Super-Admin-only because it controls the financial value of the `tier_commission_policy` perk.
+- Elite tier eligibility/automation policy and tier perk assignment are Super-Admin-only; operational Admins with `elite.manage` can continue reviewing memberships and applying permitted member-level actions without redefining Gold/Platinum/Diamond policy.
+- Added a backend-defined Elite perk catalog: `elite_profile_badge`, `search_priority_boost`, and `tier_commission_policy`. Arbitrary unsupported benefit codes can no longer be assigned as if they were functional perks.
+- Perk assignment is now authoritative: discovery priority is applied only when the tier has active `search_priority_boost`; tier commission/minimum-task-price rules apply only when `tier_commission_policy` is active; public Tasker responses expose `eliteProfileBadgeVisible`/active perk codes so the profile badge is controlled by the assigned entitlement.
+- Added `GET /api/admin/elite-taskers/program/perk-catalog`. The existing `PUT /api/admin/elite-taskers/program/tiers/:tierCode/benefits` remains the single perk-assignment mutation.
+- Built-in automatic Elite badges respect the active profile-badge perk assignment. Unsupported historical custom benefit rows are retained but deactivated by additive migration `20260819113000_superadmin_referral_elite_perk_policy`.
+- Booking quote pricing policy now exposes `eliteCommissionPerkApplied` so the API explicitly reports whether Elite commission treatment was used.
+- Build, lint, tests and Prisma generation/validation were not run for this release, preserving the requester's existing validation workflow.
+
+# v3.24.0 — Dispute, referral/reward and chat flow completion audit
+
+- Audited the current Dispute, Referral/Rewards and Chat/Support backend flows end-to-end without introducing parallel resources.
+- Disputes: added automatic expiry for unanswered settlement proposals through the existing durable maintenance job, cancelled stale proposed settlements on participant withdrawal, and made participant/Admin evidence submissions retry-safe by ignoring already-persisted Cloudinary public IDs before consuming case evidence capacity.
+- Added an index on dispute resolution status/response deadline for efficient settlement-expiry maintenance.
+- Referral/Rewards: referral reward release now treats active/lost Stripe provider chargebacks as financial holds, and a verified Stripe chargeback loss revokes/cancels/reverses the related referral benefits through the existing immutable wallet-ledger logic.
+- Referral reward release now locks Booking → Referral → Reward to serialize with provider financial events. Customer referral-discount reservations are defensively released on booking cancellation and can be safely reused for a later eligible booking instead of becoming stranded.
+- Chat/Support: audited Customer↔Tasker private booking chat, Customer/Tasker↔Admin/Super Admin support conversations, Admin/Super Admin internal notes, attachments, unread/read state, transactional realtime outbox and Customer↔Tasker WebRTC signaling. No missing backend flow or new route was required.
+- Updated stale static contracts for current Cloudinary dispute verification, satisfaction tracking, provider-chargeback-aware referrals and settlement-proposal expiry.
+- Added additive migration `20260819093000_complete_dispute_referral_chat_flows`.
+- Build, lint, tests and Prisma generation/validation were not run for this release at the requester's instruction.
+
+# v3.23.0 — Tasker level automation, service-rate governance and platform currency presets
+
+- Completed the Tasker Elite lifecycle with live eligibility enforcement, Admin approval revalidation, automatic entry/next-tier promotion, retention grace periods, one-step demotion, recovery, request cooldowns, persisted evaluation history, notifications and audit records.
+- Added automatic Elite badge assignment/revocation and seeded production-safe built-in Gold/Platinum/Diamond requirements only where no Admin requirements already existed.
+- Added backend-enforced Elite perks that are real rather than cosmetic: tier/profile badges, rank-based default Tasker discovery priority, and the existing tier-specific commission/minimum-task-price pricing policy.
+- Added required Admin Service minimum/maximum hourly rates. Canonical catalogue rates are stored in USD, while Admin/Tasker/public APIs accept and return current platform-currency amounts; Tasker onboarding/profile rates are transactionally rejected outside Service bounds.
+- Added Service-row locking so concurrent Admin range edits cannot race Tasker rate writes; Admin cannot narrow a range while existing Tasker rates would become invalid.
+- Added Super-Admin-only operational market selection for US/USD, Morocco/MAD, Pakistan/PKR, France/EUR and Spain/EUR using static application presets (`USD 1`, `MAD 9`, `PKR 280`, `EUR 0.86` per USD). France and Spain intentionally share EUR.
+- Added safe cross-ISO currency switching: it is blocked while active/unsettled bookings, non-zero wallets, earnings, cash receivables/payables or withdrawals exist. Historical financial/provider rows retain their original ISO currency.
+- New bookings/payments, service/catalogue prices, Tasker discovery/profile rates, wallet creation and presentation summaries use the selected platform currency. Historical mixed-currency dashboard totals are display-converted using the same static presets without rewriting ledger rows.
+- Added BullMQ Elite maintenance scheduling (`ELITE_WORKER_POLL_MS`, `ELITE_WORKER_BATCH_SIZE`) and additive migration `20260818223000_tasker_levels_service_rate_currency`.
+- Build, lint, tests and Prisma generation/validation were not run for this release at the requester's instruction.
+
+# v3.22.0 — Dispute lifecycle, evidence, moderation and chargeback hardening
+
+- Added booking-row-locked/idempotent dispute creation, active-case uniqueness, configurable filing/appeal/SLA windows, reopen/appeal finance re-holds and stale-resolution suppression.
+- Added participant withdrawal, proposal accept/reject, appeal, comments and real post-case satisfaction tracking on the canonical dispute resource.
+- Hardened participant/Admin evidence against real Latache-owned Cloudinary resources, protected dispute assets from independent deletion, added case-wide evidence caps and BullMQ reminder/overdue/expiry/SLA automation.
+- Added workload-based Admin assignment and mandatory participant notification/email coverage for lifecycle actions, with `en`, `ar` and `ary` backend-generated email copy.
+- Added idempotent warning strikes/disciplinary state with optional Admin-configured automatic suspension.
+- Added auditable confirmed physical-cash refund obligations and proportional cash-commission receivable/reimbursement accounting without fabricating platform-held cash.
+- Added verified Stripe `charge.dispute.*` ingestion, Finance chargeback view and Tasker-finance holds while provider disputes are active/lost. Provider-side chargeback contest/evidence submission and APNs/FCM remain intentionally unavailable until real operational/provider configuration exists.
+- Added additive migration `20260818190000_harden_dispute_lifecycle`.
+- Build, lint, tests and Prisma validation/generation were not run for this release at the requester's instruction.
+
+# v3.21.1 — Postman/OpenAPI compatibility hotfix
+
+- Fixed the invalid `GeneralSettingsDto.translations` OpenAPI array that omitted its required `items` schema and caused Postman's API import to fail with a generic unexpected error.
+- Added the configured `APP_BASE_URL` as the OpenAPI server origin so generated clients use the correct local/staging/production host without duplicating `/api`.
+- Added validator regression coverage, a directly importable Postman Collection v2.1 snapshot, a credential-free local environment, and setup documentation.
+- No API route, database schema, migration, payment, referral, realtime, or RBAC behavior changed.
+
+# v3.21.0 — Production referral qualification and rewards
+
+- Added stable, high-entropy same-role referral codes and one locked attribution per referred Customer or Tasker.
+- Snapshotted policy, currency, qualification thresholds, expiry, clearance, and benefit values so later setting changes cannot rewrite historical promises.
+- Restricted qualification to verified Stripe success or an authoritative locked customer-wallet debit; cash bookings never qualify.
+- Added capped referred-Customer discounts with minimum real-charge and qualifying-payment floors.
+- Added pending Customer/Tasker wallet rewards, BullMQ clearance/expiry maintenance, active-dispute blocking, and idempotent ledger settlement.
+- Added refund and RBAC-controlled Admin revocation clawbacks using immutable negative wallet entries and audit records.
+- Added participant history/leaderboard APIs, Admin investigation APIs, localized notifications, and durable private `referral:updated` outbox events.
+- Added additive migration `20260818140000_complete_referral_reward_system`; referral programs remain disabled with zero benefits until real commercial policy is configured.
+
 # v3.18.0 — Permanent deletion controls and email layout correction
 
 - Added explicit RBAC permissions and irreversible Customer/Tasker/Admin purge APIs with confirmation phrases, audit reasons, row locking, blocker rechecks, and stable `ACCOUNT_PURGE_BLOCKED` responses.

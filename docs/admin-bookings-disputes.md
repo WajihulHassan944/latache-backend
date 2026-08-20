@@ -1,66 +1,38 @@
 # Admin Booking & Dispute Management
 
-Version 3.9 adds permission-aware booking and dispute operations for Super Admin and delegated Admin users. The design screens are treated as views over canonical backend resources, not as reasons to create one API per tab.
+The Admin booking/dispute design is implemented as views and actions over canonical booking/payment/dispute resources. v3.22.0 extends the existing dispute state machine; it does not create parallel Customer/Tasker/Admin complaint resources.
 
 ## Permissions
 
 - `bookings.read`: booking list/details.
 - `bookings.manage`: exceptional non-financial booking cancellation.
-- `reports.read`: additionally required when `GET /api/admin/bookings?format=csv` is used.
+- `reports.read`: additionally required for CSV exports.
 - `support.read`: dispute queues/details.
-- `support.manage`: investigation/evidence/resolution mutations.
-- `finance.manage`: additionally required when a dispute resolution creates a refund.
-- `super_admin`: bypasses permission checks.
+- `support.manage`: investigation, assignment, evidence, settlement proposal and non-financial resolution mutations.
+- `finance.manage`: additionally required for refund execution/manual cash-refund confirmation.
+- Super Admin bypasses permission checks.
 
 ## Booking Management
 
-One list endpoint powers every booking tab and the summary cards:
+One list endpoint powers booking tabs:
 
 ```text
-GET /api/admin/bookings?view=all
-GET /api/admin/bookings?view=pending
-GET /api/admin/bookings?view=accepted
-GET /api/admin/bookings?view=in_progress
-GET /api/admin/bookings?view=completed
-GET /api/admin/bookings?view=cancelled
-GET /api/admin/bookings?view=disputed
-```
-
-`accepted` maps to the canonical booking status `confirmed`. `disputed` is derived from unresolved complaint records and is not another booking status.
-
-Supported filters include search, service/customer/tasker, payment status, date range and sort. `format=csv` exports the same filtered resource without a second report endpoint.
-
-```text
-GET  /api/admin/bookings/:id
+GET /api/admin/bookings?view=all|pending|accepted|in_progress|completed|cancelled|disputed
+GET /api/admin/bookings/:id
 POST /api/admin/bookings/:id/actions
 ```
 
-The only direct admin booking action in this phase is safe cancellation. Paid/refunded bookings and bookings with an active dispute cannot bypass the dispute/refund flow.
-
-The previous semantic duplicate `GET /api/admin/customers/bookings` has been removed. Per-customer drill-down remains available as `GET /api/admin/customers/:id/bookings`.
+`accepted` maps to canonical `confirmed`. `disputed` is derived from unresolved complaints and is not a second booking status. Paid/refunded bookings and bookings with active disputes cannot bypass the dispute/refund flow.
 
 ## Dispute Management
 
-One queue endpoint powers every design tab:
-
 ```text
-GET /api/admin/disputes?view=open
-GET /api/admin/disputes?view=under_investigation
-GET /api/admin/disputes?view=escalated
-GET /api/admin/disputes?view=resolved
-GET /api/admin/disputes?view=evidence_review
-GET /api/admin/disputes?view=resolution_actions
-GET /api/admin/disputes?view=all
-```
-
-The response contains real queue metrics from persisted complaints and resolutions. Post-dispute satisfaction is explicitly unavailable until a survey/event source exists; no percentage is fabricated.
-
-```text
+GET  /api/admin/disputes?view=open|under_investigation|escalated|resolved|evidence_review|resolution_actions|all
 GET  /api/admin/disputes/:id
 POST /api/admin/disputes/:id/actions
 ```
 
-The single mutation endpoint supports:
+The same action endpoint supports:
 
 - `start_investigation`
 - `assign`
@@ -70,63 +42,92 @@ The single mutation endpoint supports:
 - `add_evidence`
 - `review_evidence`
 - `save_resolution_draft`
+- `propose_resolution`
 - `resolve`
+- `confirm_cash_refund`
 - `reopen`
 
-Admins may save a refund resolution draft with `support.manage`, but applying it also requires `finance.manage`. This allows support and finance responsibilities to remain separable.
+Admin detail includes lifecycle/SLA timestamps, normalized evidence/request state, proposals, participant actions/comments, satisfaction, durable delivery state, manual cash refunds, disciplinary actions and linked Stripe chargebacks.
+
+Satisfaction metrics are now calculated from persisted 1–5 `DisputeSatisfactionSurvey` rows. A percentage/rating is never fabricated when no responses exist.
+
+## Participant lifecycle
+
+```text
+GET  /api/disputes
+GET  /api/disputes/:disputeId
+POST /api/bookings/:bookingId/disputes
+POST /api/disputes/:disputeId/evidence
+POST /api/disputes/:disputeId/actions
+POST /api/disputes/:disputeId/satisfaction
+```
+
+Creation locks the Booking before TaskComplaint, applies the configured filing window, supports `Idempotency-Key`, and enforces a single new active case per booking. Participant actions support filer withdrawal, settlement accept/reject, appeal and immutable dispute-thread comments. An appeal reopens the same case and reapplies financial holds. Closed-case satisfaction may be created/updated by each booking participant.
 
 ## Evidence flow
 
-Customer and Tasker evidence is part of the shared booking/dispute resource:
+Files must first be uploaded with the shared `booking-attachments` upload category. Participant and Admin evidence references are then verified against the actual Cloudinary resource: actor-owned Latache namespace, exact public ID, exact secure URL, Cloudinary context metadata, resource type and mime type. Arbitrary HTTPS evidence URLs are rejected.
+
+Referenced `DisputeEvidence` and legacy complaint attachments are protected from independent upload deletion. Case-wide evidence item/byte limits are enforced in addition to per-request limits.
+
+Evidence request deadlines must be in the future. The dispute BullMQ maintenance job sends reminders, marks overdue requests, expires/escalates them after policy grace, and escalates cases that exceed the case SLA.
+
+## Assignment and notifications
+
+When enabled in Platform Settings, new disputes use workload-based assignment to the least-loaded active Admin/Super Admin with effective `support.manage`. Investigation start, assignment, priority, escalation, evidence lifecycle, settlement lifecycle, reopen/appeal and closure notify participants through persisted notifications + transactional realtime outbox. Dispute-specific email is queued durably and delivered by the worker in `en`, `ar` or `ary` for backend-generated lifecycle copy.
+
+APNs/FCM is not configured. `disputes.mobilePushEnabled=true` is rejected rather than pretending a push was sent.
+
+## Settlement and payment invariants
+
+A proposed settlement is participant consent only; it does not move money. Applying a refund still requires `finance.manage` and the real payment path.
+
+For Stripe/customer-wallet payments:
+
+1. lock authoritative booking/dispute/payment state;
+2. validate the remaining refundable amount;
+3. persist an idempotent resolution/refund transaction;
+4. execute the real provider/wallet refund;
+5. keep the dispute active while provider state is pending;
+6. apply the Tasker earning adjustment exactly once after real success;
+7. close/audit/notify only after settlement succeeds.
+
+For confirmed physical cash, the platform cannot reverse money that was handed directly to the Tasker. The resolution creates `pending_manual_transfer`. Only an authorized Admin confirmation with a real transfer reference and notes records the refund as confirmed and performs the proportional platform-commission receivable accounting. The physical cash amount itself never appears as platform-held Tasker wallet money.
+
+## Reopen and multi-hold behavior
+
+Admin reopen and participant appeal restore `activeBookingKey`, reset stale final-result state/SLA state, and explicitly re-block Tasker finance. Participant detail does not surface an old applied resolution as the current result after reopen.
+
+Release/unblock paths recheck all active internal disputes plus active/lost Stripe chargebacks. Legacy multiple-active-dispute data therefore continues to hold finance until every valid hold is closed.
+
+## Stripe provider chargebacks
+
+The verified Stripe webhook now handles:
 
 ```text
-GET  /api/disputes?bookingId=:bookingId
-POST /api/bookings/:bookingId/disputes
-POST /api/disputes/:disputeId/evidence
+charge.dispute.created
+charge.dispute.updated
+charge.dispute.closed
 ```
 
-Files are first uploaded through the existing Cloudinary `booking-attachments` upload category. The participant evidence endpoint accepts the returned Cloudinary metadata and verifies that the `publicId` belongs to the authenticated account namespace and that the URL belongs to the configured Cloudinary account.
-
-When an admin requests evidence from both parties, two persisted evidence requests are created so Customer and Tasker responses can be tracked independently. Evidence shown to a participant is restricted to their own uploads plus requests addressed to their role; admin review notes and the other party's evidence are not leaked.
-
-## Resolution and payment invariants
-
-A resolution with no refund closes/dismisses the complaint and releases any pre-settlement payment hold. If a completed booking was held before payment, normal final-payment orchestration can then resume.
-
-A refund resolution is different:
-
-1. Lock the complaint/booking and verify remaining refundable amount.
-2. Persist a resolution and idempotent refund transaction.
-3. For a customer-wallet payment, credit the real customer wallet ledger transactionally.
-4. For a Stripe payment, create a real Stripe Refund against the persisted PaymentIntent.
-5. Keep pending/provider-processing refunds unresolved until provider state confirms success.
-6. After successful settlement, update booking refund state and apply the proportional Tasker earning reversal exactly once.
-7. Mark the dispute resolved, audit the action and notify the parties only after the refund has actually settled.
-
-A booking becomes `partially_refunded` or `refunded` based on succeeded refund transactions. Failed/pending refund attempts are never represented as successful refunds.
-
-For Stripe, configure the existing webhook endpoint to receive at least:
+Provider disputes are persisted separately from Latache complaints and exposed through:
 
 ```text
-payment_intent.succeeded
-payment_intent.payment_failed
-refund.created
-refund.updated
-refund.failed
+GET /api/admin/finance?view=chargebacks
 ```
 
-Webhook IDs remain persisted for deduplication and signatures are verified against the raw body.
+Active/lost provider disputes block Tasker finance. A real Stripe `lost` event is recorded for manual financial review; the backend does not fabricate provider recovery or a Tasker clawback. Provider-side contest/evidence-submission automation is intentionally not claimed.
+
+## Platform settings
+
+Dispute policy is managed through the existing canonical Platform Settings resource (`sections=disputes`). See `docs/dispute-lifecycle-hardening.md` for defaults and operational behavior.
 
 ## Migration
 
-Apply:
+Apply the original normalized dispute migration plus the new additive hardening migration in normal migration order. The new release migration is:
 
 ```text
-20260810130000_add_booking_dispute_management
+20260818190000_harden_dispute_lifecycle
 ```
 
-The migration extends `TaskComplaints` and adds normalized evidence/request/resolution tables. It performs no demo inserts and does not rewrite booking/payment history.
-
-### Evidence queue default
-
-Complaints without submitted/requested evidence start with `evidenceReviewStatus=not_required`. They enter Evidence Review only when evidence exists or an administrator requests more evidence.
+It contains no operational seed data and does not delete/rewrite booking/payment history.

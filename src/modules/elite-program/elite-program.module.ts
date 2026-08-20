@@ -6,9 +6,10 @@ import { AdminEliteTaskersController } from './controllers/admin-elite-taskers.c
 import { TaskerEliteController } from './controllers/tasker-elite.controller';
 import { EliteProgramService } from './services/elite-program.service';
 import { AccountDeletionModule } from '../account-deletion/account-deletion.module';
+import { PlatformSettingsModule } from '../platform-settings/platform-settings.module';
 
 @Module({
-  imports: [AuthModule, AdminAuditModule, NotificationsModule, AccountDeletionModule],
+  imports: [AuthModule, AdminAuditModule, NotificationsModule, AccountDeletionModule, PlatformSettingsModule],
   controllers: [AdminEliteTaskersController, TaskerEliteController],
   providers: [EliteProgramService],
   exports: [EliteProgramService],

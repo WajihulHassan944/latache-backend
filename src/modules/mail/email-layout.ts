@@ -24,56 +24,28 @@ export const normalizeEmailLocale = (locale?: string): EmailLocale => {
 };
 
 interface EmailLayoutCopy {
-  slogan: string;
   securityTitle: string;
   securityBody: string;
-  appTitle: string;
-  appBody: string;
-  appStoreTop: string;
-  appStoreName: string;
-  playStoreTop: string;
-  playStoreName: string;
   rights: string;
   footerTagline: string;
 }
 
 const LAYOUT_COPY: Record<EmailLocale, EmailLayoutCopy> = {
   en: {
-    slogan: 'Better Services.<br>A Simpler Life.',
     securityTitle: 'Your security is our priority.',
     securityBody: 'Never share this code or your password with anyone.',
-    appTitle: 'Get the Latache App',
-    appBody: 'Book trusted professionals. Anytime. Anywhere.',
-    appStoreTop: 'Download on the',
-    appStoreName: 'App Store',
-    playStoreTop: 'GET IT ON',
-    playStoreName: 'Google Play',
     rights: 'All rights reserved.',
     footerTagline: 'Connecting you with trusted professionals.',
   },
   ar: {
-    slogan: 'خدمات أفضل.<br>حياة أبسط.',
     securityTitle: 'أمانك هو أولويتنا.',
     securityBody: 'لا تشارك هذا الرمز أو كلمة المرور مع أي شخص.',
-    appTitle: 'حمّل تطبيق Latache',
-    appBody: 'احجز مهنيين موثوقين. في أي وقت. ومن أي مكان.',
-    appStoreTop: 'حمّله من',
-    appStoreName: 'App Store',
-    playStoreTop: 'حمّله من',
-    playStoreName: 'Google Play',
     rights: 'جميع الحقوق محفوظة.',
     footerTagline: 'نصلك بمهنيين موثوقين.',
   },
   ary: {
-    slogan: 'خدمات حسن.<br>حياة أسهل.',
     securityTitle: 'الحماية ديالك هي الأولوية ديالنا.',
     securityBody: 'ماتشاركش هاد الكود ولا الموط باس ديالك مع حتى واحد.',
-    appTitle: 'حمّل تطبيق Latache',
-    appBody: 'حجز مهنيين ثقة، فأي وقت ومن أي بلاصة.',
-    appStoreTop: 'حمّلو من',
-    appStoreName: 'App Store',
-    playStoreTop: 'حمّلو من',
-    playStoreName: 'Google Play',
     rights: 'الحقوق كلها محفوظة.',
     footerTagline: 'كنربطوك بمهنيين ثقة.',
   },
@@ -112,8 +84,6 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
       .email-pad { padding-left: 24px !important; padding-right: 24px !important; }
       .email-title { font-size: 36px !important; line-height: 42px !important; }
       .header-logo { width: 170px !important; }
-      .header-slogan { font-size: 16px !important; line-height: 21px !important; }
-      .store-cell { display: block !important; width: 100% !important; padding: 6px 0 !important; }
     }
   </style>
 </head>
@@ -127,11 +97,10 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
             <td background="${LATACHE_EMAIL_ASSETS.header.url}" valign="top" style="height:300px;background-color:#6a2a13;background-image:url('${LATACHE_EMAIL_ASSETS.header.url}');background-position:center;background-size:cover;border-radius:20px 20px 0 0">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
-                  <td valign="top" style="padding:30px 28px;text-align:left;direction:ltr">
-                    <img class="header-logo" src="${LATACHE_EMAIL_LOGO_URL}" width="210" alt="Latache" style="display:block;width:210px;max-width:48%;height:auto;border:0">
-                  </td>
-                  <td valign="top" align="right" style="padding:35px 30px 0 10px;color:#ffe1a5;font-family:Georgia,'Times New Roman',serif;font-size:20px;font-style:italic;line-height:26px;text-align:right;direction:ltr">
-                    <span class="header-slogan" style="display:inline-block;padding-left:18px;border-left:1px solid #f3bd63">${copy.slogan}</span>
+                  <td valign="top" align="center" style="padding:30px 28px;text-align:center;direction:ltr">
+                    <center>
+                      <img class="header-logo" src="${LATACHE_EMAIL_LOGO_URL}" width="210" align="center" alt="Latache" style="display:block;width:210px;max-width:48%;height:auto;margin:0 auto;border:0;text-align:center">
+                    </center>
                   </td>
                 </tr>
               </table>
@@ -142,7 +111,9 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%">
                 <tr>
                   <td align="center" style="text-align:center;direction:ltr">
-                    <img src="${LATACHE_EMAIL_ASSETS.shield.url}" width="190" align="center" alt="" style="display:block;width:190px;max-width:52%;height:auto;margin:-34px auto 2px;border:0">
+                    <center>
+                      <img src="${LATACHE_EMAIL_ASSETS.shield.url}" width="190" align="center" alt="" style="display:block;width:190px;max-width:52%;height:auto;margin:-34px auto 2px;border:0;text-align:center">
+                    </center>
                   </td>
                 </tr>
               </table>
@@ -156,32 +127,6 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
                   <td width="62" valign="middle" style="padding:18px 0 18px 20px;color:#17642a;font-size:32px;text-align:center;direction:ltr">✓</td>
                   <td valign="middle" style="padding:16px 22px;color:#145a25;font-size:15px;line-height:22px;text-align:${textAlign}">
                     <strong style="font-size:16px">${escapeHtml(securityTitle)}</strong><br>${escapeHtml(securityBody)}
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td class="email-pad" style="padding:18px 56px 30px;background:#fffdf8;text-align:center">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                <tr>
-                  <td style="width:28%;height:1px;background:#c48332;font-size:1px;line-height:1px">&nbsp;</td>
-                  <td style="padding:0 18px;color:#5a2613;font-family:Georgia,'Times New Roman',serif;font-size:23px;font-weight:bold;white-space:nowrap">${copy.appTitle}</td>
-                  <td style="width:28%;height:1px;background:#c48332;font-size:1px;line-height:1px">&nbsp;</td>
-                </tr>
-              </table>
-              <p style="margin:10px 0 20px;color:#b06b2d;font-size:16px;line-height:24px">${copy.appBody}</p>
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto;direction:ltr">
-                <tr>
-                  <td class="store-cell" style="padding:0 6px">
-                    <a href="https://latache-web.vercel.app" style="display:block;min-width:178px;padding:8px 16px;border-radius:9px;background:#17130f;color:#fff;text-decoration:none;text-align:left">
-                      <span style="display:inline-block;margin-right:10px;font-size:27px;vertical-align:middle">●</span><span style="display:inline-block;vertical-align:middle"><small style="display:block;font-size:9px;line-height:11px">${copy.appStoreTop}</small><strong style="display:block;font-size:19px;line-height:21px">${copy.appStoreName}</strong></span>
-                    </a>
-                  </td>
-                  <td class="store-cell" style="padding:0 6px">
-                    <a href="https://latache-web.vercel.app" style="display:block;min-width:178px;padding:8px 16px;border-radius:9px;background:#17130f;color:#fff;text-decoration:none;text-align:left">
-                      <span style="display:inline-block;margin-right:10px;color:#65d877;font-size:25px;vertical-align:middle">▶</span><span style="display:inline-block;vertical-align:middle"><small style="display:block;font-size:9px;line-height:11px">${copy.playStoreTop}</small><strong style="display:block;font-size:19px;line-height:21px">${copy.playStoreName}</strong></span>
-                    </a>
                   </td>
                 </tr>
               </table>

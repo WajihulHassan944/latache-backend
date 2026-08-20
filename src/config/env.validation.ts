@@ -6,6 +6,7 @@ const BODY_LIMIT_PATTERN = /^\d+(?:b|kb|mb|gb)$/i;
 const EMAIL_FROM_PATTERN = /^(?:[^<>]+\s*)?<[^<>\s]+@[^<>\s]+>$|^[^\s@]+@[^\s@]+$/;
 const PAYOUT_EXECUTION_MODES = new Set(['disabled', 'manual']);
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
+const PLATFORM_CURRENCIES = new Set(['USD', 'MAD', 'PKR', 'EUR']);
 const CALL_BOOKING_STATUSES = new Set(['confirmed', 'en_route', 'arrived', 'in_progress']);
 const LOCALE_PATTERN = /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/;
 const SERVICE_MODES = new Set(['api', 'worker', 'all']);
@@ -253,6 +254,30 @@ export const validateEnvironment = (environment: Environment): Environment => {
   );
   validateInteger(
     errors,
+    'BOOKING_COMPLETION_APPROVAL_HOURS',
+    environment.BOOKING_COMPLETION_APPROVAL_HOURS,
+    24,
+    1,
+    168,
+  );
+  validateInteger(
+    errors,
+    'BOOKING_COMPLETION_SWEEP_INTERVAL_MS',
+    environment.BOOKING_COMPLETION_SWEEP_INTERVAL_MS,
+    60_000,
+    5_000,
+    3_600_000,
+  );
+  validateInteger(
+    errors,
+    'BOOKING_COMPLETION_BATCH_SIZE',
+    environment.BOOKING_COMPLETION_BATCH_SIZE,
+    100,
+    1,
+    1_000,
+  );
+  validateInteger(
+    errors,
     'REALTIME_TYPING_THROTTLE_MS',
     environment.REALTIME_TYPING_THROTTLE_MS,
     300,
@@ -387,6 +412,38 @@ export const validateEnvironment = (environment: Environment): Environment => {
     14,
     1,
     365,
+  );
+  validateInteger(
+    errors,
+    'REFERRAL_WORKER_POLL_MS',
+    environment.REFERRAL_WORKER_POLL_MS,
+    60_000,
+    1_000,
+    3_600_000,
+  );
+  validateInteger(
+    errors,
+    'REFERRAL_WORKER_BATCH_SIZE',
+    environment.REFERRAL_WORKER_BATCH_SIZE,
+    100,
+    1,
+    1_000,
+  );
+  validateInteger(
+    errors,
+    'ELITE_WORKER_POLL_MS',
+    environment.ELITE_WORKER_POLL_MS,
+    21_600_000,
+    60_000,
+    86_400_000,
+  );
+  validateInteger(
+    errors,
+    'ELITE_WORKER_BATCH_SIZE',
+    environment.ELITE_WORKER_BATCH_SIZE,
+    200,
+    1,
+    1_000,
   );
   validateInteger(
     errors,
@@ -535,8 +592,8 @@ export const validateEnvironment = (environment: Environment): Environment => {
 
   const stripeEnabled = (environment.STRIPE_ENABLED ?? 'false').toLowerCase() === 'true';
   const paymentsCurrency = (environment.PAYMENTS_CURRENCY ?? 'USD').toUpperCase();
-  if (!CURRENCY_PATTERN.test(paymentsCurrency)) {
-    errors.push('PAYMENTS_CURRENCY must be a three-letter ISO-style currency code');
+  if (!CURRENCY_PATTERN.test(paymentsCurrency) || !PLATFORM_CURRENCIES.has(paymentsCurrency)) {
+    errors.push('PAYMENTS_CURRENCY must be one of USD, MAD, PKR, or EUR');
   }
   const platformFeePercent = Number(environment.PAYMENTS_PLATFORM_FEE_PERCENT ?? '0');
   if (!Number.isFinite(platformFeePercent) || platformFeePercent < 0 || platformFeePercent > 100) {
@@ -578,8 +635,8 @@ export const validateEnvironment = (environment: Environment): Environment => {
     errors.push('TASKER_PAYOUT_EXECUTION_MODE must be disabled or manual');
   }
   const walletCurrency = (environment.TASKER_WALLET_CURRENCY ?? 'USD').toUpperCase();
-  if (!CURRENCY_PATTERN.test(walletCurrency)) {
-    errors.push('TASKER_WALLET_CURRENCY must be a three-letter ISO-style currency code');
+  if (!CURRENCY_PATTERN.test(walletCurrency) || !PLATFORM_CURRENCIES.has(walletCurrency)) {
+    errors.push('TASKER_WALLET_CURRENCY must be one of USD, MAD, PKR, or EUR');
   }
   const minimumWithdrawal = Number(environment.TASKER_MIN_WITHDRAWAL_AMOUNT ?? '1');
   if (!Number.isFinite(minimumWithdrawal) || minimumWithdrawal <= 0) {
@@ -631,7 +688,10 @@ export const validateEnvironment = (environment: Environment): Environment => {
     (
       environment.REDIS_ENABLED ?? (present(environment.REDIS_URL) ? 'true' : 'false')
     ).toLowerCase() === 'true';
+  const redisRequired = (environment.REDIS_REQUIRED ?? 'false').toLowerCase() === 'true';
   const jobsEnabled = (environment.JOBS_ENABLED ?? 'false').toLowerCase() === 'true';
+  const jobSchedulerEnabled =
+    (environment.JOB_SCHEDULER_ENABLED ?? 'false').toLowerCase() === 'true';
   if (present(environment.REDIS_URL) && !isRedisUrl(environment.REDIS_URL as string)) {
     errors.push('REDIS_URL must be a valid redis:// or rediss:// URL');
   }
@@ -681,7 +741,12 @@ export const validateEnvironment = (environment: Environment): Environment => {
   }
 
   if (isProductionLike(nodeEnvironment)) {
-    const secretKeys = ['JWT_SECRET', 'JWT_SECRET_ADMIN'] as const;
+    if (!redisEnabled || !redisRequired || !jobsEnabled || !jobSchedulerEnabled) {
+      errors.push(
+        'Staging/production requires REDIS_ENABLED=true, REDIS_REQUIRED=true, JOBS_ENABLED=true, and JOB_SCHEDULER_ENABLED=true so durable maintenance and automatic booking completion cannot be silently disabled',
+      );
+    }
+    const secretKeys = ['JWT_SECRET', 'JWT_SECRET_ADMIN', 'OTP_HASH_SECRET'] as const;
     for (const key of secretKeys) {
       const value = environment[key];
       if (!value || value.length < 32) {
@@ -690,6 +755,12 @@ export const validateEnvironment = (environment: Environment): Environment => {
     }
     if (environment.JWT_SECRET === environment.JWT_SECRET_ADMIN) {
       errors.push('JWT_SECRET and JWT_SECRET_ADMIN must be different values');
+    }
+    if (
+      environment.OTP_HASH_SECRET === environment.JWT_SECRET ||
+      environment.OTP_HASH_SECRET === environment.JWT_SECRET_ADMIN
+    ) {
+      errors.push('OTP_HASH_SECRET must be independent from both JWT signing secrets');
     }
 
     const insecureMarkers = [

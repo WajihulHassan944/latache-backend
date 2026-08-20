@@ -65,6 +65,11 @@ export interface TaskerTaskView {
     enRouteAt: string | null;
     arrivedAt: string | null;
     taskStartedAt: string | null;
+    completionSubmittedAt: string | null;
+    completionApprovalDueAt: string | null;
+    completionApprovedAt: string | null;
+    completionApprovedByRole: string | null;
+    completionAutoApprovedAt: string | null;
     taskCompletedAt: string | null;
     cancelledAt: string | null;
     cancellationReason: string | null;
@@ -119,6 +124,9 @@ export interface TaskerSkillView {
   icon: string;
   active: boolean;
   hourlyRate: number | null;
+  rateLimits: { minimumHourlyRate: number; maximumHourlyRate: number };
+  currency: string;
+  currencySymbol: string;
 }
 
 export interface TaskerPersonalProfileView {

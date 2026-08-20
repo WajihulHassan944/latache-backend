@@ -18,13 +18,14 @@ export class TaskerDashboardService {
 
   async overview(taskerId: number): Promise<DashboardOverviewView> {
     const tasker = await this.prisma.user.findFirst({
-      where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
+      where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null, taskerProfile: { isNot: null } },
       select: {
         id: true,
         firstName: true,
         profilePicture: true,
         onboardingStatus: true,
         accountStatus: true,
+        taskerProfile: { select: { status: true } },
         isElite: true,
         completedTasks: true,
       },
@@ -49,8 +50,8 @@ export class TaskerDashboardService {
     ] = await Promise.all([
       this.wallet.summary(taskerId),
       this.tasks.completionMetrics(taskerId),
-      this.reviews.averageReceived(taskerId),
-      this.reviews.averageGiven(taskerId),
+      this.reviews.averageReceived(taskerId, UserRole.Tasker),
+      this.reviews.averageGiven(taskerId, UserRole.Tasker),
       this.tasks.next(taskerId),
       this.wallet.recentTransactions(taskerId, 5),
       this.prisma.taskerPayoutMethod.count({
@@ -100,7 +101,7 @@ export class TaskerDashboardService {
         firstName: tasker.firstName ?? '',
         profilePicture: tasker.profilePicture ?? '',
         onboardingStatus: tasker.onboardingStatus,
-        accountStatus: tasker.accountStatus,
+        accountStatus: tasker.taskerProfile?.status ?? tasker.accountStatus,
       },
       setup: {
         completed: setupSteps.filter((step) => step.completed).length,

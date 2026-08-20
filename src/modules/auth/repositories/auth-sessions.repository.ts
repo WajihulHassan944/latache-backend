@@ -59,6 +59,17 @@ export class AuthSessionsRepository {
     });
   }
 
+  revokeRole(
+    userId: number,
+    activeRole: string,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<Prisma.BatchPayload> {
+    return (transaction ?? this.prisma).refreshToken.updateMany({
+      where: { userId, activeRole, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
   async lockByHash(
     tokenHash: string,
     transaction: Prisma.TransactionClient,

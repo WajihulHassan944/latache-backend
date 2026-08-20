@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import { normalizePagination } from '../../common/utils/pagination.util';
+import { UserRole } from '../../common/enums/user-role.enum';
 import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
@@ -15,6 +16,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { WALLET_ENTRY_KIND } from '../tasker-dashboard/tasker-dashboard.constants';
 import { TaskerFinanceService } from '../tasker-finance/tasker-finance.service';
+import { ReferralsService } from '../referrals/services/referrals.service';
+import { DisputeLifecycleService } from '../disputes/dispute-lifecycle.service';
 import type { ConfirmCashCollectionInput } from '../tasker-finance/tasker-finance.types';
 import {
   CUSTOMER_WALLET_ENTRY_KIND,
@@ -27,6 +30,8 @@ import type {
   BookingPaymentStatusView,
   BookingRefundRequest,
   BookingRefundResult,
+  ConfirmManualCashDisputeRefundInput,
+  ManualCashDisputeRefundResult,
   PaymentOrchestrationResult,
   PaymentTransactionListView,
   PaymentTransactionView,
@@ -41,9 +46,17 @@ const roundMoney = (value: number): number => Math.round((value + Number.EPSILON
 const moneyString = (value: number): string => roundMoney(value).toFixed(2);
 const toMinorUnits = (value: number): number => Math.round(roundMoney(value) * 100);
 
+type StripeDisputeWithPaymentIntent = Stripe.Dispute & {
+  payment_intent?: string | Stripe.PaymentIntent | null;
+  charge?: string | Stripe.Charge | null;
+  balance_transactions?: Array<string | { id: string }>;
+  evidence_details?: { due_by?: number | null };
+  is_charge_refundable?: boolean;
+};
+
+
 @Injectable()
 export class PaymentsService {
-  private readonly currency: string;
   private readonly minimumBillableMinutes: number;
   private readonly minimumWalletTopup: number;
 
@@ -54,8 +67,9 @@ export class PaymentsService {
     private readonly notifications: NotificationsService,
     private readonly platformSettings: PlatformSettingsService,
     private readonly taskerFinance: TaskerFinanceService,
+    private readonly referrals: ReferralsService,
+    private readonly disputes: DisputeLifecycleService,
   ) {
-    this.currency = config.get<string>('payments.currency', 'USD').toUpperCase();
     this.minimumBillableMinutes = config.get<number>('payments.minimumBillableMinutes', 120);
     this.minimumWalletTopup = config.get<number>('payments.minimumWalletTopup', 5);
   }
@@ -246,12 +260,17 @@ export class PaymentsService {
     idempotencyKey: string,
   ): Promise<WalletTopupIntentView> {
     const amount = roundMoney(amountInput);
+    const currency = await this.platformSettings.currencyContext();
+    const minimumWalletTopup = this.platformSettings.convertUsdAmount(
+      this.minimumWalletTopup,
+      currency,
+    );
     if (!idempotencyKey.trim()) {
       throw new BadRequestException('Idempotency-Key header is required');
     }
-    if (amount < this.minimumWalletTopup) {
+    if (amount < minimumWalletTopup) {
       throw new BadRequestException(
-        `Wallet top-up amount must be at least ${this.currency} ${this.minimumWalletTopup.toFixed(2)}`,
+        `Wallet top-up amount must be at least ${currency.code} ${minimumWalletTopup.toFixed(2)}`,
       );
     }
 
@@ -281,7 +300,7 @@ export class PaymentsService {
         transactionId: existing.id,
         paymentIntentId: intent.id,
         clientSecret: intent.client_secret,
-        amount: { amount, currency: this.currency },
+        amount: { amount: Number(existing.amount), currency: existing.currency },
         status: intent.status,
       };
     }
@@ -290,7 +309,7 @@ export class PaymentsService {
     const intent = await this.stripeProvider.client().paymentIntents.create(
       {
         amount: toMinorUnits(amount),
-        currency: this.currency.toLowerCase(),
+        currency: currency.code.toLowerCase(),
         customer: stripeCustomerId,
         automatic_payment_methods: { enabled: true },
         metadata: {
@@ -313,7 +332,7 @@ export class PaymentsService {
         providerReference: intent.id,
         status: intent.status,
         amount: moneyString(amount),
-        currency: this.currency,
+        currency: currency.code,
         idempotencyKey: scopedKey,
         metadata: {
           stripeCustomerId,
@@ -325,7 +344,7 @@ export class PaymentsService {
       transactionId: transaction.id,
       paymentIntentId: intent.id,
       clientSecret: intent.client_secret,
-      amount: { amount, currency: this.currency },
+      amount: { amount, currency: currency.code },
       status: intent.status,
     };
   }
@@ -443,7 +462,7 @@ export class PaymentsService {
     const serviceSurchargeAmount = pricingCharges.serviceSurchargeAmount;
     const tipAmount = Number(booking.tipAmount);
     const donationAmount = Number(booking.donationAmount);
-    const totalAmount = roundMoney(
+    const totalBeforeDiscount = roundMoney(
       serviceAmount +
         platformFeeAmount +
         serviceSurchargeAmount +
@@ -451,6 +470,17 @@ export class PaymentsService {
         donationAmount +
         (pricingCharges.taxInclusive ? 0 : taxAmount),
     );
+    const referralDiscount =
+      booking.paymentSource === PAYMENT_SOURCE.Cash
+        ? { amount: 0, percent: 0 }
+        : await this.referrals.reserveCustomerDiscount({
+            bookingId,
+            customerId: booking.customerId,
+            serviceAmount,
+            totalBeforeDiscount,
+            currency: booking.paymentCurrency,
+          });
+    const totalAmount = roundMoney(totalBeforeDiscount - referralDiscount.amount);
 
     await this.prisma.booking.update({
       where: { id: bookingId },
@@ -462,7 +492,6 @@ export class PaymentsService {
         taxRatePercent: pricingCharges.taxRatePercent.toFixed(4),
         taxInclusive: pricingCharges.taxInclusive,
         serviceSurchargeAmount: moneyString(serviceSurchargeAmount),
-        paymentCurrency: this.currency,
         paymentFailureReason: null,
       },
     });
@@ -683,30 +712,283 @@ export class PaymentsService {
     return this.refundResult(transaction, input.resolutionId);
   }
 
+  async confirmManualCashDisputeRefund(
+    input: ConfirmManualCashDisputeRefundInput,
+  ): Promise<ManualCashDisputeRefundResult> {
+    return this.prisma.$transaction(async (transaction) => {
+      const complaintRef = await transaction.taskComplaint.findUnique({
+        where: { id: input.complaintId },
+        select: { bookingId: true },
+      });
+      if (!complaintRef) throw new NotFoundException('Dispute not found');
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${complaintRef.bookingId} FOR UPDATE`;
+      await transaction.$queryRaw`SELECT "id" FROM "TaskComplaints" WHERE "id" = ${input.complaintId} FOR UPDATE`;
+      const complaint = await transaction.taskComplaint.findUniqueOrThrow({
+        where: { id: input.complaintId },
+      });
+      if (!['open', 'under_investigation', 'escalated'].includes(complaint.status)) {
+        const alreadyConfirmed = await transaction.disputeCashRefund.findFirst({
+          where: {
+            complaintId: input.complaintId,
+            ...(input.resolutionId ? { resolutionId: input.resolutionId } : {}),
+            status: 'confirmed',
+          },
+          include: { resolution: true },
+          orderBy: { confirmedAt: 'desc' },
+        });
+        if (!alreadyConfirmed) throw new ConflictException('This dispute is already closed');
+        const existingPayment = await transaction.paymentTransaction.findUnique({
+          where: { idempotencyKey: `cash-dispute-refund:${alreadyConfirmed.resolutionId}` },
+        });
+        if (!existingPayment) {
+          throw new ConflictException('Confirmed cash refund accounting transaction is missing');
+        }
+        const [reversalLedger, reimbursementLedger] = await Promise.all([
+          transaction.taskerPlatformLedgerEntry.findUnique({
+            where: {
+              idempotencyKey: `cash-refund:${alreadyConfirmed.id}:receivable-reversal`,
+            },
+          }),
+          transaction.taskerWalletLedgerEntry.findUnique({
+            where: {
+              idempotencyKey: `cash-refund:${alreadyConfirmed.id}:commission-reimbursement`,
+            },
+          }),
+        ]);
+        return {
+          bookingId: complaint.bookingId,
+          complaintId: complaint.id,
+          resolutionId: alreadyConfirmed.resolutionId,
+          cashRefundId: alreadyConfirmed.id,
+          transactionId: existingPayment.id,
+          status: alreadyConfirmed.status,
+          amount: {
+            amount: Number(alreadyConfirmed.amount),
+            currency: alreadyConfirmed.currency,
+          },
+          manualTransferReference: alreadyConfirmed.manualTransferReference ?? '',
+          platformReceivableReversalAmount: Number(reversalLedger?.amount ?? 0),
+          platformCommissionReimbursementAmount: Number(reimbursementLedger?.amount ?? 0),
+        };
+      }
+
+      const booking = await transaction.booking.findUniqueOrThrow({
+        where: { id: complaint.bookingId },
+      });
+      if (booking.paymentSource !== PAYMENT_SOURCE.Cash) {
+        throw new ConflictException('Manual cash refund confirmation is only valid for cash bookings');
+      }
+      const cashRefund = await transaction.disputeCashRefund.findFirst({
+        where: {
+          complaintId: input.complaintId,
+          ...(input.resolutionId ? { resolutionId: input.resolutionId } : {}),
+          status: 'pending_manual_transfer',
+        },
+        include: { resolution: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!cashRefund) {
+        throw new NotFoundException('Pending manual cash refund was not found');
+      }
+      const amount = roundMoney(Number(cashRefund.amount));
+      const idempotencyKey = `cash-dispute-refund:${cashRefund.resolutionId}`;
+      let payment = await transaction.paymentTransaction.findUnique({ where: { idempotencyKey } });
+      if (!payment) {
+        payment = await transaction.paymentTransaction.create({
+          data: {
+            customerId: booking.customerId,
+            bookingId: booking.id,
+            kind: PAYMENT_TRANSACTION_KIND.Refund,
+            provider: 'cash_manual',
+            providerReference: input.manualTransferReference,
+            status: 'succeeded',
+            amount: moneyString(amount),
+            currency: booking.paymentCurrency,
+            idempotencyKey,
+            metadata: {
+              complaintId: complaint.id,
+              resolutionId: cashRefund.resolutionId,
+              actorId: input.actorId,
+              confirmationNotes: input.confirmationNotes,
+              physicalCashMovement: 'confirmed_external_manual_transfer',
+            },
+          },
+        });
+      }
+
+      const receivableReversal = await this.taskerFinance.applyConfirmedCashRefundReceivableReversal(
+        transaction,
+        booking.id,
+        cashRefund.id,
+        amount,
+      );
+      const now = new Date();
+      await transaction.disputeCashRefund.update({
+        where: { id: cashRefund.id },
+        data: {
+          status: 'confirmed',
+          manualTransferReference: input.manualTransferReference,
+          confirmationNotes: input.confirmationNotes,
+          confirmedById: input.actorId,
+          confirmedAt: now,
+        },
+      });
+      await this.updateBookingRefundStatus(transaction, booking.id);
+      await this.referrals.handleBookingRefund(transaction, booking.id);
+      await transaction.disputeResolution.update({
+        where: { id: cashRefund.resolutionId },
+        data: {
+          status: 'applied',
+          refundTransactionId: payment.id,
+          providerRefundId: null,
+          providerRefundStatus: 'manual_transfer_confirmed',
+          failureReason: null,
+          appliedAt: now,
+        },
+      });
+      await transaction.taskComplaint.update({
+        where: { id: complaint.id },
+        data: {
+          status: 'resolved',
+          activeBookingKey: null,
+          resolvedAt: now,
+          resolvedById: input.actorId,
+          resolutionType: cashRefund.resolution.actionType,
+          resolutionSummary: cashRefund.resolution.summary,
+          resolutionAmount: cashRefund.amount,
+          resolutionCurrency: cashRefund.currency,
+          awaitingResponseFrom: null,
+          responseDueAt: null,
+        },
+      });
+      await transaction.disputeEvidenceRequest.updateMany({
+        where: { complaintId: complaint.id, status: { in: ['pending', 'overdue'] } },
+        data: { status: 'cancelled' },
+      });
+      if (cashRefund.resolution.actionType.includes('warning') && cashRefund.resolution.warningTarget) {
+        const targets: Array<{
+          id: number;
+          role: UserRole.Customer | UserRole.Tasker;
+        }> =
+          cashRefund.resolution.warningTarget === 'both'
+            ? [{ id: booking.customerId, role: UserRole.Customer }, { id: booking.taskerId, role: UserRole.Tasker }]
+            : cashRefund.resolution.warningTarget === 'customer'
+              ? [{ id: booking.customerId, role: UserRole.Customer }]
+              : [{ id: booking.taskerId, role: UserRole.Tasker }];
+        for (const target of targets) {
+          await this.disputes.applyWarningStrike({
+            transaction,
+            actorId: input.actorId,
+            complaintId: complaint.id,
+            resolutionId: cashRefund.resolutionId,
+            targetUserId: target.id,
+            targetRole: target.role,
+            reason: cashRefund.resolution.summary,
+          });
+        }
+      }
+      await transaction.adminAuditLog.create({
+        data: {
+          actorId: input.actorId,
+          action: 'dispute_cash_refund_confirmed',
+          entityType: 'dispute',
+          entityId: complaint.id,
+          reason: input.confirmationNotes,
+          metadata: {
+            bookingId: booking.id,
+            resolutionId: cashRefund.resolutionId,
+            cashRefundId: cashRefund.id,
+            transactionId: payment.id,
+            manualTransferReference: input.manualTransferReference,
+            amount,
+            currency: booking.paymentCurrency,
+            platformReceivableReversalAmount: receivableReversal.reversalAmount,
+            platformCommissionReimbursementAmount: receivableReversal.reimbursementAmount,
+          },
+        },
+      });
+      await this.disputes.notifyParticipants(transaction, complaint.id, booking, {
+        eventType: 'dispute_cash_refund_confirmed',
+        title: 'Cash dispute refund confirmed',
+        body: `${booking.paymentCurrency} ${amount.toFixed(2)} was confirmed as returned through the recorded manual transfer.`,
+        eventKey: cashRefund.id,
+        metadata: {
+          resolutionId: cashRefund.resolutionId,
+          manualTransferReference: input.manualTransferReference,
+        },
+      });
+      await this.taskerFinance.unblockAfterDispute(booking.id, transaction);
+      return {
+        bookingId: booking.id,
+        complaintId: complaint.id,
+        resolutionId: cashRefund.resolutionId,
+        cashRefundId: cashRefund.id,
+        transactionId: payment.id,
+        status: 'confirmed',
+        amount: { amount, currency: booking.paymentCurrency },
+        manualTransferReference: input.manualTransferReference,
+        platformReceivableReversalAmount: receivableReversal.reversalAmount,
+        platformCommissionReimbursementAmount: receivableReversal.reimbursementAmount,
+      };
+    });
+  }
+
   async releaseDisputeHold(bookingId: number): Promise<PaymentOrchestrationResult> {
     const release = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
       const booking = await transaction.booking.findUnique({ where: { id: bookingId } });
       if (!booking) throw new NotFoundException('Booking not found');
       if (booking.paymentStatus !== PAYMENT_STATUS.OnHoldDispute) {
-        const activeDisputes = await transaction.taskComplaint.count({
-          where: {
-            bookingId,
-            status: { in: ['open', 'under_investigation', 'escalated'] },
-          },
-        });
-        if (activeDisputes === 0) {
+        const [activeDisputes, providerDisputes] = await Promise.all([
+          transaction.taskComplaint.count({
+            where: {
+              bookingId,
+              status: { in: ['open', 'under_investigation', 'escalated'] },
+            },
+          }),
+          transaction.stripeChargeback.count({
+            where: {
+              bookingId,
+              status: {
+                in: [
+                  'warning_needs_response',
+                  'warning_under_review',
+                  'needs_response',
+                  'under_review',
+                  'lost',
+                ],
+              },
+            },
+          }),
+        ]);
+        if (activeDisputes === 0 && providerDisputes === 0) {
           await this.taskerFinance.unblockAfterDispute(bookingId, transaction);
         }
         return { bookingId, shouldFinalize: false, status: booking.paymentStatus };
       }
-      const activeDisputes = await transaction.taskComplaint.count({
-        where: {
-          bookingId,
-          status: { in: ['open', 'under_investigation', 'escalated'] },
-        },
-      });
-      if (activeDisputes > 0) {
+      const [activeDisputes, providerDisputes] = await Promise.all([
+        transaction.taskComplaint.count({
+          where: {
+            bookingId,
+            status: { in: ['open', 'under_investigation', 'escalated'] },
+          },
+        }),
+        transaction.stripeChargeback.count({
+          where: {
+            bookingId,
+            status: {
+              in: [
+                'warning_needs_response',
+                'warning_under_review',
+                'needs_response',
+                'under_review',
+                'lost',
+              ],
+            },
+          },
+        }),
+      ]);
+      if (activeDisputes > 0 || providerDisputes > 0) {
         return { bookingId, shouldFinalize: false, status: PAYMENT_STATUS.OnHoldDispute };
       }
       await transaction.booking.update({
@@ -780,6 +1062,7 @@ export class PaymentsService {
       });
       await this.applyTaskerRefundClawback(transaction, booking, updatedPayment);
       await this.updateBookingRefundStatus(transaction, booking.id);
+      await this.referrals.handleBookingRefund(transaction, booking.id);
       await this.finalizeRefundResolution(
         transaction,
         resolutionId,
@@ -827,6 +1110,7 @@ export class PaymentsService {
         });
         await this.applyTaskerRefundClawback(transaction, booking, updatedPayment);
         await this.updateBookingRefundStatus(transaction, booking.id);
+        await this.referrals.handleBookingRefund(transaction, booking.id);
         await this.finalizeRefundResolution(
           transaction,
           resolution.id,
@@ -896,6 +1180,7 @@ export class PaymentsService {
       });
       await this.applyTaskerRefundClawback(transaction, booking, updatedPayment);
       await this.updateBookingRefundStatus(transaction, booking.id);
+      await this.referrals.handleBookingRefund(transaction, booking.id);
       await this.finalizeRefundResolution(
         transaction,
         resolution.id,
@@ -1067,6 +1352,7 @@ export class PaymentsService {
       where: { id: resolution.complaintId },
       data: {
         status: 'resolved',
+        activeBookingKey: null,
         resolvedAt: now,
         resolvedById: resolution.actorId,
         resolutionType: resolution.actionType,
@@ -1076,6 +1362,13 @@ export class PaymentsService {
         awaitingResponseFrom: null,
         responseDueAt: null,
       },
+    });
+    await transaction.disputeEvidenceRequest.updateMany({
+      where: {
+        complaintId: resolution.complaintId,
+        status: { in: ['pending', 'overdue'] },
+      },
+      data: { status: 'cancelled' },
     });
     await this.taskerFinance.unblockAfterDispute(resolution.complaint.bookingId, transaction);
     await transaction.adminAuditLog.create({
@@ -1096,21 +1389,25 @@ export class PaymentsService {
         },
       },
     });
-    await this.recordWarningAuditIfNeeded(transaction, resolution, resolution.complaint.booking);
-    if (resolution.notifyParties) {
-      await this.notifyDisputeResolved(
-        transaction,
-        resolution.complaint.booking.customerId,
-        resolution.complaint.booking.taskerId,
-        resolution.complaintId,
-        resolution.summary,
-      );
-    }
+    await this.applyDisputeWarningStrikes(transaction, resolution, resolution.complaint.booking);
+    await this.disputes.notifyParticipants(
+      transaction,
+      resolution.complaintId,
+      resolution.complaint.booking,
+      {
+        eventType: 'booking_dispute_resolved',
+        title: 'Booking dispute resolved',
+        body: resolution.summary.slice(0, 500),
+        eventKey: resolution.id,
+        metadata: { resolutionId: resolution.id, actionType: resolution.actionType },
+      },
+    );
   }
 
-  private async recordWarningAuditIfNeeded(
+  private async applyDisputeWarningStrikes(
     transaction: Prisma.TransactionClient,
     resolution: {
+      id: string;
       actorId: number;
       actionType: string;
       warningTarget: string | null;
@@ -1120,46 +1417,25 @@ export class PaymentsService {
     booking: { customerId: number; taskerId: number },
   ): Promise<void> {
     if (!resolution.actionType.includes('warning') || !resolution.warningTarget) return;
-    const targets =
+    const targets: Array<{
+      id: number;
+      role: UserRole.Customer | UserRole.Tasker;
+    }> =
       resolution.warningTarget === 'both'
-        ? [booking.customerId, booking.taskerId]
+        ? [{ id: booking.customerId, role: UserRole.Customer }, { id: booking.taskerId, role: UserRole.Tasker }]
         : resolution.warningTarget === 'customer'
-          ? [booking.customerId]
-          : [booking.taskerId];
-    for (const targetUserId of targets) {
-      await transaction.adminAuditLog.create({
-        data: {
-          actorId: resolution.actorId,
-          targetUserId,
-          action: 'dispute_warning_issued',
-          entityType: 'dispute',
-          entityId: resolution.complaintId,
-          reason: resolution.summary,
-        },
-      });
-    }
-  }
-
-  private async notifyDisputeResolved(
-    transaction: Prisma.TransactionClient,
-    customerId: number,
-    taskerId: number,
-    complaintId: string,
-    summary: string,
-  ): Promise<void> {
-    for (const userId of [customerId, taskerId]) {
-      await this.notifications.create(
-        userId,
-        {
-          category: 'tasks',
-          type: 'booking_dispute_resolved',
-          title: 'Booking dispute resolved',
-          body: summary.slice(0, 500),
-          entityType: 'dispute',
-          entityId: complaintId,
-        },
+          ? [{ id: booking.customerId, role: UserRole.Customer }]
+          : [{ id: booking.taskerId, role: UserRole.Tasker }];
+    for (const target of targets) {
+      await this.disputes.applyWarningStrike({
         transaction,
-      );
+        actorId: resolution.actorId,
+        complaintId: resolution.complaintId,
+        resolutionId: resolution.id,
+        targetUserId: target.id,
+        targetRole: target.role,
+        reason: resolution.summary,
+      });
     }
   }
 
@@ -1274,6 +1550,16 @@ export class PaymentsService {
           event.type === 'refund.failed'
         ) {
           await this.handleRefundEvent(transaction, event.data.object as Stripe.Refund);
+        } else if (
+          event.type === 'charge.dispute.created' ||
+          event.type === 'charge.dispute.updated' ||
+          event.type === 'charge.dispute.closed'
+        ) {
+          await this.handleStripeChargebackEvent(
+            transaction,
+            event.type,
+            event.data.object as Stripe.Dispute,
+          );
         }
 
         return { received: true as const, duplicate: false };
@@ -1283,6 +1569,192 @@ export class PaymentsService {
         return { received: true, duplicate: true };
       }
       throw error;
+    }
+  }
+
+  private async handleStripeChargebackEvent(
+    transaction: Prisma.TransactionClient,
+    eventType: string,
+    stripeDispute: Stripe.Dispute,
+  ): Promise<void> {
+    const dispute = stripeDispute as StripeDisputeWithPaymentIntent;
+    const objectId = (value: string | { id: string } | null | undefined): string | null =>
+      typeof value === 'string' ? value : value?.id ?? null;
+    const paymentIntentId = objectId(dispute.payment_intent);
+    const chargeId = objectId(dispute.charge);
+    let booking = paymentIntentId
+      ? await transaction.booking.findFirst({ where: { stripePaymentIntentId: paymentIntentId } })
+      : null;
+    if (!booking && chargeId) {
+      const chargeTransaction = await transaction.paymentTransaction.findFirst({
+        where: { provider: 'stripe', providerReference: chargeId, bookingId: { not: null } },
+        select: { bookingId: true },
+      });
+      if (chargeTransaction?.bookingId) {
+        booking = await transaction.booking.findUnique({ where: { id: chargeTransaction.bookingId } });
+      }
+    }
+    if (booking) {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${booking.id} FOR UPDATE`;
+      booking = await transaction.booking.findUniqueOrThrow({ where: { id: booking.id } });
+    }
+
+    const status = String(dispute.status);
+    const closed = ['won', 'lost', 'warning_closed'].includes(status);
+    const evidenceDueBy = dispute.evidence_details?.due_by
+      ? new Date(dispute.evidence_details.due_by * 1000)
+      : null;
+    const balanceTransactionId = dispute.balance_transactions?.length
+      ? objectId(dispute.balance_transactions[0])
+      : null;
+    const chargeback = await transaction.stripeChargeback.upsert({
+      where: { id: dispute.id },
+      create: {
+        id: dispute.id,
+        bookingId: booking?.id ?? null,
+        chargeId,
+        paymentIntentId,
+        status,
+        reason: dispute.reason ? String(dispute.reason).slice(0, 120) : null,
+        amount: moneyString(roundMoney(dispute.amount / 100)),
+        currency: String(dispute.currency).toUpperCase(),
+        evidenceDueBy,
+        isChargeRefundable: dispute.is_charge_refundable ?? null,
+        balanceTransactionId,
+        latestStripeEventType: eventType,
+        openedAt: new Date(dispute.created * 1000),
+        closedAt: closed ? new Date() : null,
+      },
+      update: {
+        bookingId: booking?.id ?? undefined,
+        chargeId,
+        paymentIntentId,
+        status,
+        reason: dispute.reason ? String(dispute.reason).slice(0, 120) : null,
+        amount: moneyString(roundMoney(dispute.amount / 100)),
+        currency: String(dispute.currency).toUpperCase(),
+        evidenceDueBy,
+        isChargeRefundable: dispute.is_charge_refundable ?? null,
+        balanceTransactionId,
+        latestStripeEventType: eventType,
+        closedAt: closed ? new Date() : null,
+      },
+    });
+    if (!booking) return;
+
+    const active = ['warning_needs_response', 'warning_under_review', 'needs_response', 'under_review'].includes(
+      status,
+    );
+    if (active || status === 'lost') {
+      await this.taskerFinance.blockForDispute(
+        booking.id,
+        status === 'lost'
+          ? `Stripe chargeback ${dispute.id} was lost and requires financial review`
+          : `Stripe chargeback ${dispute.id} is active`,
+        transaction,
+      );
+    }
+    await this.referrals.handleBookingChargeback(transaction, booking.id, status);
+
+    if (status === 'lost') {
+      await transaction.paymentTransaction.upsert({
+        where: { idempotencyKey: `stripe-chargeback:${dispute.id}` },
+        create: {
+          customerId: booking.customerId,
+          bookingId: booking.id,
+          kind: PAYMENT_TRANSACTION_KIND.Chargeback,
+          provider: 'stripe',
+          providerReference: dispute.id,
+          status: 'succeeded',
+          amount: chargeback.amount,
+          currency: chargeback.currency,
+          idempotencyKey: `stripe-chargeback:${dispute.id}`,
+          metadata: {
+            stripeStatus: status,
+            stripeReason: chargeback.reason,
+            chargeId,
+            paymentIntentId,
+            requiresManualFinancialReview: true,
+          },
+        },
+        update: {
+          status: 'succeeded',
+          metadata: {
+            stripeStatus: status,
+            stripeReason: chargeback.reason,
+            chargeId,
+            paymentIntentId,
+            requiresManualFinancialReview: true,
+          },
+        },
+      });
+    } else if (status === 'won' || status === 'warning_closed') {
+      await this.taskerFinance.unblockAfterDispute(booking.id, transaction);
+    }
+
+    const eventNotificationType = eventType === 'charge.dispute.created'
+      ? 'stripe_chargeback_opened'
+      : closed
+        ? 'stripe_chargeback_closed'
+        : 'stripe_chargeback_updated';
+    const title = status === 'lost'
+      ? 'Card dispute lost — financial review required'
+      : closed
+        ? 'Card dispute closed'
+        : 'Card dispute update';
+    const body = status === 'lost'
+      ? 'Stripe closed a cardholder dispute against this booking as lost. Tasker financial release remains blocked pending internal financial review.'
+      : `Stripe card dispute status is now ${status.replaceAll('_', ' ')}.`;
+    for (const userId of [booking.customerId, booking.taskerId]) {
+      await this.notifications.create(
+        userId,
+        {
+          category: 'payments',
+          type: eventNotificationType,
+          title,
+          body,
+          entityType: 'stripe_chargeback',
+          entityId: dispute.id,
+          metadata: { bookingId: booking.id, status, evidenceDueBy: evidenceDueBy?.toISOString() ?? null },
+        },
+        transaction,
+      );
+    }
+    const admins = await transaction.user.findMany({
+      where: {
+        role: { in: ['admin', 'super_admin'] },
+        accountStatus: 'active',
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        role: true,
+        permissions: true,
+        inheritsRolePermissions: true,
+        rbacRole: { select: { permissions: true, isActive: true, deletedAt: true } },
+      },
+      take: 100,
+    });
+    for (const admin of admins) {
+      const inheritedFinance =
+        admin.inheritsRolePermissions &&
+        admin.rbacRole?.isActive === true &&
+        admin.rbacRole.deletedAt === null &&
+        admin.rbacRole.permissions.includes('finance.manage');
+      if (admin.role !== 'super_admin' && !admin.permissions.includes('finance.manage') && !inheritedFinance) continue;
+      await this.notifications.create(
+        admin.id,
+        {
+          category: 'payments',
+          type: eventNotificationType,
+          title,
+          body,
+          entityType: 'stripe_chargeback',
+          entityId: dispute.id,
+          metadata: { bookingId: booking.id, status, amount: Number(chargeback.amount), currency: chargeback.currency },
+        },
+        transaction,
+      );
     }
   }
 
@@ -1458,6 +1930,7 @@ export class PaymentsService {
       booking.paymentCurrency,
       intent.id,
     );
+    await this.referrals.qualifyPaidBooking(transaction, booking.id);
     if (!existingEarning) {
       await this.notifications.create(
         booking.customerId,
@@ -1524,7 +1997,7 @@ export class PaymentsService {
       const intent = await this.stripeProvider.client().paymentIntents.create(
         {
           amount: toMinorUnits(totalAmount),
-          currency: this.currency.toLowerCase(),
+          currency: booking.paymentCurrency.toLowerCase(),
           customer: stripeCustomerId,
           payment_method: booking.stripePaymentMethodId,
           confirm: true,
@@ -1560,7 +2033,7 @@ export class PaymentsService {
             providerReference: intent.id,
             status: intent.status,
             amount: moneyString(totalAmount),
-            currency: this.currency,
+            currency: booking.paymentCurrency,
             idempotencyKey,
             metadata: {
               taskerEarning: moneyString(taskerEarning),
@@ -1609,7 +2082,7 @@ export class PaymentsService {
               providerReference: intent.id,
               status: intent.status,
               amount: moneyString(totalAmount),
-              currency: this.currency,
+              currency: booking.paymentCurrency,
               failureReason: intent.last_payment_error?.message ?? null,
               idempotencyKey,
             },
@@ -1721,6 +2194,7 @@ export class PaymentsService {
         booking.paymentCurrency,
         `wallet:${bookingId}`,
       );
+      await this.referrals.qualifyPaidBooking(transaction, booking.id);
       await this.notifications.create(
         booking.customerId,
         {
@@ -1765,6 +2239,8 @@ export class PaymentsService {
       select: {
         id: true,
         role: true,
+        roles: true,
+        customerProfile: { select: { status: true } },
         email: true,
         firstName: true,
         lastName: true,
@@ -1773,7 +2249,7 @@ export class PaymentsService {
         stripeCustomerId: true,
       },
     });
-    if (!user || user.role !== 'customer') {
+    if (!user || !user.roles.includes('customer') || user.customerProfile?.status !== 'active') {
       throw new NotFoundException('Customer account not found');
     }
     if (user.stripeCustomerId) return user.stripeCustomerId;
@@ -1815,9 +2291,10 @@ export class PaymentsService {
 
   private async ensureCustomerWallet(customerId: number, transaction?: Prisma.TransactionClient) {
     const client = transaction ?? this.prisma;
+    const currency = await this.platformSettings.currencyContext(transaction);
     return client.customerWallet.upsert({
       where: { customerId },
-      create: { customerId, currency: this.currency },
+      create: { customerId, currency: currency.code },
       update: {},
     });
   }
@@ -1881,6 +2358,8 @@ export class PaymentsService {
     serviceSurchargeAmount: Prisma.Decimal;
     tipAmount: Prisma.Decimal;
     donationAmount: Prisma.Decimal;
+    referralDiscountAmount: Prisma.Decimal;
+    referralDiscountPercent: Prisma.Decimal;
     totalChargedAmount: Prisma.Decimal | null;
     paymentFailureReason: string | null;
     paidAt: Date | null;
@@ -1901,6 +2380,8 @@ export class PaymentsService {
       serviceSurchargeAmount: Number(booking.serviceSurchargeAmount),
       tipAmount: Number(booking.tipAmount),
       donationAmount: Number(booking.donationAmount),
+      referralDiscountAmount: Number(booking.referralDiscountAmount),
+      referralDiscountPercent: Number(booking.referralDiscountPercent),
       totalChargedAmount:
         booking.totalChargedAmount === null ? null : Number(booking.totalChargedAmount),
       failureReason: booking.paymentFailureReason,

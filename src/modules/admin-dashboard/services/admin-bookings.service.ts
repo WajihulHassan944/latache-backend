@@ -11,6 +11,7 @@ import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PAYMENT_STATUS } from '../../payments/payments.constants';
 import { RealtimeOutboxService } from '../../realtime/realtime-outbox.service';
+import { ReferralsService } from '../../referrals/services/referrals.service';
 import type { AdminBookingActionDto, AdminBookingsQueryDto } from '../dto';
 import { fullName, money, pagination } from '../admin-dashboard.utils';
 
@@ -20,6 +21,7 @@ const ACTIVE_BOOKING_STATUSES = [
   'en_route',
   'arrived',
   'in_progress',
+  'awaiting_customer_approval',
 ] as const;
 const ACTIVE_DISPUTE_STATUSES = ['open', 'under_investigation', 'escalated'] as const;
 const MAX_CSV_ROWS = 10_000;
@@ -55,6 +57,7 @@ export class AdminBookingsService {
     private readonly notifications: NotificationsService,
     private readonly audit: AdminAuditService,
     private readonly realtime: RealtimeOutboxService,
+    private readonly referrals: ReferralsService,
   ) {}
 
   async list(query: AdminBookingsQueryDto) {
@@ -185,6 +188,7 @@ export class AdminBookingsService {
             phoneNumber: true,
             profilePicture: true,
             accountStatus: true,
+            customerProfile: { select: { status: true } },
           },
         },
         tasker: {
@@ -197,6 +201,7 @@ export class AdminBookingsService {
             phoneNumber: true,
             profilePicture: true,
             accountStatus: true,
+            taskerProfile: { select: { status: true, rating: true } },
             rating: true,
             isElite: true,
             eliteTier: { select: { code: true, name: true } },
@@ -256,7 +261,7 @@ export class AdminBookingsService {
         email: booking.customer.email,
         phone: `${booking.customer.phoneCountryCode ?? ''}${booking.customer.phoneNumber ?? ''}`,
         profilePicture: booking.customer.profilePicture ?? '',
-        accountStatus: booking.customer.accountStatus,
+        accountStatus: booking.customer.customerProfile?.status ?? booking.customer.accountStatus,
       },
       tasker: {
         id: String(booking.tasker.id),
@@ -264,8 +269,8 @@ export class AdminBookingsService {
         email: booking.tasker.email,
         phone: `${booking.tasker.phoneCountryCode ?? ''}${booking.tasker.phoneNumber ?? ''}`,
         profilePicture: booking.tasker.profilePicture ?? '',
-        accountStatus: booking.tasker.accountStatus,
-        rating: Number(booking.tasker.rating),
+        accountStatus: booking.tasker.taskerProfile?.status ?? booking.tasker.accountStatus,
+        rating: Number(booking.tasker.taskerProfile?.rating ?? booking.tasker.rating),
         isElite: booking.tasker.isElite,
         eliteTier: booking.tasker.eliteTier,
       },
@@ -292,6 +297,11 @@ export class AdminBookingsService {
         enRouteAt: booking.enRouteAt?.toISOString() ?? null,
         arrivedAt: booking.arrivedAt?.toISOString() ?? null,
         taskStartedAt: booking.taskStartedAt?.toISOString() ?? null,
+        completionSubmittedAt: booking.completionSubmittedAt?.toISOString() ?? null,
+        completionApprovalDueAt: booking.completionApprovalDueAt?.toISOString() ?? null,
+        completionApprovedAt: booking.completionApprovedAt?.toISOString() ?? null,
+        completionApprovedByRole: booking.completionApprovedByRole,
+        completionAutoApprovedAt: booking.completionAutoApprovedAt?.toISOString() ?? null,
         taskCompletedAt: booking.taskCompletedAt?.toISOString() ?? null,
         cancelledAt: booking.cancelledAt?.toISOString() ?? null,
         cancelledByRole: booking.cancelledByRole,
@@ -327,6 +337,8 @@ export class AdminBookingsService {
         serviceSurchargeAmount: money(booking.serviceSurchargeAmount),
         tipAmount: money(booking.tipAmount),
         donationAmount: money(booking.donationAmount),
+        referralDiscountAmount: money(booking.referralDiscountAmount),
+        referralDiscountPercent: money(booking.referralDiscountPercent),
         totalChargedAmount:
           booking.totalChargedAmount === null ? null : money(booking.totalChargedAmount),
         paidAt: booking.paidAt?.toISOString() ?? null,
@@ -433,6 +445,11 @@ export class AdminBookingsService {
         where: { id: booking.availabilityId },
         data: { isBooked: false },
       });
+      await this.referrals.releaseCustomerDiscountReservation(
+        transaction,
+        id,
+        `Administrator cancelled booking: ${reason}`,
+      );
       await this.audit.record(
         {
           actorId: actor.id,
@@ -533,7 +550,12 @@ export class AdminBookingsService {
     if (view === 'pending') return { ...baseWhere, status: 'pending' };
     if (view === 'accepted') return { ...baseWhere, status: 'confirmed' };
     if (view === 'in_progress') {
-      return { ...baseWhere, status: { in: ['en_route', 'arrived', 'in_progress'] } };
+      return {
+        ...baseWhere,
+        status: {
+          in: ['en_route', 'arrived', 'in_progress', 'awaiting_customer_approval'],
+        },
+      };
     }
     if (view === 'completed') return { ...baseWhere, status: 'completed' };
     if (view === 'cancelled') return { ...baseWhere, status: 'cancelled' };
@@ -570,6 +592,11 @@ export class AdminBookingsService {
       tipAmount: true,
       donationAmount: true,
       totalChargedAmount: true,
+      completionSubmittedAt: true,
+      completionApprovalDueAt: true,
+      completionApprovedAt: true,
+      completionApprovedByRole: true,
+      completionAutoApprovedAt: true,
       createdAt: true,
       service: { select: { id: true, name: true, slug: true } },
       customer: { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -616,6 +643,13 @@ export class AdminBookingsService {
       },
       status: booking.status,
       displayStatus: booking.status === 'confirmed' ? 'accepted' : booking.status,
+      completion: {
+        submittedAt: booking.completionSubmittedAt?.toISOString() ?? null,
+        approvalDueAt: booking.completionApprovalDueAt?.toISOString() ?? null,
+        approvedAt: booking.completionApprovedAt?.toISOString() ?? null,
+        approvedByRole: booking.completionApprovedByRole,
+        autoApprovedAt: booking.completionAutoApprovedAt?.toISOString() ?? null,
+      },
       payment: { status: booking.paymentStatus },
       amount: {
         amount:

@@ -77,9 +77,11 @@ export class FavoritesService {
     const tasker = await this.prisma.user.findFirst({
       where: {
         id: taskerId,
-        role: UserRole.Tasker,
+        roles: { has: UserRole.Tasker },
         deletedAt: null,
         accountStatus: 'active',
+        onboardingStatus: 'approved',
+        taskerProfile: { is: { status: 'active' } },
       },
       select: { id: true },
     });

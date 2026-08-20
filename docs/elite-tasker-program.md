@@ -1,4 +1,4 @@
-# Elite Tasker Program API — v3.8.0
+# Elite Tasker Program API — current implementation
 
 This module implements the Elite Tasker Management flows shown in the supplied Super Admin/Admin designs without creating a separate endpoint for every tab or card. The UI designs are treated as product direction; eligibility, earnings, bookings, complaints, ratings, permissions and audit events come from existing Latache data.
 
@@ -7,10 +7,11 @@ This module implements the Elite Tasker Management flows shown in the supplied S
 Administrator routes require an active `admin` or `super_admin` session.
 
 - `elite.read` allows Elite dashboard, members, queues, detail, performance and reports.
-- `elite.manage` allows tier-policy changes, request decisions, manual tier changes, benefit configuration and badge management.
+- `elite.manage` allows operational membership decisions, manual tier corrections, and badge administration.
+- Only `super_admin` may change tier eligibility/automation policy or assign functional tier perks.
 - `super_admin` bypasses permission-key checks as in the rest of Latache RBAC.
 
-Operations Admin receives `elite.read` + `elite.manage`; Analytics Admin receives `elite.read`. Existing custom RBAC roles can be configured with either permission.
+Operations Admin may receive `elite.read` + `elite.manage`; Analytics Admin may receive `elite.read`. Those permissions do not allow a non-Super-Admin to redefine Elite tier rules or functional perk assignment.
 
 Taskers have a small self-service surface under `/api/tasker-dashboard/elite`; they never choose another Tasker ID.
 
@@ -59,25 +60,15 @@ Returns the current tier, real Tasker metrics, settled earnings, services/rates,
 
 ## Tier policy and eligibility
 
-`GET /api/admin/elite-taskers/program` returns all tier, benefit and badge configuration in a single settings payload.
+`GET /api/admin/elite-taskers/program` returns all tier, assigned-perk and badge configuration in one settings payload.
 
-`PATCH /api/admin/elite-taskers/program/tiers/:tierCode` updates an individual tier description and optional eligibility requirements:
+`GET /api/admin/elite-taskers/program/perk-catalog` returns the backend-defined functional perk catalog.
 
-```json
-{
-  "requirements": {
-    "minRating": 4.8,
-    "minCompletedTasks": 50,
-    "minCompletionRate": 95,
-    "maxOpenComplaints": 0,
-    "minSettledEarnings": 5000
-  }
-}
-```
+Only Super Admin may call `PATCH /api/admin/elite-taskers/program/tiers/:tierCode`. Tier rules support rating, completed tasks, completion rate, open complaints and settled earnings plus automatic promotion/demotion, retention grace and request cooldown.
 
-No default business thresholds are seeded. Requirements start unset because those values are product policy, not something the backend should guess.
+The built-in tiers have production defaults when no earlier requirements were configured: Gold `4.5 / 20 completed tasks / 90% completion / 0 open complaints`, Platinum `4.7 / 75 / 94% / 0`, and Diamond `4.85 / 200 / 97% / 0`. Persisted Super-Admin policy remains authoritative after configuration.
 
-The score is the equal-weight average of fulfillment percentages for configured requirements, capped at 100 per rule. `eligible=true` only when every configured requirement passes. The score is advisory for administrator review; it never auto-approves a Tasker.
+The scheduled Elite maintenance flow evaluates real Tasker metrics, promotes eligible Taskers when enabled, marks members at risk when retention fails, applies the configured grace period, demotes after expiry, clears at-risk state after recovery, records `EliteEvaluation` history, updates automatic badges, audits transitions and notifies the Tasker.
 
 ## Applications, upgrades and downgrades
 
@@ -103,13 +94,19 @@ Manual correction path:
 
 This exists for genuine administrative corrections. It cancels stale pending requests and records an audit event rather than silently editing `Users.isElite`.
 
-## Benefits
+## Functional perks
 
-`PUT /api/admin/elite-taskers/program/tiers/:tierCode/benefits`
+`PUT /api/admin/elite-taskers/program/tiers/:tierCode/benefits` is Super-Admin-only and assigns functional perks from the backend catalog. Unsupported arbitrary benefit codes are rejected.
 
-This bulk endpoint replaces the tier's benefit configuration so the admin UI does not need one mutation per benefit row.
+Supported perks:
 
-Benefits are persisted program configuration only. A reduced platform fee, queue priority, monthly bonus, revenue share, premium support or spotlight is **not** applied just because a label exists. Each effect must be explicitly integrated into the consuming booking/payment/support/marketing module before it changes real behavior.
+- `elite_profile_badge` — controls public Elite badge visibility and automatic built-in tier-badge entitlement.
+- `search_priority_boost` — applies the tier rank as the default discovery boost. Explicit Customer sorts such as price/rating/completed tasks remain primary and the Elite boost is a tie-breaker.
+- `tier_commission_policy` — applies the configured Gold/Platinum/Diamond commission and minimum-task-price rules. If the perk is not active for the tier, the Standard commission policy is used.
+
+Perk assignment is authoritative. Removing or disabling a functional perk stops its consuming backend effect without removing the Tasker's tier membership.
+
+Referral/Rewards and Commission values are commercial policy and are managed only by Super Admin through the canonical `PUT /api/admin/platform-settings` resource.
 
 ## Badges
 

@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import { UserRole } from '../../common/enums/user-role.enum';
 import type { User } from '../../generated/prisma/client';
 import { UploadFolder, UploadResourceType } from './dto';
@@ -53,9 +53,13 @@ const createService = () => {
       return fallback;
     }),
   };
+  const prisma = {
+    $queryRaw: jest.fn().mockResolvedValue([{ referenced: false }]),
+  };
   return {
-    service: new UploadsService(cloudinary, config as never),
+    service: new UploadsService(cloudinary, config as never, prisma as never),
     cloudinary,
+    prisma,
   };
 };
 
@@ -104,5 +108,71 @@ describe('UploadsService', () => {
         resourceType: UploadResourceType.Image,
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('blocks deletion when an asset is referenced by persisted chat history', async () => {
+    const { service, prisma, cloudinary } = createService();
+    prisma.$queryRaw.mockResolvedValueOnce([{ referenced: true }]);
+
+    await expect(
+      service.delete(customer, {
+        publicId: 'latache/conversation-attachments/customer/42/test-id',
+        resourceType: UploadResourceType.Image,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
+  });
+
+  it('canonicalizes support attachments from provider ownership metadata', async () => {
+    const { service, cloudinary } = createService();
+    const publicId = 'latache/support-attachments/customer/42/support-image';
+    jest.mocked(cloudinary.api.resource).mockResolvedValueOnce({
+      public_id: publicId,
+      secure_url: 'https://res.cloudinary.com/demo/image/upload/support-image.png',
+      resource_type: 'image',
+      format: 'png',
+      bytes: 512,
+      context: {
+        custom: {
+          owner_namespace: 'customer/42',
+          upload_folder: 'support-attachments',
+          mime_type: 'image/png',
+          original_file_name: 'support-image.png',
+        },
+      },
+    });
+
+    await expect(
+      service.verifySupportAttachments(customer, [
+        {
+          publicId,
+          secureUrl: 'https://res.cloudinary.com/demo/image/upload/client-value.png',
+          resourceType: 'image',
+        },
+      ]),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        publicId,
+        secureUrl: 'https://res.cloudinary.com/demo/image/upload/support-image.png',
+        mimeType: 'image/png',
+        bytes: 512,
+      }),
+    ]);
+  });
+
+  it('fails closed when Cloudinary verification is unavailable', async () => {
+    const { service, cloudinary } = createService();
+    const publicId = 'latache/support-attachments/customer/42/support-image';
+    jest.mocked(cloudinary.api.resource).mockRejectedValueOnce({ http_code: 503 });
+
+    await expect(
+      service.verifySupportAttachments(customer, [
+        {
+          publicId,
+          secureUrl: 'https://res.cloudinary.com/demo/image/upload/support-image.png',
+          resourceType: 'image',
+        },
+      ]),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

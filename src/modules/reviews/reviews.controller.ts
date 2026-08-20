@@ -11,6 +11,9 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiConflictResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
@@ -25,7 +28,8 @@ import type { ReviewListView, ReviewView } from './reviews.types';
 
 @ApiTags('09 Reviews')
 @ApiBearerAuth('bearer')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.Customer, UserRole.Tasker)
 @Controller('reviews')
 export class ReviewsController {
   constructor(private readonly reviews: ReviewsService) {}
@@ -36,7 +40,7 @@ export class ReviewsController {
     description: 'One role-aware endpoint powers both customer and tasker review screens.',
   })
   list(@CurrentUser() user: User, @Query() query: ListReviewsQueryDto): Promise<ReviewListView> {
-    return this.reviews.list(user.id, query);
+    return this.reviews.list(user.id, user.role as UserRole.Customer | UserRole.Tasker, query);
   }
 
   @Post('bookings/:bookingId')
@@ -51,7 +55,7 @@ export class ReviewsController {
     @Param() params: ReviewBookingParamDto,
     @Body() dto: CreateReviewDto,
   ): Promise<ReviewView> {
-    return this.reviews.create(user.id, params.bookingId, dto);
+    return this.reviews.create(user, params.bookingId, dto);
   }
 
   @Patch(':id')
@@ -61,7 +65,7 @@ export class ReviewsController {
     @Param() params: ReviewIdParamDto,
     @Body() dto: UpdateReviewDto,
   ): Promise<ReviewView> {
-    return this.reviews.update(user.id, params.id, dto);
+    return this.reviews.update(user, params.id, dto);
   }
 
   @Delete(':id')
@@ -70,6 +74,6 @@ export class ReviewsController {
     @CurrentUser() user: User,
     @Param() params: ReviewIdParamDto,
   ): Promise<{ deleted: true; id: string }> {
-    return this.reviews.delete(user.id, params.id);
+    return this.reviews.delete(user, params.id);
   }
 }

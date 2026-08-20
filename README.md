@@ -1,6 +1,113 @@
 # Latache Backend — NestJS, Prisma and Nodemailer
 
-Latache backend implemented with NestJS 11, strict TypeScript, Prisma/PostgreSQL, Nodemailer SMTP, Cloudinary uploads, and database-backed RBAC. Version 3.17 adds one premium email shell plus Moroccan Darija (`ary`) while preserving v3.16 Redis/queue/realtime scaling, v3.15 translation rows, and v3.14 provider-settled Tasker earning clearance/cash accounting.
+Latache backend implemented with NestJS 11, strict TypeScript, Prisma/PostgreSQL, Nodemailer SMTP, Cloudinary uploads, and database-backed RBAC.
+
+### v3.26.2 TypeScript source hotfix
+
+- Corrected the reported strict-TypeScript source issues in participant dispute Prisma payload typing, dispute evidence byte aggregation and Elite multi-currency earnings/metrics handling.
+- No API route, Prisma schema, migration, environment variable or business-flow change was introduced by this hotfix.
+- Build, lint, Jest, E2E and Prisma validation/generation were not run for this release at the requester’s instruction.
+
+### v3.26.0 multi-role marketplace identity
+
+- One verified `User` remains the canonical email/password identity while marketplace access is represented by `roles[]` plus separate `CustomerProfile` and `TaskerProfile` records.
+- Existing Customers can add Tasker capability on the same identity; existing Taskers can add Customer capability without creating a duplicate email/account.
+- Login accepts an optional active role and returns available roles; dual-role identities can switch Customer/Tasker context using a dedicated authenticated role-switch endpoint. Sessions/refresh tokens are role-scoped.
+- Customer and Tasker profile lifecycle, moderation, ratings, dispute discipline, notifications, support context and Admin views are role/profile-scoped so one marketplace role does not incorrectly suspend or contaminate the other.
+- Bookings, conversations, unread state, realtime rooms and WebRTC authorization respect the active booking role; self-booking is rejected even when the same identity owns both profiles.
+- Customer wallet and Tasker earnings/payout accounting remain separate financial domains under the same User identity.
+- Referral attribution is scoped by referral program so a dual-role identity can participate once as a Customer and once as a Tasker while self-referral remains blocked.
+- Existing users are migrated additively into role membership and matching profile rows by `20260819130000_multi_role_identity_profiles`.
+- Build, lint, Jest, E2E and Prisma validation/generation were not run for this release at the requester’s instruction.
+
+### v3.25.0 Super Admin referral/reward and Elite perk policy
+
+- Referral/Rewards commercial values are managed only by Super Admin through the existing `referral` section of `PUT /api/admin/platform-settings`; the policy remains snapshotted on each new attribution.
+- Elite tier rules and perk assignment are Super-Admin-only. Operational Admin membership review remains on the existing Elite APIs.
+- Supported enforceable perks are backend-defined: profile badge visibility, default discovery priority, and tier-specific commission/minimum-task-price policy. Removing an active perk assignment stops its backend effect.
+- `GET /api/admin/elite-taskers/program/perk-catalog` returns the supported perk catalog; `PUT /api/admin/elite-taskers/program/tiers/:tierCode/benefits` assigns the supported perks to a tier.
+- Public Tasker responses expose active Elite entitlement state, and booking quotes disclose whether the Elite commission perk was actually applied.
+
+### v3.24.0 dispute, referral/reward and chat flow audit
+
+- Dispute settlement proposals now expire automatically when their configured participant-response deadline elapses. Participant withdrawal also cancels any still-proposed settlement so closed cases do not expose stale actionable proposals.
+- Repeated participant/Admin dispute evidence submissions are de-duplicated by verified Cloudinary `publicId` under the locked dispute and do not consume evidence caps or fulfill requests unless genuinely new evidence is persisted.
+- Referral reward clearance is blocked by both internal active disputes and Stripe provider chargebacks. A verified Stripe chargeback loss uses the existing referral revocation and immutable wallet reversal flow.
+- Booking cancellation defensively releases any pending referred-Customer discount reservation so the one-time benefit can remain usable on a later eligible booking.
+- The existing Chat/Support implementation required no new routes: Customer–Tasker private booking chat, participant–Admin support, Admin internal notes, verified attachments, unread/read state, retry-safe writes, durable realtime events and Customer–Tasker WebRTC signaling remain the canonical flows.
+
+### v3.23.0 Tasker levels, service-rate limits and platform currency
+
+- Gold, Platinum and Diamond now have a full lifecycle engine: eligibility checks, request cooldowns, Admin approval revalidation, scheduled promotion, retention grace, demotion/recovery, evaluation history, automatic badges, notifications and audit records.
+- Built-in defaults apply only when a tier had no requirements: Gold `4.5 / 20 tasks / 90% / 0 active disputes`, Platinum `4.7 / 75 / 94% / 0`, Diamond `4.85 / 200 / 97% / 0`. Admin-managed requirements remain authoritative.
+- Enforced perks are limited to real backend behavior: Elite/tier badge visibility, rank-based default discovery priority, and tier-specific commission/minimum-task-price rules. No unsupported consumable benefit is fabricated.
+- `POST /api/services` now requires `minimumHourlyRate` and `maximumHourlyRate`. Tasker onboarding and profile skill rates must stay inside those limits. Existing services migrate conservatively to USD 1–10,000 bounds until Admin adjusts them.
+- Service and Tasker catalogue prices are canonically stored in USD and presented/accepted in the selected platform currency. New booking snapshots store the selected operational ISO currency; settled historical rows are never rewritten.
+- Super Admin selects one operational market through `PUT /api/admin/platform-settings` using `currency.primaryMarket`: `us`, `morocco`, `pakistan`, `france`, or `spain`. Static presets are USD `$` ×1, MAD `د.م.` ×9, PKR `Rs` ×280, and EUR `€` ×0.86 per USD. France and Spain both use EUR. These are application presets, **not live FX**.
+- A cross-ISO currency switch is rejected until active/unsettled financial positions are cleared. Actual Stripe support/settlement for the selected currency must still be verified against the configured Stripe account.
+- Elite maintenance is run by the existing job infrastructure. Defaults: `ELITE_WORKER_POLL_MS=21600000` (6 hours) and `ELITE_WORKER_BATCH_SIZE=200`.
+
+Example currency update (Super Admin only):
+
+```json
+{
+  "currency": {
+    "primaryMarket": "morocco"
+  }
+}
+```
+
+### v3.22.0 dispute lifecycle hardening
+
+- Dispute creation is booking-row locked, idempotent, filing-window constrained and database-protected against multiple new active cases.
+- Reopen/appeal reapply finance holds; participant withdrawal, settlement responses, comments, appeals and persisted satisfaction are available on the same dispute resource.
+- Evidence is Cloudinary-provider verified, deletion-protected and subject to case-wide caps; BullMQ handles reminders, overdue/expiry escalation, SLA escalation and durable dispute email retries.
+- Workload-based Admin assignment, participant notifications, en/ar/ary dispute emails, warning strikes/disciplinary state and optional configured auto-suspension are included.
+- Confirmed physical-cash refunds use an auditable manual-transfer obligation and accounting reversal rather than fabricated provider execution. Stripe `charge.dispute.*` webhooks are tracked separately and block Tasker finance while active/lost.
+
+See [Dispute lifecycle hardening](docs/dispute-lifecycle-hardening.md).
+
+### v3.21.1 Postman/OpenAPI compatibility hotfix
+
+- Corrected the translated General Settings array schema so OpenAPI validators and Postman's API importer receive a concrete `items` model.
+- Added the configured `APP_BASE_URL` as the OpenAPI server origin, keeping imported Postman requests portable across local, staging, and production environments.
+- Added a ready-to-import Postman Collection v2.1 snapshot and local environment under `postman/`.
+
+See [Postman setup](docs/postman.md).
+
+### v3.21.0 production referral qualification and rewards
+
+- Stable same-role Customer and Tasker referral codes with one locked attribution per referred account; self-referral, role crossing, cap exhaustion, and post-settlement claims are rejected.
+- Referral policy/currency is snapshotted at claim time. Programs remain disabled until Admin supplies real benefits and explicitly enables them.
+- Only a real settled Stripe/customer-wallet booking qualifies. Cash bookings do not create wallet funds or referral rewards.
+- Referred-Customer discounts preserve configured real-charge/qualification floors. Fixed rewards remain pending through a configurable clearance window and active disputes block release.
+- Refunds and Admin fraud revocation cancel pending rewards or create immutable wallet clawbacks; Admin actions require `finance.manage` and are audit-logged.
+- Participant/Admin APIs, privacy-limited leaderboards, `en/ar/ary` notifications, transactional `referral:updated` events, and BullMQ expiry/release maintenance are included.
+
+See [Production referral reward system](docs/production-referral-reward-system.md).
+
+### v3.20.0 production chat completion
+
+- Private Customer–Tasker booking chat remains participant-only and now has retry-safe `clientMessageId` writes, total unread counts, bounded read receipts, and last-message activity ordering.
+- Customer and Tasker support tickets share one persisted conversation resource with cursor/page history, unread counts, bounded read receipts, retry-safe ticket/message writes, and attachment-only replies.
+- Admin and Super Admin support public replies and internal notes are isolated by RBAC and separate realtime rooms. Internal activity is never delivered to the participant room.
+- Booking and support attachment references are verified against Cloudinary resource/context metadata before persistence. Referenced assets cannot be independently deleted from immutable chat history.
+- Notifications, domain writes, and durable realtime events commit atomically; Socket.IO delivery remains at-least-once and reconnects use REST/PostgreSQL as authority.
+- WebRTC voice/video remains Customer–Tasker only, with NestJS providing authenticated signaling and persisted call lifecycle—not media transport or recording.
+
+See [Production chat system](docs/production-chat-system.md) and [Realtime contract](docs/realtime.md).
+
+### v3.19.0 completion approval and authentication hardening
+
+- Tasker completion now enters `awaiting_customer_approval`; it does not charge the customer or create an earning.
+- Customer approval finalizes the booking/payment immediately. An undisputed submission auto-approves after a configurable 24-hour default through the multi-instance-safe BullMQ worker.
+- PostgreSQL row locks and terminal-state checks prevent duplicate completion, counters, payment finalization, or notifications. An active dispute blocks auto-approval.
+- Customer, Tasker, and Admin booking responses expose the same submission, due, approval, actor, and auto-approval timestamps.
+- New verification/reset codes are stored as keyed hashes; the short migration transition still accepts an already-issued legacy code, and serializers exclude both hash fields.
+- Production startup requires Redis-backed jobs/scheduling, and production seed runs reject development Super Admin credentials without silently resetting an existing password.
+- The shared email header logo and security shield use explicit `<center>` markup. The app-download section has been removed from every email.
+
+See [Booking completion approval](docs/booking-completion-approval.md) and [Production readiness](docs/production-readiness.md).
 
 ### v3.18.0 permanent deletion and email layout update
 
@@ -484,14 +591,14 @@ The Admin Platform Settings `taskerFinance` section is the persisted business-po
 
 ## Super-admin seed
 
-Running `npm run prisma:seed` upserts and resets the canonical account to:
+In development, `npm run prisma:seed` upserts the canonical account using:
 
 ```text
 Email:    latache.superadmin@yopmail.com
 Password: Admin@12345
 ```
 
-The values can be overridden with `SUPERADMIN_EMAIL` and `SUPERADMIN_PASSWORD`. Because the seed deliberately reapplies the password, use a secure environment override in staging/production and do not run the seed as part of every application restart.
+Staging/production require client-owned `SUPERADMIN_EMAIL` and `SUPERADMIN_PASSWORD`; the development values are rejected and the initial password must contain at least 12 characters. A new production Super Admin is flagged to change it. Existing production passwords are preserved on later seed runs unless `SUPERADMIN_ROTATE_PASSWORD_ON_SEED=true` is deliberately enabled for a one-time rotation.
 
 ## Docker development stack
 

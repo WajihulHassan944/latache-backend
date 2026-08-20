@@ -18,6 +18,8 @@ import { AdminDisputesService } from './services/admin-disputes.service';
 import { AdminReviewsService } from './services/admin-reviews.service';
 import { AdminAnalyticsCacheInterceptor } from './admin-analytics-cache.interceptor';
 import { AccountDeletionModule } from '../account-deletion/account-deletion.module';
+import { DisputesModule } from '../disputes/disputes.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { AccountDeletionModule } from '../account-deletion/account-deletion.modu
     PaymentsModule,
     RealtimeModule,
     AccountDeletionModule,
+    DisputesModule,
+    ReferralsModule,
   ],
   controllers: [
     AdminAnalyticsController,

@@ -39,6 +39,7 @@ import { PayoutDataSecurityService } from './payout-data-security.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { TaskerFinanceService } from '../../tasker-finance/tasker-finance.service';
 import type { TaskerEarningsQueryDto } from '../../tasker-finance/dto/tasker-finance.dto';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 
 @Injectable()
 export class TaskerWalletService {
@@ -48,14 +49,22 @@ export class TaskerWalletService {
     private readonly security: PayoutDataSecurityService,
     private readonly notifications: NotificationsService,
     private readonly taskerFinance: TaskerFinanceService,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   async summary(taskerId: number): Promise<WalletSummaryView> {
     const wallet = await this.ensureWallet(taskerId);
     const month = monthStart();
-    const [legacyMonthEarnings, monthEarnings, paidWithdrawals, pendingEarnings, platformAccount] =
-      await Promise.all([
-        this.prisma.taskerWalletLedgerEntry.aggregate({
+    const [
+      legacyMonthEarnings,
+      monthEarnings,
+      paidWithdrawals,
+      pendingEarnings,
+      platformAccount,
+      platformCurrency,
+    ] = await Promise.all([
+        this.prisma.taskerWalletLedgerEntry.groupBy({
+          by: ['currency'],
           where: {
             taskerId,
             kind: WALLET_ENTRY_KIND.Earning,
@@ -64,11 +73,13 @@ export class TaskerWalletService {
           },
           _sum: { amount: true },
         }),
-        this.prisma.taskerEarning.aggregate({
+        this.prisma.taskerEarning.groupBy({
+          by: ['currency'],
           where: { taskerId, settledAt: { gte: month } },
           _sum: { taskerNetAmount: true, reversedAmount: true },
         }),
-        this.prisma.taskerWithdrawal.aggregate({
+        this.prisma.taskerWithdrawal.groupBy({
+          by: ['currency'],
           where: { taskerId, status: WITHDRAWAL_STATUS.Paid },
           _sum: { amount: true },
         }),
@@ -81,6 +92,7 @@ export class TaskerWalletService {
           orderBy: { clearsAt: 'asc' },
         }),
         this.taskerFinance.platformAccount(taskerId),
+        this.platformSettings.currencyContext(),
       ]);
     const expectedDates = pendingEarnings.map((item) =>
       item.holdExtendedUntil && item.holdExtendedUntil > item.clearsAt
@@ -98,15 +110,43 @@ export class TaskerWalletService {
       },
       totalEarningsThisMonth: {
         amount: roundMoney(
-          Number(legacyMonthEarnings._sum.amount ?? 0) +
-            Number(monthEarnings._sum.taskerNetAmount ?? 0) -
-            Number(monthEarnings._sum.reversedAmount ?? 0),
+          legacyMonthEarnings.reduce(
+            (total, row) =>
+              total +
+              this.platformSettings.convertCurrencyAmount(
+                Number(row._sum.amount ?? 0),
+                row.currency,
+                platformCurrency,
+              ),
+            0,
+          ) +
+            monthEarnings.reduce(
+              (total, row) =>
+                total +
+                this.platformSettings.convertCurrencyAmount(
+                  Number(row._sum.taskerNetAmount ?? 0) - Number(row._sum.reversedAmount ?? 0),
+                  row.currency,
+                  platformCurrency,
+                ),
+              0,
+            ),
         ),
-        currency: wallet.currency,
+        currency: platformCurrency.code,
       },
       totalWithdrawn: {
-        amount: Number(paidWithdrawals._sum.amount ?? 0),
-        currency: wallet.currency,
+        amount: roundMoney(
+          paidWithdrawals.reduce(
+            (total, row) =>
+              total +
+              this.platformSettings.convertCurrencyAmount(
+                Number(row._sum.amount ?? 0),
+                row.currency,
+                platformCurrency,
+              ),
+            0,
+          ),
+        ),
+        currency: platformCurrency.code,
       },
       payoutExecutionMode: this.executionMode(),
       payoutPinConfigured: Boolean(wallet.payoutPinHash),
@@ -399,10 +439,14 @@ export class TaskerWalletService {
     if (method.type === PAYOUT_METHOD_TYPE.GooglePay) {
       throw new BadRequestException('Google Pay is not a payout destination');
     }
-    const minimum = this.config.get<number>('taskerPayout.minimumWithdrawalAmount', 1);
+    const currency = await this.platformSettings.currencyContext();
+    const minimumUsd = this.config.get<number>('taskerPayout.minimumWithdrawalAmount', 1);
+    const minimum = this.platformSettings.convertUsdAmount(minimumUsd, currency);
     const amount = roundMoney(dto.amount);
     if (amount < minimum) {
-      throw new BadRequestException(`Minimum withdrawal amount is ${minimum}`);
+      throw new BadRequestException(
+        `Minimum withdrawal amount is ${currency.symbol}${minimum} ${currency.code}`,
+      );
     }
 
     const withdrawal = await this.prisma.$transaction(async (transaction) => {
@@ -708,9 +752,9 @@ export class TaskerWalletService {
     requestedCurrency?: string,
   ) {
     const database = transaction ?? this.prisma;
-    const currency = (
-      requestedCurrency ?? this.config.get<string>('taskerPayout.currency', 'USD')
-    ).toUpperCase();
+    const currency = requestedCurrency
+      ? requestedCurrency.toUpperCase()
+      : (await this.platformSettings.currencyContext(transaction)).code;
     return database.taskerWallet.upsert({
       where: { taskerId },
       create: { taskerId, currency },

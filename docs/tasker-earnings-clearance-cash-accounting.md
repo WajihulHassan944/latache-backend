@@ -4,7 +4,7 @@ Version 3.14 introduces one persisted accounting path for online Tasker earnings
 
 ## Online/card flow
 
-1. Task completion calculates and persists the final pricing snapshot, but does not create withdrawable money.
+1. Tasker completion submission enters `awaiting_customer_approval` without charging. Customer approval (or mature undisputed auto-approval) marks the booking completed, calculates and persists the final pricing snapshot, but does not create withdrawable money.
 2. Stripe or the real customer-wallet ledger must confirm successful settlement.
 3. Settlement creates exactly one `TaskerEarning` for the booking. Its pricing snapshot contains customer gross, service/labor, platform commission, tax, surcharge, tip, donation, and Tasker net.
 4. The Tasker wallet pending balance and `TaskerWalletLedger` receive the same liability. Available balance is unchanged.
@@ -39,7 +39,7 @@ Finance can configure a maximum outstanding payable and enable cash-booking rest
 
 ### Shared booking/payment resources
 
-- `POST /api/bookings/:bookingId/complete` — online settlement creates pending earnings; cash requires confirmation.
+- `POST /api/bookings/:bookingId/complete` — Tasker submits for approval; Customer approval starts final settlement. Online settlement creates pending earnings; cash requires confirmation.
 - `POST /api/bookings/:bookingId/cash-payment/confirm` — Tasker-only explicit physical cash confirmation. Requires `Idempotency-Key` and `{ "collectedAmount": number }`.
 
 ### Tasker wallet

@@ -12,6 +12,7 @@ export interface PersonSummaryView {
 
 export interface ConversationMessageView {
   id: string;
+  clientMessageId: string | null;
   bookingId: string;
   senderId: string;
   isMine: boolean;
@@ -31,6 +32,7 @@ export interface ConversationView {
     icon: string;
   };
   bookingStatus: string;
+  lastMessageAt: string | null;
   lastMessage: ConversationMessageView | null;
   unreadCount: number;
 }
@@ -53,6 +55,16 @@ export interface MessageListView {
   nextCursor: string | null;
   hasMore: boolean;
   items: ConversationMessageView[];
+}
+
+export interface ConversationUnreadCountView {
+  unreadCount: number;
+}
+
+export interface ConversationReadResultView {
+  updated: number;
+  readAt: string | null;
+  throughMessageId: string | null;
 }
 
 export interface ConversationCapabilitiesView {

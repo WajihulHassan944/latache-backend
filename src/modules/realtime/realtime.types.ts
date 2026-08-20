@@ -27,6 +27,7 @@ export interface ConversationTypingPayload extends BookingSubscriptionPayload {
 
 export interface SupportTypingPayload extends SupportSubscriptionPayload {
   isTyping: boolean;
+  scope?: 'public' | 'internal';
 }
 
 export type ConversationCallType = 'voice' | 'video';

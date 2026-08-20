@@ -20,10 +20,18 @@ describe('admin finance and platform-settings architecture', () => {
     expect(controller).toContain("@Permissions('settings.manage')");
   });
 
-  it('rejects unsupported money/settings toggles instead of simulating them', () => {
+  it('emits a valid item schema for translated general settings', () => {
+    const dto = read('src/modules/platform-settings/dto/platform-settings.dto.ts');
+    expect(dto).toContain('type: () => GeneralContentTranslationDto');
+    expect(dto).toContain('isArray: true');
+    expect(dto).not.toContain("type: 'array'");
+  });
+
+  it('rejects remaining unsupported money/settings toggles instead of simulating them', () => {
     const service = read('src/modules/platform-settings/platform-settings.service.ts');
     expect(service).toContain('Multi-currency settlement is not enabled');
-    expect(service).toContain('Referral payouts cannot be enabled');
+    expect(service).toContain('Referral bonus stacking requires a promotion engine');
+    expect(service).toContain('referralRewardEngineAvailable: true');
     expect(service).toContain('Automatic exchange-rate refresh is not configured');
     expect(service).toContain(
       'Region-specific radius rules require a verified region/geocoding resolver',

@@ -72,6 +72,7 @@ The following settings are wired into existing flows:
 - Booking-policy enforcement can enforce advance notice, maximum booking horizon, and duration limits.
 - Service-radius policy supplies the default/max radius used by public Tasker discovery.
 - Tasker Finance policy controls future online earning clearance, cash dispute-clearance timestamps, and the optional cash-debt restriction threshold.
+- Referral policy controls future same-role claims only. The complete policy/currency is snapshotted per attribution; real Stripe/wallet settlement, clearance workers, disputes, refunds, and immutable reward ledgers own the lifecycle.
 
 Existing settled bookings are never retroactively recalculated. Quotes are estimates: commission/tax policy is evaluated again when the completed task is finalized, and the rate/tax mode actually used is persisted on the Booking for audit.
 
@@ -81,7 +82,7 @@ A setting is rejected rather than saved cosmetically when the operational engine
 
 - automatic FX refresh
 - multi-currency settlement
-- referral payout/reward engine
+- referral bonus stacking with a not-yet-present promotion engine
 - SMS/push provider activation
 - maintenance-mode request blocking
 - waitlist/repeat/group/emergency/instant-booking lifecycle modes
@@ -103,6 +104,6 @@ Super Admin bypasses permission checks as before.
 
 ## Explicitly unavailable until integrated
 
-The API rejects enabling external FX refresh, multi-currency settlement, paid cancellation-window rules, region-specific radius routing, referral reward payouts, automatic tax reporting/VAT automation, and unsupported booking modes. This prevents settings from claiming behavior that the runtime does not execute.
+The API rejects enabling external FX refresh, multi-currency settlement, paid cancellation-window rules, region-specific radius routing, referral/promotion stacking, automatic tax reporting/VAT automation, and unsupported booking modes. This prevents settings from claiming behavior that the runtime does not execute.
 
 - external exchange-rate provider selection until a provider is configured

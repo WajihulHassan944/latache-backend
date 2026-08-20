@@ -94,6 +94,11 @@ export default () => {
         1_000,
       ),
     },
+    bookingCompletion: {
+      approvalHours: asPositiveInteger(process.env.BOOKING_COMPLETION_APPROVAL_HOURS, 24),
+      sweepIntervalMs: asPositiveInteger(process.env.BOOKING_COMPLETION_SWEEP_INTERVAL_MS, 60_000),
+      batchSize: asPositiveInteger(process.env.BOOKING_COMPLETION_BATCH_SIZE, 100),
+    },
     observability: {
       slowRequestMs: asPositiveInteger(process.env.SLOW_REQUEST_MS, 1_000),
     },
@@ -153,6 +158,7 @@ export default () => {
     auth: {
       jwtSecret: process.env.JWT_SECRET,
       adminJwtSecret: process.env.JWT_SECRET_ADMIN,
+      otpHashSecret: process.env.OTP_HASH_SECRET ?? process.env.JWT_SECRET,
       accessTokenExpiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
       refreshTokenExpiresInDays: asPositiveInteger(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS, 30),
       bcryptRounds: asPositiveInteger(process.env.BCRYPT_ROUNDS, 12),
@@ -183,6 +189,17 @@ export default () => {
       workerBatchSize: asPositiveInteger(process.env.TASKER_EARNINGS_WORKER_BATCH_SIZE, 100),
       defaultClearanceDays: asPositiveInteger(process.env.TASKER_EARNINGS_CLEARANCE_DAYS, 14),
       defaultCashDisputeDays: asPositiveInteger(process.env.TASKER_CASH_DISPUTE_CLEARANCE_DAYS, 14),
+    },
+    referrals: {
+      workerPollMs: asPositiveInteger(process.env.REFERRAL_WORKER_POLL_MS, 60_000),
+      workerBatchSize: asPositiveInteger(process.env.REFERRAL_WORKER_BATCH_SIZE, 100),
+    },
+    disputes: {
+      workerPollMs: asPositiveInteger(process.env.DISPUTE_WORKER_POLL_MS, 60_000),
+    },
+    elite: {
+      workerPollMs: asPositiveInteger(process.env.ELITE_WORKER_POLL_MS, 21_600_000),
+      workerBatchSize: asPositiveInteger(process.env.ELITE_WORKER_BATCH_SIZE, 200),
     },
     cloudinary: {
       cloudName: process.env.CLOUDINARY_CLOUD_NAME,

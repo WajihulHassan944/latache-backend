@@ -19,7 +19,7 @@ export class PermissionsGuard implements CanActivate {
     if (!request.user) {
       throw new ForbiddenException('Authenticated account context is required');
     }
-    if (request.user.role === UserRole.SuperAdmin) return true;
+    if (request.auth.role === UserRole.SuperAdmin) return true;
 
     const available = new Set(request.user.permissions);
     const missing = requiredPermissions.filter((permission) => !available.has(permission));

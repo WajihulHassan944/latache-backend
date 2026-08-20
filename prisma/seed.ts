@@ -20,6 +20,10 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString }),
 });
 
+const productionLike = ['staging', 'production'].includes(
+  (process.env.NODE_ENV ?? 'development').trim().toLowerCase(),
+);
+
 const services = [
   {
     name: 'Electrician',
@@ -142,11 +146,27 @@ const seedRbacRoles = async (): Promise<Map<string, string>> => {
 };
 
 const seedSuperAdmin = async (roleIds: Map<string, string>): Promise<void> => {
-  const email = (process.env.SUPERADMIN_EMAIL ?? 'latache.superadmin@yopmail.com')
-    .trim()
-    .toLowerCase();
-  const password = process.env.SUPERADMIN_PASSWORD ?? 'Admin@12345';
+  const configuredEmail = process.env.SUPERADMIN_EMAIL?.trim();
+  const configuredPassword = process.env.SUPERADMIN_PASSWORD;
+  if (productionLike && (!configuredEmail || !configuredPassword)) {
+    throw new Error('SUPERADMIN_EMAIL and SUPERADMIN_PASSWORD are required to seed production');
+  }
+  const email = (configuredEmail ?? 'latache.superadmin@yopmail.com').toLowerCase();
+  const password = configuredPassword ?? 'Admin@12345';
+  if (
+    productionLike &&
+    (email === 'latache.superadmin@yopmail.com' ||
+      password === 'Admin@12345' ||
+      password.length < 12)
+  ) {
+    throw new Error(
+      'Production Super Admin credentials must be client-owned and use a non-default password of at least 12 characters',
+    );
+  }
   const passwordHash = await hash(password, Number(process.env.BCRYPT_ROUNDS ?? 12));
+  const rotateExistingPassword =
+    !productionLike ||
+    (process.env.SUPERADMIN_ROTATE_PASSWORD_ON_SEED ?? 'false').toLowerCase() === 'true';
   const superAdminRoleId = roleIds.get(AdminRole.SuperAdmin);
   const customAdminRoleId = roleIds.get(AdminRole.CustomAdmin);
   if (!superAdminRoleId || !customAdminRoleId) {
@@ -161,6 +181,7 @@ const seedSuperAdmin = async (roleIds: Map<string, string>): Promise<void> => {
     lastName: 'Super Admin',
     email,
     role: UserRole.SuperAdmin,
+    roles: [UserRole.SuperAdmin],
     accountStatus: AccountStatus.Active,
     adminRole: AdminRole.SuperAdmin,
     permissions: DEFAULT_ADMIN_PERMISSIONS[AdminRole.SuperAdmin],
@@ -169,7 +190,6 @@ const seedSuperAdmin = async (roleIds: Map<string, string>): Promise<void> => {
     isVerified: true,
     isAdmin: true,
     authType: 'local',
-    mustChangePassword: false,
     deletedAt: null,
   };
 
@@ -178,7 +198,9 @@ const seedSuperAdmin = async (roleIds: Map<string, string>): Promise<void> => {
       where: { id: existing.id },
       data: {
         ...canonicalData,
-        password: passwordHash,
+        ...(rotateExistingPassword
+          ? { password: passwordHash, mustChangePassword: productionLike }
+          : {}),
       },
     });
   } else {
@@ -186,6 +208,7 @@ const seedSuperAdmin = async (roleIds: Map<string, string>): Promise<void> => {
       data: {
         ...canonicalData,
         password: passwordHash,
+        mustChangePassword: productionLike,
       },
     });
   }
@@ -198,6 +221,7 @@ const seedSuperAdmin = async (roleIds: Map<string, string>): Promise<void> => {
     },
     data: {
       role: UserRole.Admin,
+      roles: [UserRole.Admin],
       adminRole: AdminRole.CustomAdmin,
       permissions: [],
       rbacRoleId: customAdminRoleId,

@@ -34,6 +34,10 @@ interface TaskerListRow {
   submittedAt: Date | null;
   hourlyRate: Numeric;
   serviceSlug: string | null;
+  eliteRank: number;
+  eliteSearchRank: number;
+  eliteTierCode: string | null;
+  eliteProfileBadgeVisible: boolean;
 }
 
 interface CountRow {
@@ -80,10 +84,14 @@ export class TaskersRepository {
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 9);
     const representativeConditions: Prisma.Sql[] = [];
     const eligibleConditions: Prisma.Sql[] = [
-      Prisma.sql`u."role" = ${UserRole.Tasker}`,
+      Prisma.sql`${UserRole.Tasker} = ANY(u."roles")`,
       Prisma.sql`u."accountStatus" = 'active'`,
       Prisma.sql`u."deletedAt" IS NULL`,
-      Prisma.sql`u."onboardingStatus" IS NOT NULL`,
+      Prisma.sql`u."onboardingStatus" = 'approved'`,
+      Prisma.sql`EXISTS (
+        SELECT 1 FROM "TaskerProfiles" tp
+        WHERE tp."userId" = u."id" AND tp."status" = 'active'
+      )`,
     ];
 
     if (query.serviceSlug) {
@@ -158,19 +166,30 @@ export class TaskersRepository {
           u."reviewsCount", u."bio", u."completedTasks", u."yearsOfExperience", u."vehicles", u."workImages",
           u."isElite", u."serviceAreaLat", u."serviceAreaLng", u."serviceAreaRadiusKm",
           u."serviceAreaCity", u."serviceAreaArea", u."submittedAt",
-          representative."hourlyRate", representative."serviceSlug"
+          representative."hourlyRate", representative."serviceSlug",
+          COALESCE(et."rank", 0)::int AS "eliteRank",
+          CASE WHEN EXISTS (
+            SELECT 1 FROM "EliteBenefits" eb
+            WHERE eb."tierId" = et."id" AND eb."code" = 'search_priority_boost' AND eb."isActive" = TRUE
+          ) THEN COALESCE(et."rank", 0)::int ELSE 0 END AS "eliteSearchRank",
+          et."code" AS "eliteTierCode",
+          EXISTS (
+            SELECT 1 FROM "EliteBenefits" eb
+            WHERE eb."tierId" = et."id" AND eb."code" = 'elite_profile_badge' AND eb."isActive" = TRUE
+          ) AS "eliteProfileBadgeVisible"
         FROM "Users" u
         INNER JOIN representative ON representative."userId" = u."id"
+        LEFT JOIN "EliteTiers" et ON et."id" = u."eliteTierId" AND et."isActive" = TRUE
         WHERE ${Prisma.join(eligibleConditions, ' AND ')}
       )
     `;
 
     const orderBy: Record<TaskerSort | 'default', string> = {
-      [TaskerSort.PriceAscending]: '"hourlyRate" ASC, "id" ASC',
-      [TaskerSort.PriceDescending]: '"hourlyRate" DESC, "id" ASC',
-      [TaskerSort.RatingDescending]: '"rating" DESC, "id" ASC',
-      [TaskerSort.CompletedDescending]: '"completedTasks" DESC, "id" ASC',
-      default: '"submittedAt" DESC NULLS LAST, "id" DESC',
+      [TaskerSort.PriceAscending]: '"hourlyRate" ASC, "eliteSearchRank" DESC, "rating" DESC, "id" ASC',
+      [TaskerSort.PriceDescending]: '"hourlyRate" DESC, "eliteSearchRank" DESC, "rating" DESC, "id" ASC',
+      [TaskerSort.RatingDescending]: '"rating" DESC, "eliteSearchRank" DESC, "completedTasks" DESC, "id" ASC',
+      [TaskerSort.CompletedDescending]: '"completedTasks" DESC, "eliteSearchRank" DESC, "rating" DESC, "id" ASC',
+      default: '"eliteSearchRank" DESC, "rating" DESC, "completedTasks" DESC, "submittedAt" DESC NULLS LAST, "id" DESC',
     };
     const selectedOrder = query.sort ? orderBy[query.sort] : orderBy.default;
 
@@ -203,6 +222,8 @@ export class TaskersRepository {
         serviceSlug: row.serviceSlug ?? '',
         workImages: row.workImages || [],
         isElite: row.isElite,
+        eliteTier: row.eliteTierCode ? { code: row.eliteTierCode, rank: row.eliteRank } : null,
+        eliteProfileBadgeVisible: Boolean(row.eliteProfileBadgeVisible),
         location: formatLocation({
           lat: numberOrNull(row.serviceAreaLat),
           lng: numberOrNull(row.serviceAreaLng),
@@ -220,8 +241,19 @@ export class TaskersRepository {
 
   async getById(id: number, serviceSlug?: string, locale = this.locales.defaultLocale) {
     const user = await this.prisma.user.findFirst({
-      where: { id, role: UserRole.Tasker, accountStatus: 'active', deletedAt: null },
+      where: { id, roles: { has: UserRole.Tasker }, accountStatus: 'active', deletedAt: null, onboardingStatus: 'approved', taskerProfile: { is: { status: 'active' } } },
       include: {
+        eliteTier: {
+          select: {
+            code: true,
+            name: true,
+            rank: true,
+            benefits: {
+              where: { isActive: true, code: { in: ['elite_profile_badge', 'search_priority_boost', 'tier_commission_policy'] } },
+              select: { code: true },
+            },
+          },
+        },
         userServices: {
           include: {
             service: {
@@ -270,6 +302,12 @@ export class TaskersRepository {
       })),
       workImages: user.workImages,
       isElite: user.isElite,
+      eliteTier: user.eliteTier
+        ? { code: user.eliteTier.code, name: user.eliteTier.name, rank: user.eliteTier.rank }
+        : null,
+      elitePerks: user.eliteTier?.benefits.map((benefit) => benefit.code) ?? [],
+      eliteProfileBadgeVisible:
+        user.eliteTier?.benefits.some((benefit) => benefit.code === 'elite_profile_badge') ?? false,
       location: formatLocation({
         lat: user.serviceAreaLat === null ? null : Number(user.serviceAreaLat),
         lng: user.serviceAreaLng === null ? null : Number(user.serviceAreaLng),
@@ -284,7 +322,7 @@ export class TaskersRepository {
 
   async getAvailability(id: number) {
     const user = await this.prisma.user.findFirst({
-      where: { id, role: UserRole.Tasker, accountStatus: 'active', deletedAt: null },
+      where: { id, roles: { has: UserRole.Tasker }, accountStatus: 'active', deletedAt: null, onboardingStatus: 'approved', taskerProfile: { is: { status: 'active' } } },
       select: { id: true },
     });
     if (!user) return null;

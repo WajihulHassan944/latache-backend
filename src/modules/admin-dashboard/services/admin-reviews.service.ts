@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { UserRole } from '../../../common/enums/user-role.enum';
 import { normalizePagination } from '../../../common/utils/pagination.util';
 import { PrismaService } from '../../../database/prisma.service';
 import { Prisma, type User } from '../../../generated/prisma/client';
+import { recalculateRoleRating } from '../../reviews/review-rating.util';
 import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { AdminReviewModerationDto, AdminReviewsQueryDto } from '../dto/admin-reviews.dto';
 
@@ -15,7 +17,6 @@ const REVIEW_INCLUDE = {
       firstName: true,
       lastName: true,
       email: true,
-      role: true,
       profilePicture: true,
     },
   },
@@ -25,7 +26,6 @@ const REVIEW_INCLUDE = {
       firstName: true,
       lastName: true,
       email: true,
-      role: true,
       profilePicture: true,
     },
   },
@@ -100,7 +100,11 @@ export class AdminReviewsService {
         },
         include: REVIEW_INCLUDE,
       });
-      await this.recalculateRating(review.revieweeId, transaction);
+      await recalculateRoleRating(
+        transaction,
+        review.revieweeId,
+        review.revieweeRole as UserRole.Customer | UserRole.Tasker,
+      );
       await this.audit.record(
         {
           actorId: actor.id,
@@ -121,27 +125,12 @@ export class AdminReviewsService {
     });
   }
 
-  private async recalculateRating(userId: number, transaction: Prisma.TransactionClient) {
-    const aggregate = await transaction.review.aggregate({
-      where: { revieweeId: userId, moderationStatus: 'visible' },
-      _avg: { rating: true },
-      _count: { _all: true },
-    });
-    await transaction.user.update({
-      where: { id: userId },
-      data: {
-        rating: Number(aggregate._avg.rating ?? 0).toFixed(1),
-        reviewsCount: aggregate._count._all,
-      },
-    });
-  }
-
   private view(row: AdminReviewRow) {
-    const person = (user: AdminReviewRow['reviewer']) => ({
+    const person = (user: AdminReviewRow['reviewer'], role: string) => ({
       id: String(user.id),
       name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
       email: user.email,
-      role: user.role,
+      role,
       avatar: user.profilePicture ?? '',
     });
     return {
@@ -155,8 +144,8 @@ export class AdminReviewsService {
           slug: row.booking.service.slug,
         },
       },
-      reviewer: person(row.reviewer),
-      reviewee: person(row.reviewee),
+      reviewer: person(row.reviewer, row.reviewerRole),
+      reviewee: person(row.reviewee, row.revieweeRole),
       rating: row.rating,
       comment: row.comment ?? '',
       moderation: {

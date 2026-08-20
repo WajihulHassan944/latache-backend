@@ -66,7 +66,14 @@ export class AdminAnalyticsService {
     const range = resolveAdminDateRange(query);
     const paidAt = dateFilter(range);
     const createdAt = dateFilter(range);
-    const activeBookingStatuses = ['pending', 'confirmed', 'en_route', 'arrived', 'in_progress'];
+    const activeBookingStatuses = [
+      'pending',
+      'confirmed',
+      'en_route',
+      'arrived',
+      'in_progress',
+      'awaiting_customer_approval',
+    ];
 
     const [
       revenue,
@@ -84,23 +91,23 @@ export class AdminAnalyticsService {
         where: { paymentStatus: PAYMENT_STATUS.Paid, ...(paidAt ? { paidAt } : {}) },
         _sum: { totalChargedAmount: true, platformFeeAmount: true },
       }),
-      this.prisma.user.count({ where: { role: UserRole.Customer, deletedAt: null } }),
-      this.prisma.user.count({ where: { role: UserRole.Tasker, deletedAt: null } }),
+      this.prisma.user.count({ where: { roles: { has: UserRole.Customer }, deletedAt: null } }),
+      this.prisma.user.count({ where: { roles: { has: UserRole.Tasker }, deletedAt: null } }),
       this.prisma.booking.count({ where: { status: { in: activeBookingStatuses } } }),
       this.prisma.booking.count({
         where: { status: 'completed', ...(createdAt ? { taskCompletedAt: createdAt } : {}) },
       }),
       this.prisma.user.count({
         where: {
-          role: UserRole.Tasker,
+          roles: { has: UserRole.Tasker },
           deletedAt: null,
           isVerified: true,
-          accountStatus: 'pending_approval',
+          taskerProfile: { is: { status: 'pending_approval' } },
           onboardingStatus: { in: ['submitted', 'pending_review'] },
         },
       }),
       this.prisma.user.count({
-        where: { role: UserRole.Tasker, deletedAt: null, isElite: true, accountStatus: 'active' },
+        where: { roles: { has: UserRole.Tasker }, deletedAt: null, isElite: true, taskerProfile: { is: { status: 'active' } } },
       }),
       this.prisma.booking.groupBy({
         by: ['status'],
@@ -216,36 +223,54 @@ export class AdminAnalyticsService {
 
     const [totalCustomers, activeThisMonth, newThisMonth, newInPeriod, statusRows, growth] =
       await Promise.all([
-        this.prisma.user.count({ where: { role: UserRole.Customer, deletedAt: null } }),
+        this.prisma.user.count({ where: { roles: { has: UserRole.Customer }, deletedAt: null } }),
         this.prisma.user.count({
-          where: { role: UserRole.Customer, deletedAt: null, lastLoginAt: { gte: monthStart } },
+          where: { roles: { has: UserRole.Customer }, deletedAt: null, lastLoginAt: { gte: monthStart } },
         }),
         this.prisma.user.count({
-          where: { role: UserRole.Customer, deletedAt: null, createdAt: { gte: monthStart } },
+          where: { roles: { has: UserRole.Customer }, deletedAt: null, createdAt: { gte: monthStart } },
         }),
         this.prisma.user.count({
           where: {
-            role: UserRole.Customer,
+            roles: { has: UserRole.Customer },
             deletedAt: null,
             ...(periodCreated ? { createdAt: periodCreated } : {}),
           },
         }),
-        this.prisma.user.groupBy({
-          by: ['accountStatus'],
-          where: { role: UserRole.Customer, deletedAt: null },
-          _count: { _all: true },
-        }),
+        Promise.all([
+          this.prisma.customerProfile.groupBy({
+            by: ['status'],
+            where: { user: { deletedAt: null, isVerified: true, roles: { has: UserRole.Customer } } },
+            _count: { _all: true },
+          }),
+          this.prisma.user.count({
+            where: {
+              roles: { has: UserRole.Customer },
+              deletedAt: null,
+              isVerified: false,
+              accountStatus: 'pending_verification',
+            },
+          }),
+        ]),
         this.customerGrowth(range),
       ]);
+
+    const [customerProfileStatusRows, pendingVerificationCustomers] = statusRows;
+    const effectiveStatusRows = [
+      ...customerProfileStatusRows.map((row) => ({ status: row.status, count: row._count._all })),
+      ...(pendingVerificationCustomers > 0
+        ? [{ status: 'pending_verification', count: pendingVerificationCustomers }]
+        : []),
+    ];
 
     let retentionRate = 0;
     if (range.from && range.toExclusive) {
       const priorCustomers = await this.prisma.user.count({
-        where: { role: UserRole.Customer, deletedAt: null, createdAt: { lt: range.from } },
+        where: { roles: { has: UserRole.Customer }, deletedAt: null, createdAt: { lt: range.from } },
       });
       const returningCustomers = await this.prisma.user.count({
         where: {
-          role: UserRole.Customer,
+          roles: { has: UserRole.Customer },
           deletedAt: null,
           createdAt: { lt: range.from },
           lastLoginAt: { gte: range.from, lt: range.toExclusive },
@@ -253,7 +278,7 @@ export class AdminAnalyticsService {
       });
       retentionRate = percentage(returningCustomers, priorCustomers);
     } else {
-      const active = statusRows.find((row) => row.accountStatus === 'active')?._count._all ?? 0;
+      const active = effectiveStatusRows.find((row) => row.status === 'active')?.count ?? 0;
       retentionRate = percentage(active, totalCustomers);
     }
 
@@ -266,10 +291,7 @@ export class AdminAnalyticsService {
         newInPeriod,
         retentionRate,
       },
-      statusBreakdown: statusRows.map((row) => ({
-        status: row.accountStatus,
-        count: row._count._all,
-      })),
+      statusBreakdown: effectiveStatusRows,
       growth,
       retentionDefinition:
         range.from && range.toExclusive
@@ -284,18 +306,18 @@ export class AdminAnalyticsService {
 
     const [totalTaskers, pendingVerification, rating, bookingStatus, growth, responseRows] =
       await Promise.all([
-        this.prisma.user.count({ where: { role: UserRole.Tasker, deletedAt: null } }),
+        this.prisma.user.count({ where: { roles: { has: UserRole.Tasker }, deletedAt: null } }),
         this.prisma.user.count({
           where: {
-            role: UserRole.Tasker,
+            roles: { has: UserRole.Tasker },
             deletedAt: null,
             isVerified: true,
-            accountStatus: 'pending_approval',
+            taskerProfile: { is: { status: 'pending_approval' } },
             onboardingStatus: { in: ['submitted', 'pending_review'] },
           },
         }),
         this.prisma.user.aggregate({
-          where: { role: UserRole.Tasker, deletedAt: null, accountStatus: 'active' },
+          where: { roles: { has: UserRole.Tasker }, deletedAt: null, taskerProfile: { is: { status: 'active' } } },
           _avg: { rating: true },
         }),
         this.prisma.booking.groupBy({
@@ -330,17 +352,17 @@ export class AdminAnalyticsService {
     const [totalElite, activeElite, inactiveElite, activeInPeriod, topEarnings] = await Promise.all(
       [
         this.prisma.user.count({
-          where: { role: UserRole.Tasker, deletedAt: null, isElite: true },
+          where: { roles: { has: UserRole.Tasker }, deletedAt: null, isElite: true },
         }),
         this.prisma.user.count({
-          where: { role: UserRole.Tasker, deletedAt: null, isElite: true, accountStatus: 'active' },
+          where: { roles: { has: UserRole.Tasker }, deletedAt: null, isElite: true, taskerProfile: { is: { status: 'active' } } },
         }),
         this.prisma.user.count({
           where: {
-            role: UserRole.Tasker,
+            roles: { has: UserRole.Tasker },
             deletedAt: null,
             isElite: true,
-            accountStatus: { in: ['suspended', 'deactivated'] },
+            taskerProfile: { is: { status: { in: ['suspended', 'deactivated'] } } },
           },
         }),
         this.prisma.booking.findMany({
@@ -404,7 +426,16 @@ export class AdminAnalyticsService {
       this.prisma.booking.count({
         where: {
           ...(where ?? {}),
-          status: { in: ['pending', 'confirmed', 'en_route', 'arrived', 'in_progress'] },
+          status: {
+            in: [
+              'pending',
+              'confirmed',
+              'en_route',
+              'arrived',
+              'in_progress',
+              'awaiting_customer_approval',
+            ],
+          },
         },
       }),
       this.prisma.booking.groupBy({ by: ['status'], where, _count: { _all: true } }),
@@ -441,7 +472,7 @@ export class AdminAnalyticsService {
           _count: { _all: true },
         }),
         this.prisma.user.aggregate({
-          where: { role: UserRole.Tasker, deletedAt: null, accountStatus: 'active' },
+          where: { roles: { has: UserRole.Tasker }, deletedAt: null, taskerProfile: { is: { status: 'active' } } },
           _avg: { rating: true },
         }),
         this.prisma.taskComplaint.count({
@@ -567,6 +598,7 @@ export class AdminAnalyticsService {
             select: {
               id: true,
               role: true,
+              roles: true,
               firstName: true,
               lastName: true,
               createdAt: true,
@@ -644,19 +676,28 @@ export class AdminAnalyticsService {
 
     const items: Array<Record<string, unknown> & { occurredAt: string }> = [];
     for (const user of users) {
+      const marketplaceRoles = user.roles.filter((role) =>
+        [UserRole.Customer, UserRole.Tasker].includes(role as UserRole),
+      );
+      const dualMarketplace = marketplaceRoles.length > 1;
+      const isTaskerOnly = marketplaceRoles.length === 1 && marketplaceRoles[0] === UserRole.Tasker;
+      const isCustomerOnly = marketplaceRoles.length === 1 && marketplaceRoles[0] === UserRole.Customer;
       items.push({
         id: `user:${user.id}:${user.createdAt.getTime()}`,
         category: 'users',
-        type:
-          user.role === UserRole.Tasker
+        type: dualMarketplace
+          ? 'marketplace_identity_created'
+          : isTaskerOnly
             ? 'tasker_registered'
-            : user.role === UserRole.Customer
+            : isCustomerOnly
               ? 'customer_registered'
               : 'administrator_created',
-        title: `${user.role === UserRole.Tasker ? 'Tasker' : user.role === UserRole.Customer ? 'Customer' : 'Administrator'} account created`,
+        title: dualMarketplace
+          ? 'Customer/Tasker identity created'
+          : `${isTaskerOnly ? 'Tasker' : isCustomerOnly ? 'Customer' : 'Administrator'} account created`,
         actor: { type: 'user', id: String(user.id), name: fullName(user.firstName, user.lastName) },
         entity: { type: 'user', id: String(user.id) },
-        metadata: { role: user.role, onboardingStatus: user.onboardingStatus },
+        metadata: { primaryRole: user.role, roles: user.roles, onboardingStatus: user.onboardingStatus },
         occurredAt: user.createdAt.toISOString(),
       });
     }
@@ -836,7 +877,7 @@ export class AdminAnalyticsService {
     const rows = await this.prisma.$queryRaw<CountSeriesRow[]>(Prisma.sql`
       SELECT ${bucket} AS bucket, COUNT(*)::int AS count
       FROM "Users" u
-      WHERE u."role" = ${UserRole.Customer} AND u."deletedAt" IS NULL ${condition}
+      WHERE ${UserRole.Customer} = ANY(u."roles") AND u."deletedAt" IS NULL ${condition}
       GROUP BY 1 ORDER BY 1 ASC
     `);
     return rows.map((row) => ({ bucket: row.bucket.toISOString(), count: Number(row.count) }));
@@ -848,7 +889,7 @@ export class AdminAnalyticsService {
     const rows = await this.prisma.$queryRaw<CountSeriesRow[]>(Prisma.sql`
       SELECT ${bucket} AS bucket, COUNT(*)::int AS count
       FROM "Users" u
-      WHERE u."role" = ${UserRole.Tasker} AND u."deletedAt" IS NULL ${condition}
+      WHERE ${UserRole.Tasker} = ANY(u."roles") AND u."deletedAt" IS NULL ${condition}
       GROUP BY 1 ORDER BY 1 ASC
     `);
     return rows.map((row) => ({ bucket: row.bucket.toISOString(), count: Number(row.count) }));

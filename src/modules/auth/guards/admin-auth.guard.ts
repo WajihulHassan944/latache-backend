@@ -10,7 +10,7 @@ export class AdminAuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     await this.jwtGuard.canActivate(context);
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    if (!ADMINISTRATIVE_ROLES.includes(request.user.role as UserRole)) {
+    if (!ADMINISTRATIVE_ROLES.includes(request.auth.role as UserRole)) {
       throw new ForbiddenException('Administrator access is required');
     }
     return true;

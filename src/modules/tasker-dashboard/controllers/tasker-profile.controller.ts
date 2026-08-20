@@ -87,7 +87,7 @@ export class TaskerProfileController {
   @ApiOperation({
     summary: 'Deactivate the tasker account safely',
     description:
-      'This is an account lifecycle action, not deletion: it changes accountStatus and revokes sessions without setting deletedAt or erasing financial history. Administrators use the explicit permanent-delete control for eligible accounts.',
+      'This is a Tasker-profile lifecycle action, not identity deletion: it deactivates only the Tasker role and revokes Tasker sessions without affecting an enabled Customer profile or erasing financial history. Administrators use the explicit permanent-delete control for eligible accounts.',
   })
   @ApiOkResponse({ description: 'Tasker account deactivated.' })
   @ApiConflictResponse({ description: 'Operational or financial obligations remain.' })

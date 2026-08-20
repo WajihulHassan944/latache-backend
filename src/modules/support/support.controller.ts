@@ -8,7 +8,9 @@ import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   CreateSupportTicketDto,
+  ListSupportMessagesQueryDto,
   ListOwnSupportTicketsQueryDto,
+  MarkSupportReadDto,
   SendSupportMessageDto,
   SupportFeedbackDto,
   SupportTicketParamDto,
@@ -24,11 +26,21 @@ import { SupportService } from './support.service';
 export class SupportController {
   constructor(private readonly support: SupportService) {}
 
+  @Get('capabilities')
+  @ApiOperation({
+    summary: 'Get support chat limits and integration capabilities',
+    description:
+      'Returns live-chat availability, shared Cloudinary attachment limits, idempotency fields, and the canonical realtime connection contract.',
+  })
+  capabilities(): Promise<unknown> {
+    return this.support.capabilities();
+  }
+
   @Post()
   @ApiOperation({
     summary: 'Open a support ticket or live-chat case',
     description:
-      'Customer and Tasker use the same support resource. channel=ticket creates an asynchronous case; channel=live_chat creates the same persisted case with chat semantics. Booking/payment/withdrawal references are ownership-validated.',
+      'Customer and Tasker use the same support resource. channel=ticket creates an asynchronous case; channel=live_chat creates the same persisted case with chat semantics. Booking/payment/withdrawal references are ownership-validated. Supply clientRequestId for retry-safe creation.',
   })
   @ApiBody({
     type: CreateSupportTicketDto,
@@ -66,23 +78,37 @@ export class SupportController {
     return this.support.listOwn(user, query);
   }
 
+  @Get('unread-count')
+  @ApiOperation({ summary: 'Get total unread public support messages for the current user' })
+  unreadCount(@CurrentUser() user: User): Promise<{ unreadCount: number }> {
+    return this.support.unreadCountOwn(user);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get one owned support ticket with linked booking/payment context' })
   detail(@CurrentUser() user: User, @Param() params: SupportTicketParamDto): Promise<unknown> {
-    return this.support.detailForUser(user.id, params.id);
+    return this.support.detailForUser(user, params.id);
   }
 
   @Get(':id/messages')
-  @ApiOperation({ summary: 'Get public support conversation messages for one owned ticket' })
-  messages(@CurrentUser() user: User, @Param() params: SupportTicketParamDto): Promise<unknown> {
-    return this.support.messagesOwn(user, params.id);
+  @ApiOperation({
+    summary: 'Get public support conversation messages for one owned ticket',
+    description:
+      'Supports cursor or page pagination and returns messages chronologically within the window. Reading history has no write side effect; use the read endpoint after rendering. Internal notes are never returned.',
+  })
+  messages(
+    @CurrentUser() user: User,
+    @Param() params: SupportTicketParamDto,
+    @Query() query: ListSupportMessagesQueryDto,
+  ): Promise<unknown> {
+    return this.support.messagesOwn(user, params.id, query);
   }
 
   @Post(':id/messages')
   @ApiOperation({
     summary: 'Reply to support',
     description:
-      'Attachments must first be uploaded through the existing Cloudinary upload API using folder=support-attachments.',
+      'Attachments must first be uploaded through the existing Cloudinary upload API using folder=support-attachments. Text is optional when an attachment is present. Supply clientMessageId for retry-safe delivery.',
   })
   send(
     @CurrentUser() user: User,
@@ -90,6 +116,16 @@ export class SupportController {
     @Body() dto: SendSupportMessageDto,
   ): Promise<unknown> {
     return this.support.sendOwn(user, params.id, dto);
+  }
+
+  @Post(':id/read')
+  @ApiOperation({ summary: 'Mark public agent replies as read through an optional message' })
+  markRead(
+    @CurrentUser() user: User,
+    @Param() params: SupportTicketParamDto,
+    @Body() dto: MarkSupportReadDto,
+  ): Promise<unknown> {
+    return this.support.markReadOwn(user, params.id, dto);
   }
 
   @Post(':id/actions')

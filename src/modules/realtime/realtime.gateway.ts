@@ -18,6 +18,7 @@ import type { AccessTokenPayload } from '../../common/types/jwt-payload';
 import { extractBearerToken } from '../../common/utils/token.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthSessionsRepository } from '../auth/repositories/auth-sessions.repository';
+import { AuthRoleService } from '../auth/services/auth-role.service';
 import { UsersService } from '../users/users.service';
 import { RealtimeCallsService } from './realtime-calls.service';
 import { REALTIME_NAMESPACE, realtimeRoom } from './realtime.constants';
@@ -63,6 +64,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly prisma: PrismaService,
     private readonly users: UsersService,
     private readonly sessions: AuthSessionsRepository,
+    private readonly roles: AuthRoleService,
     private readonly calls: RealtimeCallsService,
   ) {}
 
@@ -75,7 +77,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     try {
       const identity = await this.authenticate(client);
       client.data = identity;
-      await client.join(realtimeRoom.user(identity.userId));
+      await Promise.all([
+        client.join(realtimeRoom.user(identity.userId)),
+        client.join(realtimeRoom.userRole(identity.userId, identity.role)),
+      ]);
       this.logger.debug(`Realtime socket connected for user ${identity.userId}`);
     } catch (error) {
       this.logger.warn(
@@ -176,7 +181,24 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   ): Promise<{ accepted: true }> {
     const ticketId = this.requirePositiveId(payload?.ticketId, 'ticketId');
     if (typeof payload?.isTyping !== 'boolean') throw new WsException('isTyping must be a boolean');
-    const room = realtimeRoom.supportPublic(ticketId);
+    const scope = payload?.scope ?? 'public';
+    if (!['public', 'internal'].includes(scope)) {
+      throw new WsException('scope must be public or internal');
+    }
+    const isSupportWriter =
+      client.data.role === UserRole.SuperAdmin ||
+      (client.data.role === UserRole.Admin && client.data.permissions.includes('support.manage'));
+    if (client.data.role === UserRole.Admin || client.data.role === UserRole.SuperAdmin) {
+      if (!isSupportWriter)
+        throw new WsException('support.manage is required to send typing events');
+    }
+    if (scope === 'internal' && !isSupportWriter) {
+      throw new WsException('Only support administrators can send internal typing events');
+    }
+    const room =
+      scope === 'internal'
+        ? realtimeRoom.supportAdmins(ticketId)
+        : realtimeRoom.supportPublic(ticketId);
     if (!client.rooms.has(room)) {
       throw new WsException('Subscribe to this support ticket before sending typing events');
     }
@@ -185,6 +207,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       ticketId,
       userId: client.data.userId,
       role: client.data.role,
+      scope,
       isTyping: payload.isTyping,
     });
     return { accepted: true };
@@ -266,7 +289,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const target = await this.callOperation(client, 'call:signal', () =>
       this.calls.signalTarget(client.data, normalized.callId),
     );
-    this.server.to(realtimeRoom.user(target.targetUserId)).emit('call:offer', {
+    this.server.to(realtimeRoom.userRole(target.targetUserId, target.targetRole)).emit('call:offer', {
       callId: normalized.callId,
       bookingId: String(target.call.bookingId),
       fromUserId: String(client.data.userId),
@@ -286,7 +309,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const target = await this.callOperation(client, 'call:signal', () =>
       this.calls.signalTarget(client.data, normalized.callId),
     );
-    this.server.to(realtimeRoom.user(target.targetUserId)).emit('call:answer', {
+    this.server.to(realtimeRoom.userRole(target.targetUserId, target.targetRole)).emit('call:answer', {
       callId: normalized.callId,
       bookingId: String(target.call.bookingId),
       fromUserId: String(client.data.userId),
@@ -306,7 +329,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const target = await this.callOperation(client, 'call:signal', () =>
       this.calls.signalTarget(client.data, normalized.callId),
     );
-    this.server.to(realtimeRoom.user(target.targetUserId)).emit('call:ice_candidate', {
+    this.server.to(realtimeRoom.userRole(target.targetUserId, target.targetRole)).emit('call:ice_candidate', {
       callId: normalized.callId,
       bookingId: String(target.call.bookingId),
       fromUserId: String(client.data.userId),
@@ -326,7 +349,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const target = await this.callOperation(client, 'call:signal', () =>
       this.calls.signalTarget(client.data, normalized.callId),
     );
-    this.server.to(realtimeRoom.user(target.targetUserId)).emit('call:media_state', {
+    this.server.to(realtimeRoom.userRole(target.targetUserId, target.targetRole)).emit('call:media_state', {
       callId: normalized.callId,
       bookingId: String(target.call.bookingId),
       fromUserId: String(client.data.userId),
@@ -408,6 +431,9 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       this.sessions.findActiveById(sessionId, userId),
     ]);
     if (!user || user.deletedAt || !session) throw new WsException('Session is invalid or expired');
+    if (session.activeRole && session.activeRole !== payload.role) {
+      throw new WsException('Session role does not match this access token');
+    }
     if (
       [AccountStatus.Suspended, AccountStatus.Deactivated].includes(
         user.accountStatus as AccountStatus,
@@ -416,10 +442,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       throw new WsException('Account cannot use realtime features');
     }
 
+    await this.roles.assertSelectable(user, payload.role);
     return {
       userId,
       sessionId,
-      role: user.role as UserRole,
+      role: payload.role,
       permissions: user.permissions,
     };
   }
@@ -453,7 +480,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const participant = await this.prisma.booking.count({
       where: {
         id: bookingId,
-        OR: [{ customerId: identity.userId }, { taskerId: identity.userId }],
+        ...(identity.role === UserRole.Customer
+          ? { customerId: identity.userId }
+          : identity.role === UserRole.Tasker
+            ? { taskerId: identity.userId }
+            : { id: -1 }),
       },
     });
     if (participant) return true;
@@ -473,11 +504,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       (identity.role === UserRole.Admin && identity.permissions.includes('support.read'));
     const ticket = await this.prisma.supportTicket.findUnique({
       where: { id: ticketId },
-      select: { userId: true },
+      select: { userId: true, requesterRole: true },
     });
     if (!ticket) throw new WsException('Support ticket not found');
     if (admin) return { admin: true };
-    if (ticket.userId === identity.userId) return { admin: false };
+    if (ticket.userId === identity.userId && ticket.requesterRole === identity.role) return { admin: false };
     throw new WsException('Support ticket is not accessible');
   }
 

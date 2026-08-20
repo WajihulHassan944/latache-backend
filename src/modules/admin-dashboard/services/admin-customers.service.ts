@@ -49,9 +49,14 @@ export class AdminCustomersService {
     const { page, limit, skip } = pagination(query.page, query.limit);
     const search = query.search?.trim();
     const where: Prisma.UserWhereInput = {
-      role: UserRole.Customer,
+      roles: { has: UserRole.Customer },
       deletedAt: null,
-      ...(query.status ? { accountStatus: query.status } : {}),
+      customerProfile: { isNot: null },
+      ...(query.status === 'pending_verification'
+        ? { accountStatus: AccountStatus.PendingVerification }
+        : query.status
+          ? { customerProfile: { is: { status: query.status } } }
+          : {}),
       ...(search
         ? {
             OR: [
@@ -68,7 +73,7 @@ export class AdminCustomersService {
       query.sort === 'oldest'
         ? [{ createdAt: 'asc' }]
         : query.sort === 'rating_desc'
-          ? [{ rating: 'desc' }, { createdAt: 'desc' }]
+          ? [{ customerProfile: { rating: 'desc' } }, { createdAt: 'desc' }]
           : query.sort === 'bookings_desc'
             ? [{ bookingsAsCustomer: { _count: 'desc' } }, { createdAt: 'desc' }]
             : [{ createdAt: 'desc' }];
@@ -86,6 +91,7 @@ export class AdminCustomersService {
           zipCode: true,
           profilePicture: true,
           accountStatus: true,
+          customerProfile: { select: { status: true, rating: true, reviewsCount: true } },
           rating: true,
           reviewsCount: true,
           lastLoginAt: true,
@@ -120,11 +126,11 @@ export class AdminCustomersService {
         phone: `${customer.phoneCountryCode ?? ''}${customer.phoneNumber ?? ''}`,
         zipCode: customer.zipCode ?? '',
         profilePicture: customer.profilePicture ?? '',
-        accountStatus: customer.accountStatus,
+        accountStatus: customer.accountStatus === AccountStatus.PendingVerification ? customer.accountStatus : (customer.customerProfile?.status ?? customer.accountStatus),
         bookingsCount: customer._count.bookingsAsCustomer,
         totalSpent: spendByCustomer.get(customer.id) ?? 0,
-        rating: Number(customer.rating),
-        reviewsCount: customer.reviewsCount,
+        rating: Number(customer.customerProfile?.rating ?? customer.rating),
+        reviewsCount: customer.customerProfile?.reviewsCount ?? customer.reviewsCount,
         lastLoginAt: customer.lastLoginAt?.toISOString() ?? null,
         joinedAt: customer.createdAt.toISOString(),
       })),
@@ -331,7 +337,7 @@ export class AdminCustomersService {
           take: 5,
         }),
         this.prisma.review.aggregate({
-          where: { revieweeId: customerId, moderationStatus: 'visible' },
+          where: { revieweeId: customerId, revieweeRole: UserRole.Customer, moderationStatus: 'visible' },
           _avg: { rating: true },
           _count: { _all: true },
         }),
@@ -349,7 +355,10 @@ export class AdminCustomersService {
         phoneNumber: customer.phoneNumber ?? '',
         zipCode: customer.zipCode ?? '',
         profilePicture: customer.profilePicture ?? '',
-        accountStatus: customer.accountStatus,
+        accountStatus:
+          customer.accountStatus === AccountStatus.PendingVerification
+            ? customer.accountStatus
+            : (customer.customerProfile?.status ?? customer.accountStatus),
         isVerified: customer.isVerified,
         lastLoginAt: customer.lastLoginAt?.toISOString() ?? null,
         memberSince: customer.createdAt.toISOString(),
@@ -498,12 +507,22 @@ export class AdminCustomersService {
     const range = resolveAdminDateRange(query);
     const period = dateFilter(range);
     const [totalCustomers, statusRows, topSpendRows, createdInPeriod] = await Promise.all([
-      this.prisma.user.count({ where: { role: UserRole.Customer, deletedAt: null } }),
-      this.prisma.user.groupBy({
-        by: ['accountStatus'],
-        where: { role: UserRole.Customer, deletedAt: null },
-        _count: { _all: true },
-      }),
+      this.prisma.user.count({ where: { roles: { has: UserRole.Customer }, deletedAt: null } }),
+      Promise.all([
+        this.prisma.customerProfile.groupBy({
+          by: ['status'],
+          where: { user: { deletedAt: null, isVerified: true, roles: { has: UserRole.Customer } } },
+          _count: { _all: true },
+        }),
+        this.prisma.user.count({
+          where: {
+            roles: { has: UserRole.Customer },
+            deletedAt: null,
+            isVerified: false,
+            accountStatus: AccountStatus.PendingVerification,
+          },
+        }),
+      ]),
       this.prisma.paymentTransaction.groupBy({
         by: ['customerId'],
         where: {
@@ -518,22 +537,30 @@ export class AdminCustomersService {
       }),
       this.prisma.user.count({
         where: {
-          role: UserRole.Customer,
+          roles: { has: UserRole.Customer },
           deletedAt: null,
           ...(period ? { createdAt: period } : {}),
         },
       }),
     ]);
 
+    const [customerProfileStatusRows, pendingVerificationCustomers] = statusRows;
+    const effectiveStatusRows = [
+      ...customerProfileStatusRows.map((row) => ({ status: row.status, count: row._count._all })),
+      ...(pendingVerificationCustomers > 0
+        ? [{ status: AccountStatus.PendingVerification, count: pendingVerificationCustomers }]
+        : []),
+    ];
+
     let retentionRate = 0;
     if (range.from && range.toExclusive) {
       const [base, retained] = await Promise.all([
         this.prisma.user.count({
-          where: { role: UserRole.Customer, deletedAt: null, createdAt: { lt: range.from } },
+          where: { roles: { has: UserRole.Customer }, deletedAt: null, createdAt: { lt: range.from } },
         }),
         this.prisma.user.count({
           where: {
-            role: UserRole.Customer,
+            roles: { has: UserRole.Customer },
             deletedAt: null,
             createdAt: { lt: range.from },
             lastLoginAt: { gte: range.from, lt: range.toExclusive },
@@ -552,7 +579,7 @@ export class AdminCustomersService {
       : [];
     const byId = new Map(topCustomers.map((customer) => [customer.id, customer]));
     const deactivated =
-      statusRows.find((row) => row.accountStatus === AccountStatus.Deactivated)?._count._all ?? 0;
+      effectiveStatusRows.find((row) => row.status === AccountStatus.Deactivated)?.count ?? 0;
 
     return {
       range: {
@@ -567,10 +594,7 @@ export class AdminCustomersService {
         retentionRate,
         churnRate: percentage(deactivated, totalCustomers),
       },
-      statusBreakdown: statusRows.map((row) => ({
-        status: row.accountStatus,
-        count: row._count._all,
-      })),
+      statusBreakdown: effectiveStatusRows,
       topCustomersBySpend: topSpendRows.map((row) => {
         const customer = byId.get(row.customerId);
         return {
@@ -596,21 +620,21 @@ export class AdminCustomersService {
     if (dto.action !== 'reactivate' && !dto.reason?.trim()) {
       throw new BadRequestException('A reason is required when suspending or banning a customer');
     }
-    if (dto.action === 'suspend' && customer.accountStatus === AccountStatus.Deactivated) {
+    if (dto.action === 'suspend' && customer.customerProfile?.status === 'deactivated') {
       throw new ConflictException('A deactivated/banned customer cannot be suspended');
     }
-    if (dto.action === 'suspend' && customer.accountStatus === AccountStatus.Suspended) {
+    if (dto.action === 'suspend' && customer.customerProfile?.status === 'suspended') {
       throw new ConflictException('Customer is already suspended');
     }
-    if (dto.action === 'ban' && customer.accountStatus === AccountStatus.Deactivated) {
+    if (dto.action === 'ban' && customer.customerProfile?.status === 'deactivated') {
       throw new ConflictException('Customer is already deactivated/banned');
     }
-    if (dto.action === 'reactivate' && customer.accountStatus === AccountStatus.Active) {
+    if (dto.action === 'reactivate' && customer.customerProfile?.status === 'active') {
       throw new ConflictException('Customer is already active');
     }
     if (
       dto.action === 'reactivate' &&
-      customer.accountStatus === AccountStatus.Deactivated &&
+      customer.customerProfile?.status === 'deactivated' &&
       actor.role !== UserRole.SuperAdmin
     ) {
       throw new ForbiddenException(
@@ -619,19 +643,20 @@ export class AdminCustomersService {
     }
 
     const nextStatus =
-      dto.action === 'suspend'
-        ? AccountStatus.Suspended
-        : dto.action === 'ban'
-          ? AccountStatus.Deactivated
-          : AccountStatus.Active;
+      dto.action === 'suspend' ? 'suspended' : dto.action === 'ban' ? 'deactivated' : 'active';
 
     const updated = await this.prisma.$transaction(async (transaction) => {
-      const changed = await transaction.user.update({
-        where: { id: customerId },
-        data: { accountStatus: nextStatus },
+      const changed = await transaction.customerProfile.update({
+        where: { userId: customerId },
+        data: {
+          status: nextStatus,
+          suspendedAt: nextStatus === 'suspended' ? new Date() : null,
+          deactivatedAt: nextStatus === 'deactivated' ? new Date() : null,
+          statusReason: nextStatus === 'active' ? null : dto.reason?.trim() ?? null,
+        },
       });
       if (dto.action !== 'reactivate') {
-        await this.sessions.revokeAll(customerId, transaction);
+        await this.sessions.revokeRole(customerId, UserRole.Customer, transaction);
       }
       await this.audit.record(
         {
@@ -641,7 +666,7 @@ export class AdminCustomersService {
           entityType: 'customer',
           entityId: customerId,
           reason: dto.reason,
-          metadata: { previousStatus: customer.accountStatus, nextStatus },
+          metadata: { previousStatus: customer.customerProfile?.status ?? customer.accountStatus, nextStatus },
         },
         transaction,
       );
@@ -668,8 +693,8 @@ export class AdminCustomersService {
     });
 
     return {
-      id: String(updated.id),
-      accountStatus: updated.accountStatus,
+      id: String(customerId),
+      accountStatus: updated.status,
       action: dto.action,
       sessionsRevoked: dto.action !== 'reactivate',
     };
@@ -677,7 +702,8 @@ export class AdminCustomersService {
 
   private async requireCustomer(customerId: number) {
     const customer = await this.prisma.user.findFirst({
-      where: { id: customerId, role: UserRole.Customer, deletedAt: null },
+      where: { id: customerId, roles: { has: UserRole.Customer }, deletedAt: null, customerProfile: { isNot: null } },
+      include: { customerProfile: true },
     });
     if (!customer) throw new NotFoundException('Customer not found');
     return customer;

@@ -13,6 +13,7 @@ import type { AccessTokenPayload } from '../../../common/types/jwt-payload';
 import { extractBearerToken } from '../../../common/utils/token.util';
 import { UsersService } from '../../users/users.service';
 import { AuthSessionsRepository } from '../repositories/auth-sessions.repository';
+import { AuthRoleService } from '../services/auth-role.service';
 
 /**
  * Resolves a bearer token to an active database user and active refresh-token
@@ -26,6 +27,7 @@ export class JwtIdentityGuard implements CanActivate {
     private readonly config: ConfigService,
     private readonly users: UsersService,
     private readonly sessions: AuthSessionsRepository,
+    private readonly roles: AuthRoleService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -53,6 +55,9 @@ export class JwtIdentityGuard implements CanActivate {
     if (!user || user.deletedAt || !session) {
       throw new UnauthorizedException('Session is invalid or expired');
     }
+    if (session.activeRole && session.activeRole !== payload.role) {
+      throw new UnauthorizedException('Session role does not match this access token');
+    }
     if (user.accountStatus === AccountStatus.Suspended) {
       throw new ForbiddenException('Account is suspended');
     }
@@ -60,7 +65,12 @@ export class JwtIdentityGuard implements CanActivate {
       throw new ForbiddenException('Account is deactivated');
     }
 
-    request.user = user;
+    await this.roles.assertSelectable(user, payload.role);
+
+    // Keep legacy service/controller code role-aware without duplicating the
+    // User identity: request.user.role is the role selected by this JWT, while
+    // the persisted User.role remains the primary/backward-compatible role.
+    request.user = { ...user, role: payload.role };
     request.auth = payload;
     return true;
   }

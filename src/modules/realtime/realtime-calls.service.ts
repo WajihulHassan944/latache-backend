@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { normalizePagination } from '../../common/utils/pagination.util';
 import { AccountStatus } from '../../common/enums/account-status.enum';
+import { UserRole } from '../../common/enums/user-role.enum';
 import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
@@ -31,7 +32,6 @@ const CALL_INCLUDE = {
       firstName: true,
       lastName: true,
       profilePicture: true,
-      role: true,
     },
   },
   recipient: {
@@ -40,7 +40,6 @@ const CALL_INCLUDE = {
       firstName: true,
       lastName: true,
       profilePicture: true,
-      role: true,
     },
   },
   booking: {
@@ -69,6 +68,7 @@ interface BookingParticipantRecord {
     lastName: string | null;
     accountStatus: string;
     deletedAt: Date | null;
+    customerProfile: { status: string } | null;
   };
   tasker: {
     id: number;
@@ -76,6 +76,7 @@ interface BookingParticipantRecord {
     lastName: string | null;
     accountStatus: string;
     deletedAt: Date | null;
+    taskerProfile: { status: string } | null;
   };
 }
 
@@ -108,8 +109,9 @@ export class RealtimeCallsService {
     userId: number,
     bookingId: number,
     query: ListConversationCallsQuery,
+    role: UserRole,
   ): Promise<ConversationCallListView> {
-    await this.assertBookingParticipant(userId, bookingId);
+    await this.assertBookingParticipant(userId, bookingId, role);
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
     const where: Prisma.ConversationCallWhereInput = {
       bookingId,
@@ -136,8 +138,8 @@ export class RealtimeCallsService {
     };
   }
 
-  async get(userId: number, bookingId: number, callId: string): Promise<ConversationCallView> {
-    await this.assertBookingParticipant(userId, bookingId);
+  async get(userId: number, bookingId: number, callId: string, role: UserRole): Promise<ConversationCallView> {
+    await this.assertBookingParticipant(userId, bookingId, role);
     const call = await this.prisma.conversationCall.findFirst({
       where: { id: callId, bookingId },
       include: CALL_INCLUDE,
@@ -151,7 +153,7 @@ export class RealtimeCallsService {
     payload: CallInitiatePayload,
   ): Promise<ConversationCallView> {
     this.assertCallsEnabled();
-    const booking = await this.requireParticipantBooking(identity.userId, payload.bookingId);
+    const booking = await this.requireParticipantBooking(identity.userId, payload.bookingId, identity.role);
     if (!this.allowedBookingStatuses().includes(booking.status)) {
       throw new ConflictException(
         `Calls are not available while the booking status is ${booking.status}`,
@@ -159,19 +161,26 @@ export class RealtimeCallsService {
     }
 
     const recipient = booking.customerId === identity.userId ? booking.tasker : booking.customer;
+    const recipientRole = booking.customerId === recipient.id ? UserRole.Customer : UserRole.Tasker;
+    const recipientProfileStatus =
+      recipientRole === UserRole.Customer
+        ? booking.customer.customerProfile?.status
+        : booking.tasker.taskerProfile?.status;
     if (
       recipient.deletedAt ||
       [AccountStatus.Suspended, AccountStatus.Deactivated].includes(
         recipient.accountStatus as AccountStatus,
-      )
+      ) ||
+      recipientProfileStatus !== AccountStatus.Active
     ) {
       throw new ConflictException('The other booking participant cannot receive calls');
     }
 
     const existingIdempotent = await this.prisma.conversationCall.findUnique({
       where: {
-        initiatorId_clientRequestId: {
+        initiatorId_bookingId_clientRequestId: {
           initiatorId: identity.userId,
+          bookingId: payload.bookingId,
           clientRequestId: payload.clientRequestId,
         },
       },
@@ -203,8 +212,9 @@ export class RealtimeCallsService {
         }
         const concurrentIdempotent = await transaction.conversationCall.findUnique({
           where: {
-            initiatorId_clientRequestId: {
+            initiatorId_bookingId_clientRequestId: {
               initiatorId: identity.userId,
+              bookingId: payload.bookingId,
               clientRequestId: payload.clientRequestId,
             },
           },
@@ -247,6 +257,7 @@ export class RealtimeCallsService {
         const notification = await transaction.taskNotification.create({
           data: {
             userId: recipient.id,
+            audienceRole: recipientRole,
             category: 'messages',
             type: `incoming_${payload.type}_call`,
             title: `Incoming ${payload.type} call`,
@@ -259,9 +270,10 @@ export class RealtimeCallsService {
             },
           },
         });
-        await this.enqueueUser(
+        await this.enqueueUserRole(
           transaction,
           recipient.id,
+          recipientRole,
           'notification:created',
           this.notificationPayload(notification),
         );
@@ -289,6 +301,7 @@ export class RealtimeCallsService {
   ): Promise<ConversationCallView> {
     this.assertCallsEnabled();
     const call = await this.requireCall(payload.callId);
+    this.assertCallIdentityRole(identity, call);
     if (call.recipientId !== identity.userId) {
       throw new ForbiddenException('Only the call recipient can accept this call');
     }
@@ -324,6 +337,7 @@ export class RealtimeCallsService {
     payload: CallActionPayload,
   ): Promise<ConversationCallView> {
     const call = await this.requireCall(payload.callId);
+    this.assertCallIdentityRole(identity, call);
     if (call.recipientId !== identity.userId) {
       throw new ForbiddenException('Only the call recipient can reject this call');
     }
@@ -335,6 +349,7 @@ export class RealtimeCallsService {
     payload: CallActionPayload,
   ): Promise<ConversationCallView> {
     const call = await this.requireCall(payload.callId);
+    this.assertCallIdentityRole(identity, call);
     if (call.initiatorId !== identity.userId) {
       throw new ForbiddenException('Only the call initiator can cancel this call');
     }
@@ -351,6 +366,7 @@ export class RealtimeCallsService {
     payload: CallActionPayload,
   ): Promise<ConversationCallView> {
     const call = await this.requireCall(payload.callId);
+    this.assertCallIdentityRole(identity, call);
     this.assertCallParticipant(identity.userId, call);
     if (call.status === 'ended') return this.toView(call, identity.userId);
     if (call.status !== 'accepted')
@@ -380,9 +396,10 @@ export class RealtimeCallsService {
   async signalTarget(
     identity: RealtimeSocketIdentity,
     callId: string,
-  ): Promise<{ call: CallRecord; targetUserId: number }> {
+  ): Promise<{ call: CallRecord; targetUserId: number; targetRole: UserRole.Customer | UserRole.Tasker }> {
     this.assertCallsEnabled();
     const call = await this.requireCall(callId);
+    this.assertCallIdentityRole(identity, call);
     this.assertCallParticipant(identity.userId, call);
     if (call.status !== 'accepted') {
       throw new ConflictException('WebRTC signaling is allowed only for an accepted call');
@@ -391,9 +408,13 @@ export class RealtimeCallsService {
       await this.finishSystemCall(call.id, 'ended', 'booking_status_changed');
       throw new GoneException('The booking no longer allows calls');
     }
+    const targetUserId =
+      call.initiatorId === identity.userId ? call.recipientId : call.initiatorId;
     return {
       call,
-      targetUserId: call.initiatorId === identity.userId ? call.recipientId : call.initiatorId,
+      targetUserId,
+      targetRole:
+        targetUserId === call.booking.customerId ? UserRole.Customer : UserRole.Tasker,
     };
   }
 
@@ -488,9 +509,12 @@ export class RealtimeCallsService {
         where: { id: callId },
         include: CALL_INCLUDE,
       });
+      const recipientRole =
+        call.recipientId === call.booking.customerId ? UserRole.Customer : UserRole.Tasker;
       const notification = await transaction.taskNotification.create({
         data: {
           userId: call.recipientId,
+          audienceRole: recipientRole,
           category: 'messages',
           type: `missed_${call.type}_call`,
           title: `Missed ${call.type} call`,
@@ -500,9 +524,10 @@ export class RealtimeCallsService {
           metadata: { bookingId: String(call.bookingId), callType: call.type },
         },
       });
-      await this.enqueueUser(
+      await this.enqueueUserRole(
         transaction,
         call.recipientId,
+        recipientRole,
         'notification:created',
         this.notificationPayload(notification),
       );
@@ -535,11 +560,12 @@ export class RealtimeCallsService {
   private async requireParticipantBooking(
     userId: number,
     bookingId: number,
+    role: UserRole,
   ): Promise<BookingParticipantRecord> {
     const booking = await this.prisma.booking.findFirst({
       where: {
         id: bookingId,
-        OR: [{ customerId: userId }, { taskerId: userId }],
+        ...this.participantBookingWhere(userId, role),
       },
       select: {
         id: true,
@@ -553,6 +579,7 @@ export class RealtimeCallsService {
             lastName: true,
             accountStatus: true,
             deletedAt: true,
+            customerProfile: { select: { status: true } },
           },
         },
         tasker: {
@@ -562,6 +589,7 @@ export class RealtimeCallsService {
             lastName: true,
             accountStatus: true,
             deletedAt: true,
+            taskerProfile: { select: { status: true } },
           },
         },
       },
@@ -570,9 +598,9 @@ export class RealtimeCallsService {
     return booking;
   }
 
-  private async assertBookingParticipant(userId: number, bookingId: number): Promise<void> {
+  private async assertBookingParticipant(userId: number, bookingId: number, role: UserRole): Promise<void> {
     const count = await this.prisma.booking.count({
-      where: { id: bookingId, OR: [{ customerId: userId }, { taskerId: userId }] },
+      where: { id: bookingId, ...this.participantBookingWhere(userId, role) },
     });
     if (!count) throw new NotFoundException('Conversation not found');
   }
@@ -584,6 +612,21 @@ export class RealtimeCallsService {
     });
     if (!call) throw new NotFoundException('Call not found');
     return call;
+  }
+
+  private participantBookingWhere(userId: number, role: UserRole): Prisma.BookingWhereInput {
+    if (role === UserRole.Customer) return { customerId: userId };
+    if (role === UserRole.Tasker) return { taskerId: userId };
+    return { id: -1 };
+  }
+
+  private assertCallIdentityRole(identity: RealtimeSocketIdentity, call: CallRecord): void {
+    const matchesRole =
+      (identity.role === UserRole.Customer && call.booking.customerId === identity.userId) ||
+      (identity.role === UserRole.Tasker && call.booking.taskerId === identity.userId);
+    if (!matchesRole) {
+      throw new ForbiddenException('Call is not accessible from the active role');
+    }
   }
 
   private assertCallParticipant(userId: number, call: CallRecord): void {
@@ -613,9 +656,37 @@ export class RealtimeCallsService {
   ): Promise<void> {
     const payload = this.eventPayload(call);
     await Promise.all([
-      this.enqueueUser(transaction, call.initiatorId, 'call:state', payload),
-      this.enqueueUser(transaction, call.recipientId, 'call:state', payload),
+      this.enqueueUserRole(
+        transaction,
+        call.initiatorId,
+        call.initiatorId === call.booking.customerId ? UserRole.Customer : UserRole.Tasker,
+        'call:state',
+        payload,
+      ),
+      this.enqueueUserRole(
+        transaction,
+        call.recipientId,
+        call.recipientId === call.booking.customerId ? UserRole.Customer : UserRole.Tasker,
+        'call:state',
+        payload,
+      ),
     ]);
+  }
+
+  private enqueueUserRole(
+    transaction: Prisma.TransactionClient,
+    userId: number,
+    role: UserRole,
+    eventName: string,
+    payload: Prisma.InputJsonValue,
+  ) {
+    return transaction.realtimeOutboxEvent.create({
+      data: {
+        room: realtimeRoom.userRole(userId, role),
+        eventName,
+        payload,
+      },
+    });
   }
 
   private enqueueUser(
@@ -641,8 +712,14 @@ export class RealtimeCallsService {
       status: call.status,
       initiatorId: String(call.initiatorId),
       recipientId: String(call.recipientId),
-      initiator: this.personPayload(call.initiator),
-      recipient: this.personPayload(call.recipient),
+      initiator: this.personPayload(
+        call.initiator,
+        call.initiatorId === call.booking.customerId ? UserRole.Customer : UserRole.Tasker,
+      ),
+      recipient: this.personPayload(
+        call.recipient,
+        call.recipientId === call.booking.customerId ? UserRole.Customer : UserRole.Tasker,
+      ),
       service: {
         id: String(call.booking.service.id),
         name: call.booking.service.name ?? '',
@@ -676,7 +753,7 @@ export class RealtimeCallsService {
         id: String(other.id),
         name: this.displayName(other),
         avatar: other.profilePicture ?? '',
-        role: other.role,
+        role: other.id === call.booking.customerId ? UserRole.Customer : UserRole.Tasker,
       },
       expiresAt: call.expiresAt.toISOString(),
       answeredAt: call.answeredAt?.toISOString() ?? null,
@@ -694,18 +771,20 @@ export class RealtimeCallsService {
     };
   }
 
-  private personPayload(person: {
-    id: number;
-    firstName: string | null;
-    lastName: string | null;
-    profilePicture: string | null;
-    role: string;
-  }): Prisma.InputJsonObject {
+  private personPayload(
+    person: {
+      id: number;
+      firstName: string | null;
+      lastName: string | null;
+      profilePicture: string | null;
+    },
+    role: UserRole.Customer | UserRole.Tasker,
+  ): Prisma.InputJsonObject {
     return {
       id: String(person.id),
       name: this.displayName(person),
       avatar: person.profilePicture ?? '',
-      role: person.role,
+      role,
     };
   }
 

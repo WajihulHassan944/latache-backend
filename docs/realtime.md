@@ -21,8 +21,8 @@ Persisted push events use the `RealtimeOutboxEvents` transactional outbox. Domai
 - `user:{userId}` — private notifications for that identity.
 - `booking:{bookingId}` — booking lifecycle, timer and Tasker location. Booking participants can join; Admin/Super Admin needs `bookings.read`.
 - `conversation:{bookingId}` — private Customer/Tasker booking messages/read receipts/typing. Only the two booking participants can join. Admin booking access does not grant chat access.
-- `support:{ticketId}:public` — participant-visible support messages/status/typing.
-- `support:{ticketId}:admins` — Support Admin/Super Admin internal-note channel.
+- `support:{ticketId}:public` — participant-visible support messages, read receipts, ticket state, and public typing.
+- `support:{ticketId}:admins` — Support Admin/Super Admin internal notes and internal typing. Participants never join it.
 
 The client subscribes to a booking with `booking:subscribe`. A participant joins both the booking-state and private conversation rooms. An administrator joins only the booking-state room.
 
@@ -41,6 +41,7 @@ The client subscribes to a booking with `booking:subscribe`. A participant joins
 - `booking:updated`
 - `booking:location`
 - `booking:timer`
+- `referral:updated`
 - `call:incoming`
 - `call:state`
 - `call:offer`
@@ -69,14 +70,16 @@ Typing events are intentionally ephemeral and do not use the outbox.
 - `support:subscribe` `{ "ticketId": 123 }`
 - `support:unsubscribe` `{ "ticketId": 123 }`
 - `conversation:typing` `{ "bookingId": 123, "isTyping": true }`
-- `support:typing` `{ "ticketId": 123, "isTyping": true }`
+- `support:typing` `{ "ticketId": 123, "isTyping": true, "scope": "public|internal" }` (`scope` defaults to `public`; `internal` requires `support.manage`)
 - `call:initiate` `{ "bookingId": 123, "type": "voice|video", "clientRequestId": "uuid" }`
 - `call:accept` / `call:reject` / `call:cancel` / `call:end` `{ "callId": "...", "reason": "optional" }`
 - `call:offer` / `call:answer` `{ "callId": "...", "description": { "type": "offer|answer", "sdp": "..." } }`
 - `call:ice_candidate` `{ "callId": "...", "candidate": { "candidate": "..." } }`
 - `call:media_state` `{ "callId": "...", "microphoneEnabled": true, "cameraEnabled": false }`
 
-Persisted writes still go through the existing REST APIs. There is deliberately no second WebSocket mutation path for messages, notifications, bookings, disputes, payments, or support records.
+Persisted writes still go through the existing REST APIs. There is deliberately no second WebSocket mutation path for messages, notifications, bookings, referrals, disputes, payments, or support records. Referral attribution, qualification, reward release, reversal, expiry and administrative revocation publish durable `referral:updated` events to the affected users' private rooms.
+
+Persisted message events include the client-generated idempotency identifier when one was supplied. Public support state is emitted once to the public room, which support administrators also join; internal-note activity is emitted only to the Admin room. This avoids duplicate semantic events while preserving internal-note privacy.
 
 ## Voice/video call signaling
 

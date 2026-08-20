@@ -1,22 +1,22 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { dateOnlyFromDate } from '../../common/utils/date.util';
 import { PrismaService } from '../../database/prisma.service';
 import { ReviewsService } from '../reviews/reviews.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 
 @Injectable()
 export class CustomerDashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reviews: ReviewsService,
-    private readonly config: ConfigService,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   async overview(customerId: number) {
     const customer = await this.prisma.user.findFirst({
-      where: { id: customerId, role: UserRole.Customer, deletedAt: null },
-      select: { id: true, firstName: true, profilePicture: true, accountStatus: true },
+      where: { id: customerId, roles: { has: UserRole.Customer }, deletedAt: null, customerProfile: { is: { status: 'active' } } },
+      select: { id: true, firstName: true, profilePicture: true, accountStatus: true, customerProfile: { select: { status: true } } },
     });
     if (!customer) throw new NotFoundException('Customer account not found');
 
@@ -24,7 +24,14 @@ export class CustomerDashboardService {
     const year = now.getUTCFullYear();
     const yearStart = new Date(Date.UTC(year, 0, 1));
     const yearEnd = new Date(Date.UTC(year + 1, 0, 1));
-    const activeStatuses = ['pending', 'confirmed', 'en_route', 'arrived', 'in_progress'];
+    const activeStatuses = [
+      'pending',
+      'confirmed',
+      'en_route',
+      'arrived',
+      'in_progress',
+      'awaiting_customer_approval',
+    ];
 
     const [
       activeTasks,
@@ -36,6 +43,7 @@ export class CustomerDashboardService {
       recentBookings,
       spendRows,
       walletRecord,
+      platformCurrency,
     ] = await Promise.all([
       this.prisma.booking.count({ where: { customerId, status: { in: activeStatuses } } }),
       this.prisma.booking.count({ where: { customerId, status: 'completed' } }),
@@ -63,7 +71,7 @@ export class CustomerDashboardService {
         orderBy: [{ bookingDate: 'asc' }, { startTime: 'asc' }],
       }),
       this.prisma.favoriteTasker.count({ where: { customerId } }),
-      this.reviews.averageGiven(customerId),
+      this.reviews.averageGiven(customerId, UserRole.Customer),
       this.prisma.booking.findMany({
         where: { customerId },
         include: {
@@ -83,17 +91,29 @@ export class CustomerDashboardService {
         select: { amount: true, currency: true, createdAt: true },
       }),
       this.prisma.customerWallet.findUnique({ where: { customerId } }),
+      this.platformSettings.currencyContext(),
     ]);
 
     const finalized = completedTasks + cancelledTasks;
     const monthlySpend = Array.from({ length: 12 }, (_, index) => ({
       month: `${year}-${String(index + 1).padStart(2, '0')}`,
       amount: 0,
-      currency: spendRows[0]?.currency ?? 'USD',
+      currency: platformCurrency.code,
     }));
     for (const row of spendRows) {
       const item = monthlySpend[row.createdAt.getUTCMonth()];
-      if (item) item.amount = Number((item.amount + Number(row.amount)).toFixed(2));
+      if (item) {
+        item.amount = Number(
+          (
+            item.amount +
+            this.platformSettings.convertCurrencyAmount(
+              Number(row.amount),
+              row.currency,
+              platformCurrency,
+            )
+          ).toFixed(2),
+        );
+      }
     }
 
     const bookingSummary = (booking: typeof nextTask) =>
@@ -120,13 +140,11 @@ export class CustomerDashboardService {
         id: String(customer.id),
         firstName: customer.firstName ?? '',
         profilePicture: customer.profilePicture ?? '',
-        accountStatus: customer.accountStatus,
+        accountStatus: customer.customerProfile?.status ?? customer.accountStatus,
       },
       wallet: {
         availableBalance: Number(walletRecord?.availableBalance ?? 0),
-        currency:
-          walletRecord?.currency ??
-          this.config.get<string>('payments.currency', 'USD').toUpperCase(),
+        currency: walletRecord?.currency ?? platformCurrency.code,
       },
       metrics: {
         activeTasks,

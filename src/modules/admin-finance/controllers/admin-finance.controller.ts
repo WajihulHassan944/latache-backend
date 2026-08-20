@@ -44,7 +44,7 @@ export class AdminFinanceController {
   @ApiOperation({
     summary: 'Unified Payments & Finance dashboard read API',
     description:
-      'Use view=overview|transactions|refunds|payouts|revenue|earnings|cash_receivables. Earnings and cash receivables read the same ledger/state records used by Taskers and settlement workers. Commission, tax, and taskerFinance policy are managed through Platform Settings. Refund execution remains in Dispute Management.',
+      'Use view=overview|transactions|refunds|payouts|revenue|earnings|cash_receivables|chargebacks. Earnings and cash receivables read the same ledger/state records used by Taskers and settlement workers. chargebacks exposes Stripe provider disputes received through verified webhooks; internal Latache complaints remain in Dispute Management. Commission, tax, and taskerFinance policy are managed through Platform Settings. Refund execution remains in Dispute Management.',
   })
   @ApiProduces('application/json', 'text/csv')
   @ApiOkResponse({

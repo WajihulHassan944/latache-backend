@@ -77,7 +77,7 @@ Every bearer request validates:
 - `POST /api/auth/verify-email` requires the registration bearer token and `{ "otp": "123456" }`.
 - `POST /api/auth/resend-verification-email` accepts email and optional device metadata.
 
-Only the latest OTP is valid. OTP expiry and failed-attempt counts are stored in PostgreSQL. A new OTP resets the attempt count. The public resend response is intentionally identical for missing, verified, and eligible users to reduce account enumeration.
+Only the latest OTP is valid. New OTPs are stored as keyed SHA-256 hashes; plaintext codes exist only in the outbound email and request. OTP expiry and failed-attempt counts are stored in PostgreSQL. A new OTP resets the attempt count. The additive migration temporarily accepts an already-issued legacy integer code until it expires, while every new issuance clears that legacy field. The public resend response is intentionally identical for missing, verified, and eligible users to reduce account enumeration.
 
 ## Password recovery
 
@@ -86,7 +86,7 @@ Only the latest OTP is valid. OTP expiry and failed-attempt counts are stored in
 - `POST /api/auth/reset-password`
 - `PATCH /api/auth/change-password`
 
-Password recovery is OTP-only. There is no password-reset JWT or signed-link compatibility route. A successful reset clears the OTP state and revokes all sessions. An authenticated password change verifies the current password and also revokes all sessions.
+Password recovery is OTP-only and stores newly issued reset codes as keyed hashes. There is no password-reset JWT or signed-link compatibility route. A successful reset clears the code/hash state and revokes all sessions. An authenticated password change verifies the current password and also revokes all sessions.
 
 ## Profile and sessions
 
@@ -133,7 +133,7 @@ latache.superadmin@yopmail.com
 Admin@12345
 ```
 
-Override both values in a production secret store. Re-running the seed intentionally resets the canonical password to the configured value.
+These are development-only defaults. Staging/production seed runs require client-owned `SUPERADMIN_EMAIL` and `SUPERADMIN_PASSWORD`, reject the values above, and require a password of at least 12 characters. A new production Super Admin must change the seeded password. Re-running the seed does not reset an existing production password unless `SUPERADMIN_ROTATE_PASSWORD_ON_SEED=true` is deliberately set for that one deployment and then removed.
 
 Use literal JSON in Swagger or frontend requests:
 

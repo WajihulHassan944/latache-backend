@@ -30,6 +30,14 @@ const ARABIC_TEMPLATES: Record<string, LocalizedTemplate> = {
   task_started: { title: 'بدأت المهمة', body: 'بدأ العمل على المهمة.' },
   task_completed: { title: 'اكتملت المهمة', body: 'تم تسجيل المهمة كمكتملة.' },
   task_completed_by_customer: { title: 'اكتملت المهمة', body: 'أكد العميل اكتمال المهمة.' },
+  task_completion_submitted: {
+    title: 'يرجى مراجعة المهمة المكتملة',
+    body: 'أرسل المنفذ طلب إكمال المهمة. وافق عليه أو افتح نزاعاً قبل انتهاء المهلة.',
+  },
+  task_completion_auto_approved: {
+    title: 'تم اعتماد إكمال المهمة',
+    body: 'انتهت مهلة المراجعة دون نزاع، لذلك تم اعتماد إكمال المهمة.',
+  },
   task_time_extended: { title: 'تم تمديد وقت المهمة', body: 'تم تحديث مدة المهمة.' },
   duration_approval_required: {
     title: 'يلزم اعتماد المدة',
@@ -90,6 +98,7 @@ const ARABIC_TEMPLATES: Record<string, LocalizedTemplate> = {
     body: 'طلب فريق Latache دليلاً إضافياً للنزاع.',
   },
   dispute_evidence_received: { title: 'تم استلام الدليل', body: 'تمت إضافة دليل جديد إلى النزاع.' },
+  dispute_evidence_reviewed: { title: 'تمت مراجعة الدليل', body: 'راجع فريق Latache الأدلة الحالية في النزاع.' },
   dispute_escalated: { title: 'تم تصعيد النزاع', body: 'تم تصعيد النزاع للمراجعة.' },
   dispute_refund_failed: {
     title: 'تعذر استرداد مبلغ النزاع',
@@ -110,6 +119,45 @@ const ARABIC_TEMPLATES: Record<string, LocalizedTemplate> = {
   elite_request_submitted: { title: 'تم إرسال طلب Elite', body: 'تم استلام طلبك في برنامج Elite.' },
   elite_tier_changed: { title: 'تم تحديث فئة Elite', body: 'تم تحديث عضويتك في برنامج Elite.' },
   elite_badge_awarded: { title: 'شارة Elite جديدة', body: 'حصلت على شارة جديدة في برنامج Elite.' },
+  referral_claimed: {
+    title: 'تم استخدام رمز الإحالة',
+    body: 'استخدم مشارك جديد رمز إحالتك. تبقى المكافأة معلقة حتى تسوية حجز مؤهل.',
+  },
+  referral_qualified: {
+    title: 'تأهلت الإحالة',
+    body: 'تمت تسوية حجز مؤهل وبدأت فترة تصفية مكافأة الإحالة.',
+  },
+  referral_reward_available: {
+    title: 'مكافأة الإحالة متاحة',
+    body: 'تمت إضافة مكافأة الإحالة إلى محفظتك بعد انتهاء فترة التصفية.',
+  },
+  referral_revoked: {
+    title: 'تم عكس مكافأة الإحالة',
+    body: 'تم تسجيل عكس لمكافأة إحالة لم تعد مؤهلة.',
+  },
+  referral_expired: {
+    title: 'انتهت صلاحية الإحالة',
+    body: 'انتهت مهلة التأهل قبل تسوية حجز مؤهل.',
+  },
+  dispute_investigation_started: { title: 'بدأ التحقيق في النزاع', body: 'بدأ فريق Latache مراجعة النزاع.' },
+  dispute_assignment_updated: { title: 'تم تحديث مسؤول النزاع', body: 'تم تحديث المسؤول عن مراجعة النزاع.' },
+  dispute_priority_updated: { title: 'تم تحديث أولوية النزاع', body: 'تم تحديث أولوية معالجة النزاع.' },
+  dispute_reopened: { title: 'أعيد فتح النزاع', body: 'أعيد فتح النزاع للمراجعة.' },
+  dispute_withdrawn: { title: 'تم سحب النزاع', body: 'قام مقدم النزاع بسحبه.' },
+  dispute_comment_added: { title: 'تعليق جديد على النزاع', body: 'تمت إضافة تعليق جديد إلى النزاع.' },
+  dispute_settlement_proposed: { title: 'تم اقتراح تسوية', body: 'اقترح فريق Latache تسوية للنزاع.' },
+  dispute_settlement_response: { title: 'تم الرد على التسوية', body: 'تم تسجيل رد أحد المشاركين على التسوية المقترحة.' },
+  dispute_appealed: { title: 'تم استئناف النزاع', body: 'أعيد فتح النزاع بعد استئناف أحد المشاركين.' },
+  dispute_evidence_reminder: { title: 'تذكير بموعد الدليل', body: 'اقترب موعد تقديم الدليل المطلوب.' },
+  dispute_evidence_overdue: { title: 'تأخر الدليل المطلوب', body: 'انقضى موعد تقديم الدليل المطلوب.' },
+  dispute_evidence_expired: { title: 'انتهت مهلة الدليل', body: 'انتهت مهلة الدليل وتم تصعيد النزاع.' },
+  dispute_sla_breached: { title: 'تم تصعيد مراجعة النزاع', body: 'تجاوز النزاع مهلة المراجعة وتم تصعيده.' },
+  dispute_cash_refund_pending: { title: 'استرداد نقدي يتطلب تحويلاً موثقاً', body: 'تم إنشاء التزام استرداد نقدي يدوي ولم يتم تسجيله كمدفوع بعد.' },
+  dispute_cash_refund_confirmed: { title: 'تم تأكيد الاسترداد النقدي', body: 'تم تأكيد التحويل النقدي وتسجيله في سجل النزاع.' },
+  stripe_chargeback_opened: { title: 'نزاع دفع من Stripe', body: 'أبلغ Stripe عن اعتراض على دفعة مرتبطة بالحجز.' },
+  stripe_chargeback_updated: { title: 'تحديث اعتراض Stripe', body: 'تم تحديث حالة اعتراض Stripe المرتبط بالحجز.' },
+  stripe_chargeback_closed: { title: 'أغلق اعتراض Stripe', body: 'أبلغ Stripe عن إغلاق اعتراض الدفع المرتبط بالحجز.' },
+
 };
 
 const DARIJA_TEMPLATES: Record<string, LocalizedTemplate> = {
@@ -133,6 +181,14 @@ const DARIJA_TEMPLATES: Record<string, LocalizedTemplate> = {
   task_started: { title: 'بدات الخدمة', body: 'بدا العمل على الخدمة.' },
   task_completed: { title: 'تسالات الخدمة', body: 'تسجلات الخدمة باللي سالات.' },
   task_completed_by_customer: { title: 'تسالات الخدمة', body: 'الزبون أكد باللي الخدمة سالات.' },
+  task_completion_submitted: {
+    title: 'راجع الخدمة اللي سالات',
+    body: 'المهني صيفط طلب إكمال الخدمة. وافق عليه ولا حل نزاع قبل ما تسالي المهلة.',
+  },
+  task_completion_auto_approved: {
+    title: 'تقبل إكمال الخدمة',
+    body: 'سالات مهلة المراجعة بلا نزاع، وبهذا تقبل إكمال الخدمة.',
+  },
   task_time_extended: { title: 'تزادت مدة الخدمة', body: 'تبدلات مدة الخدمة.' },
   duration_approval_required: {
     title: 'خاصك توافق على المدة',
@@ -190,6 +246,7 @@ const DARIJA_TEMPLATES: Record<string, LocalizedTemplate> = {
     body: 'فريق Latache طلب دليل زايد على النزاع.',
   },
   dispute_evidence_received: { title: 'توصلنا بالدليل', body: 'تزاد دليل جديد للنزاع.' },
+  dispute_evidence_reviewed: { title: 'تراجع الدليل', body: 'فريق Latache راجع الأدلة اللي كاينة فالنزاع.' },
   dispute_escalated: { title: 'تصعد النزاع', body: 'تصعد النزاع باش يتراجع أكثر.' },
   dispute_refund_failed: {
     title: 'مادازش ترجيع فلوس النزاع',
@@ -210,6 +267,45 @@ const DARIJA_TEMPLATES: Record<string, LocalizedTemplate> = {
   elite_request_submitted: { title: 'تصيفط طلب Elite', body: 'توصلنا بالطلب ديالك فبرنامج Elite.' },
   elite_tier_changed: { title: 'تبدلات فئة Elite', body: 'تبدلات العضوية ديالك فبرنامج Elite.' },
   elite_badge_awarded: { title: 'شارة Elite جديدة', body: 'خديتي شارة جديدة فبرنامج Elite.' },
+  referral_claimed: {
+    title: 'تستعمل كود الإحالة',
+    body: 'مشارك جديد استعمل كود الإحالة ديالك. المكافأة كتبقى كتسنى حتى تتسوى خدمة مؤهلة.',
+  },
+  referral_qualified: {
+    title: 'تأهلات الإحالة',
+    body: 'تسوات خدمة مؤهلة وبدات مدة تصفية مكافأة الإحالة.',
+  },
+  referral_reward_available: {
+    title: 'مكافأة الإحالة ولات متوفرة',
+    body: 'تزادت مكافأة الإحالة للمحفظة ديالك من بعد ما سالات مدة التصفية.',
+  },
+  referral_revoked: {
+    title: 'ترجعات مكافأة الإحالة',
+    body: 'تسجل ترجيع مكافأة إحالة اللي ما بقاتش مؤهلة.',
+  },
+  referral_expired: {
+    title: 'سالات صلاحية الإحالة',
+    body: 'سالات مهلة التأهل قبل ما تتسوى خدمة مؤهلة.',
+  },
+  dispute_investigation_started: { title: 'بدا التحقيق فالنزاع', body: 'فريق Latache بدا كيراجع النزاع.' },
+  dispute_assignment_updated: { title: 'تبدل المسؤول على النزاع', body: 'تبدل الأدمن اللي كيراجع النزاع.' },
+  dispute_priority_updated: { title: 'تبدلات أولوية النزاع', body: 'تبدلات أولوية معالجة النزاع.' },
+  dispute_reopened: { title: 'تحل النزاع من جديد', body: 'تحل النزاع من جديد باش يتراجع.' },
+  dispute_withdrawn: { title: 'تسحب النزاع', body: 'صاحب النزاع سحبو.' },
+  dispute_comment_added: { title: 'تعليق جديد فالنزاع', body: 'تزاد تعليق جديد فالنزاع.' },
+  dispute_settlement_proposed: { title: 'تقترحات تسوية', body: 'فريق Latache اقترح تسوية للنزاع.' },
+  dispute_settlement_response: { title: 'تسجل الرد على التسوية', body: 'تسجل رد واحد من المشاركين على التسوية المقترحة.' },
+  dispute_appealed: { title: 'تدار استئناف للنزاع', body: 'تحل النزاع من جديد من بعد الاستئناف.' },
+  dispute_evidence_reminder: { title: 'تذكير بموعد الدليل', body: 'قرب موعد الدليل اللي تطلب.' },
+  dispute_evidence_overdue: { title: 'فات موعد الدليل', body: 'فات موعد تقديم الدليل المطلوب.' },
+  dispute_evidence_expired: { title: 'سالات مهلة الدليل', body: 'سالات مهلة الدليل وتصعد النزاع.' },
+  dispute_sla_breached: { title: 'تصعدات مراجعة النزاع', body: 'النزاع فات مهلة المراجعة وتصعد.' },
+  dispute_cash_refund_pending: { title: 'ترجيع الكاش خاصو تحويل موثق', body: 'تسجل التزام ديال ترجيع كاش يدوي ومازال ماتسجلش كمدفوع.' },
+  dispute_cash_refund_confirmed: { title: 'تأكد ترجيع الكاش', body: 'تأكد التحويل ديال الكاش وتزاد لسجل النزاع.' },
+  stripe_chargeback_opened: { title: 'اعتراض Stripe على الخلصة', body: 'Stripe بلغ على اعتراض فخلصة مرتبطة بالحجز.' },
+  stripe_chargeback_updated: { title: 'تحديث اعتراض Stripe', body: 'تبدلات حالة اعتراض Stripe المرتبط بالحجز.' },
+  stripe_chargeback_closed: { title: 'تسد اعتراض Stripe', body: 'Stripe بلغ باللي تسد اعتراض الخلصة المرتبط بالحجز.' },
+
 };
 
 @Injectable()

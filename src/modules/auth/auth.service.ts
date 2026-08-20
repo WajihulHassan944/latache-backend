@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type { User } from '../../generated/prisma/client';
+import type { UserRole } from '../../common/enums/user-role.enum';
 import type {
+  AddCustomerRoleDto,
+  AddTaskerRoleDto,
   ChangePasswordDto,
   CreateAdminDto,
   ForgotPasswordDto,
@@ -40,6 +43,14 @@ export class AuthService {
     return this.registration.registerTasker(dto, metadata, locale);
   }
 
+  addCustomerRole(userId: number, dto: AddCustomerRoleDto, metadata: SessionMetadata) {
+    return this.registration.addCustomerRole(userId, dto, metadata);
+  }
+
+  addTaskerRole(userId: number, dto: AddTaskerRoleDto, metadata: SessionMetadata) {
+    return this.registration.addTaskerRole(userId, dto, metadata);
+  }
+
   createAdmin(actor: User, dto: CreateAdminDto) {
     return this.registration.createAdmin(actor, dto);
   }
@@ -50,6 +61,15 @@ export class AuthService {
 
   refresh(dto: RefreshTokenDto, metadata: SessionMetadata) {
     return this.loginService.refresh(dto, metadata);
+  }
+
+  switchRole(
+    userId: number,
+    currentSessionId: number,
+    role: UserRole,
+    metadata: SessionMetadata,
+  ) {
+    return this.loginService.switchRole(userId, currentSessionId, role, metadata);
   }
 
   verifyEmail(userId: number, dto: VerifyEmailDto) {
@@ -76,12 +96,12 @@ export class AuthService {
     return this.passwords.changePassword(userId, dto);
   }
 
-  me(userId: number) {
-    return this.profiles.me(userId);
+  me(userId: number, activeRole?: UserRole) {
+    return this.profiles.me(userId, activeRole);
   }
 
-  updateMe(userId: number, dto: UpdateProfileDto) {
-    return this.profiles.update(userId, dto);
+  updateMe(userId: number, dto: UpdateProfileDto, activeRole?: UserRole) {
+    return this.profiles.update(userId, dto, activeRole);
   }
 
   listSessions(userId: number) {

@@ -13,6 +13,10 @@ describe('premium email design and Darija architecture', () => {
     expect(layout).toContain('latache-email-header_hcqhvb.png');
     expect(layout).toContain('latache-security-shield_oioyd1.png');
     expect(layout).toContain('latache-email-footer_abofsj.png');
+    expect(layout).toContain('<center>');
+    expect(layout).not.toContain('Get the Latache App');
+    expect(layout).not.toContain('App Store');
+    expect(layout).not.toContain('Google Play');
     expect(mail).not.toContain('attachments:');
   });
 

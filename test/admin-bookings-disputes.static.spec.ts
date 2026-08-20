@@ -39,8 +39,12 @@ describe('admin booking and dispute management static contracts', () => {
     const service = read('src/modules/bookings/bookings.service.ts');
     expect(controller).toContain("@Get('disputes/:disputeId')");
     expect(controller).toContain("@Post('disputes/:disputeId/evidence')");
-    expect(service).toContain('assertBookingAttachmentOwnership');
-    expect(service).toContain("parsed.hostname !== 'res.cloudinary.com'");
+    const lifecycle = read('src/modules/disputes/dispute-lifecycle.service.ts');
+    const uploads = read('src/modules/uploads/uploads.service.ts');
+    expect(service).toContain('this.disputes.verifyEvidence');
+    expect(lifecycle).toContain('verifyDisputeAttachments');
+    expect(uploads).toContain('verifyDisputeAttachments');
+    expect(service).toContain('duplicateEvidenceIgnored');
     const participantSlice = service.slice(
       service.indexOf('async listComplaints'),
       service.indexOf('async fileComplaint'),
@@ -61,9 +65,18 @@ describe('admin booking and dispute management static contracts', () => {
     expect(migration).not.toMatch(/INSERT\s+INTO/i);
   });
 
-  it('explicitly reports unavailable satisfaction instead of inventing a percentage', () => {
+  it('reports persisted post-dispute satisfaction metrics', () => {
     const service = read('src/modules/admin-dashboard/services/admin-disputes.service.ts');
-    expect(service).toContain('trackingAvailable: false');
-    expect(service).toContain('No post-dispute satisfaction survey is implemented');
+    expect(service).toContain('trackingAvailable: true');
+    expect(service).toContain('averageRating');
+    expect(service).toContain('satisfiedRatePercent');
+  });
+
+  it('expires unanswered settlement proposals through the dispute maintenance flow', () => {
+    const lifecycle = read('src/modules/disputes/dispute-lifecycle.service.ts');
+    const schema = read('prisma/schema.prisma');
+    expect(lifecycle).toContain('processSettlementProposalExpiries');
+    expect(lifecycle).toContain("status: 'expired'");
+    expect(schema).toContain('dispute_resolutions_status_response_due_idx');
   });
 });

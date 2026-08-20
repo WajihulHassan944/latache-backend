@@ -45,7 +45,7 @@ export class CreateEliteBadgeDto {
 
   @ApiPropertyOptional({
     type: Object,
-    description: 'Descriptive criteria. Automatic award evaluation is not implied.',
+    description: 'Optional automatic-award criteria. Set autoAward=true and use supported fields: minRating, minCompletedTasks, minCompletionRate, maxOpenComplaints, minSettledEarnings. The worker awards/revokes only autoAward badges.',
   })
   @IsOptional()
   @IsObject()

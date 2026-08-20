@@ -97,6 +97,10 @@ describe('MailService', () => {
     expect(options.html).toContain(LATACHE_EMAIL_ASSETS.footer.url);
     expect(options.html).toContain('align="center" alt=""');
     expect(options.html).toContain(`background="${LATACHE_EMAIL_ASSETS.footer.url}"`);
+    expect(options.html).toContain('<center>');
+    expect(options.html).not.toContain('Get the Latache App');
+    expect(options.html).not.toContain('App Store');
+    expect(options.html).not.toContain('Google Play');
     expect(options.html).not.toContain('background:#efc58e');
   });
 

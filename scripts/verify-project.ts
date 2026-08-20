@@ -34,6 +34,10 @@ const requiredFiles = [
   'prisma/migrations/20260812190000_add_multilingual_architecture/migration.sql',
   'prisma/migrations/20260812223000_add_performance_indexes/migration.sql',
   'prisma/migrations/20260812233000_add_permanent_deletion_controls/migration.sql',
+  'prisma/migrations/20260818120000_add_booking_completion_approval/migration.sql',
+  'prisma/migrations/20260818121000_hash_auth_codes/migration.sql',
+  'prisma/migrations/20260818130000_complete_production_chat_system/migration.sql',
+  'prisma/migrations/20260818140000_complete_referral_reward_system/migration.sql',
   'src/infrastructure/redis/redis.service.ts',
   'src/infrastructure/redis/app-cache.service.ts',
   'src/infrastructure/jobs/performance-jobs.service.ts',
@@ -45,6 +49,10 @@ const requiredFiles = [
   'src/modules/admin-dashboard/controllers/admin-taskers.controller.ts',
   'src/modules/admin-dashboard/controllers/admin-bookings.controller.ts',
   'src/modules/admin-dashboard/controllers/admin-disputes.controller.ts',
+  'src/modules/disputes/disputes.module.ts',
+  'src/modules/disputes/dispute-lifecycle.service.ts',
+  'prisma/migrations/20260818190000_harden_dispute_lifecycle/migration.sql',
+  'docs/dispute-lifecycle-hardening.md',
   'src/modules/admin-finance/admin-finance.module.ts',
   'src/modules/admin-finance/controllers/admin-finance.controller.ts',
   'src/modules/platform-settings/platform-settings.module.ts',
@@ -70,6 +78,7 @@ const requiredFiles = [
   'src/modules/realtime/realtime-calls.service.ts',
   'src/modules/realtime/webrtc-config.service.ts',
   'src/modules/uploads/conversation-attachment.constants.ts',
+  'src/modules/uploads/support-attachment.constants.ts',
   'src/modules/realtime/realtime-calls.service.ts',
   'src/modules/realtime/webrtc-config.service.ts',
   'src/modules/uploads/conversation-attachment.constants.ts',
@@ -98,11 +107,18 @@ const requiredFiles = [
   'docs/realtime.md',
   'docs/conversation-attachments-calls.md',
   'docs/chat-attachments-calls.md',
+  'docs/production-chat-system.md',
+  'docs/production-referral-reward-system.md',
   'docs/tasker-earnings-clearance-cash-accounting.md',
   'docs/multilingual-architecture.md',
   'docs/performance-architecture.md',
   'docs/email-design-and-darija.md',
   'docs/permanent-deletion.md',
+  'docs/production-readiness.md',
+  'docs/postman.md',
+  'postman/Latache-OpenAPI-v3.21.1.json',
+  'postman/Latache-v3.21.1.postman_collection.json',
+  'postman/Latache-Local.postman_environment.json',
 ];
 for (const file of requiredFiles) requireFile(file);
 
@@ -112,8 +128,8 @@ const packageJson = JSON.parse(read('package.json')) as {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
-if (packageJson.version !== '3.18.0')
-  failures.push(`Expected package version 3.18.0, received ${packageJson.version ?? '<missing>'}`);
+if (packageJson.version !== '3.22.0')
+  failures.push(`Expected package version 3.22.0, received ${packageJson.version ?? '<missing>'}`);
 if (!packageJson.scripts?.build?.includes('npm run clean')) {
   failures.push('Production build must remove stale dist output before compiling');
 }
@@ -177,6 +193,16 @@ for (const marker of [
   'model DisputeEvidence {',
   'model DisputeEvidenceRequest {',
   'model DisputeResolution {',
+  'model DisputeParticipantAction {',
+  'model DisputeComment {',
+  'model DisputeSatisfactionSurvey {',
+  'model DisputeDelivery {',
+  'model DisputeCashRefund {',
+  'model DisciplinaryAction {',
+  'model StripeChargeback {',
+  'activeBookingKey',
+  'clientRequestKey',
+  'slaDueAt',
   'evidenceReviewStatus',
   'resolutionAmount',
   'model PlatformSetting {',
@@ -220,6 +246,10 @@ for (const marker of [
   'reviewsModerated',
   'supportTickets',
   'isActive    Boolean',
+  'completionApprovalDueAt',
+  'completionAutoApprovedAt',
+  'otpHash',
+  'passwordResetCodeHash',
 ]) {
   if (!schema.includes(marker)) failures.push(`Prisma schema marker missing: ${marker}`);
 }
@@ -313,6 +343,8 @@ for (const expected of [
   'GET /api/disputes/:disputeId',
   'POST /api/bookings/:bookingId/disputes',
   'POST /api/disputes/:disputeId/evidence',
+  'POST /api/disputes/:disputeId/actions',
+  'POST /api/disputes/:disputeId/satisfaction',
   'GET /api/realtime/session',
   'PATCH /api/rbac/admins/:id',
   'PATCH /api/rbac/admins/:id/access',
@@ -426,7 +458,8 @@ for (const marker of [
   "app.setGlobalPrefix('api')",
   "startsWith('/api/payments/webhooks/stripe')",
   "SwaggerModule.setup('api/docs'",
-  ".setVersion('3.18.0')",
+  ".setVersion('3.22.0')",
+  '.addServer(',
   'RealtimeIoAdapter',
   'connectToRedis',
   'compression',
@@ -682,6 +715,30 @@ if (/INSERT\s+INTO/i.test(bookingDisputeMigration)) {
   failures.push('Booking/dispute migration must not seed fake operational or financial rows');
 }
 
+const disputeHardeningMigration = read(
+  'prisma/migrations/20260818190000_harden_dispute_lifecycle/migration.sql',
+);
+for (const marker of [
+  'TaskComplaints_activeBookingKey_key',
+  'task_complaints_filer_client_request_unique',
+  'CREATE TABLE "DisputeParticipantActions"',
+  'CREATE TABLE "DisputeComments"',
+  'CREATE TABLE "DisputeSatisfactionSurveys"',
+  'CREATE TABLE "DisputeDeliveries"',
+  'CREATE TABLE "DisputeCashRefunds"',
+  'CREATE TABLE "DisciplinaryActions"',
+  'CREATE TABLE "StripeChargebacks"',
+]) {
+  if (!disputeHardeningMigration.includes(marker))
+    failures.push(`Dispute hardening migration marker missing: ${marker}`);
+}
+if (/\b(?:DROP|TRUNCATE)\b/i.test(disputeHardeningMigration)) {
+  failures.push('Dispute hardening migration must remain additive and non-destructive');
+}
+if (/INSERT\s+INTO/i.test(disputeHardeningMigration)) {
+  failures.push('Dispute hardening migration must not seed operational or financial rows');
+}
+
 const adminDashboardModule = read('src/modules/admin-dashboard/admin-dashboard.module.ts');
 for (const marker of [
   'PaymentsModule',
@@ -730,10 +787,13 @@ const adminDisputesService = read('src/modules/admin-dashboard/services/admin-di
 for (const marker of [
   'finance.manage',
   'A refund resolution is already processing for this dispute',
-  'trackingAvailable: false',
+  'trackingAvailable: true',
   "status: 'processing'",
   'requestEvidence',
   'reviewEvidence',
+  'proposeResolution',
+  'confirmCashRefund',
+  'pending_manual_transfer',
 ]) {
   if (!adminDisputesService.includes(marker))
     failures.push(`Admin disputes service marker missing: ${marker}`);
@@ -745,6 +805,10 @@ for (const marker of [
   "event.type === 'refund.created'",
   "event.type === 'refund.updated'",
   "event.type === 'refund.failed'",
+  "event.type === 'charge.dispute.created'",
+  "event.type === 'charge.dispute.updated'",
+  "event.type === 'charge.dispute.closed'",
+  'confirmManualCashDisputeRefund',
   'applyTaskerRefundClawback',
   'PartiallyRefunded',
   'Refunded',
@@ -760,14 +824,17 @@ for (const marker of [
   "@Get('disputes/:disputeId')",
   "@Post('bookings/:bookingId/disputes')",
   "@Post('disputes/:disputeId/evidence')",
+  "@Post('disputes/:disputeId/actions')",
+  "@Post('disputes/:disputeId/satisfaction')",
 ]) {
   if (!participantDisputesController.includes(marker))
     failures.push(`Participant dispute route marker missing: ${marker}`);
 }
 const bookingService = read('src/modules/bookings/bookings.service.ts');
 for (const marker of [
-  'assertBookingAttachmentOwnership',
-  'res.cloudinary.com',
+  'this.disputes.verifyEvidence',
+  'activeBookingKey',
+  'clientRequestKey',
   'disputeEvidenceRequest.updateMany',
 ]) {
   if (!bookingService.includes(marker))
@@ -825,7 +892,7 @@ for (const marker of [
   "@Controller('admin/platform-settings')",
   "@Permissions('settings.read')",
   "@Permissions('settings.manage')",
-  'Automatic FX refresh and referral payouts remain rejected',
+  'Referral programs are disabled by default',
 ]) {
   if (!platformSettingsController.includes(marker))
     failures.push(`Platform settings marker missing: ${marker}`);
@@ -836,7 +903,8 @@ for (const marker of [
   'calculatePricingCharges',
   'assertBookingRules',
   'serviceRadiusPolicy',
-  'Referral payouts cannot be enabled',
+  'referralPolicy',
+  'referralRewardEngineAvailable: true',
   'Multi-currency settlement is not enabled',
 ]) {
   if (!platformSettingsService.includes(marker))
@@ -961,6 +1029,72 @@ for (const marker of ['notification:created', 'notification:read', 'notification
 for (const marker of ['conversation:message', 'conversation:read']) {
   if (!conversationsService.includes(marker))
     failures.push(`Realtime conversation marker missing: ${marker}`);
+}
+const productionChatMigration = read(
+  'prisma/migrations/20260818130000_complete_production_chat_system/migration.sql',
+);
+for (const marker of [
+  'conversationLastMessageAt',
+  'task_messages_sender_client_message_unique',
+  'support_tickets_user_client_request_unique',
+  'support_ticket_messages_sender_client_message_unique',
+  'support_ticket_messages_audience_unread_idx',
+]) {
+  if (!productionChatMigration.includes(marker)) {
+    failures.push(`Production-chat migration marker missing: ${marker}`);
+  }
+}
+if (/\b(DROP|TRUNCATE|DELETE\s+FROM)\b/i.test(productionChatMigration)) {
+  failures.push('Production-chat migration contains a destructive data statement');
+}
+const referralMigration = read(
+  'prisma/migrations/20260818140000_complete_referral_reward_system/migration.sql',
+);
+for (const marker of [
+  'CREATE TABLE "Referrals"',
+  'CREATE TABLE "ReferralRewards"',
+  'Referrals_distinct_users_check',
+  'ReferralRewards_amounts_check',
+  'referral_rewards_release_queue_idx',
+]) {
+  if (!referralMigration.includes(marker)) {
+    failures.push(`Referral migration marker missing: ${marker}`);
+  }
+}
+if (/\b(DROP|TRUNCATE|DELETE\s+FROM)\b/i.test(referralMigration)) {
+  failures.push('Referral migration contains a destructive data statement');
+}
+const referralsService = read('src/modules/referrals/services/referrals.service.ts');
+for (const marker of [
+  'reserveCustomerDiscount',
+  'qualifyPaidBooking',
+  'handleBookingRefund',
+  'releaseMatureRewards',
+  'REFERRAL_WALLET_ENTRY_KIND.Reversal',
+]) {
+  if (!referralsService.includes(marker))
+    failures.push(`Referral runtime marker missing: ${marker}`);
+}
+const productionChatSupportController = read('src/modules/support/support.controller.ts');
+const productionChatAdminSupportController = read(
+  'src/modules/support/admin-support.controller.ts',
+);
+const supportService = read('src/modules/support/support.service.ts');
+for (const marker of ["@Get('capabilities')", "@Get('unread-count')", "@Post(':id/read')"]) {
+  if (!productionChatSupportController.includes(marker)) {
+    failures.push(`Participant support-chat marker missing: ${marker}`);
+  }
+}
+if (!productionChatAdminSupportController.includes("@Post(':id/read')")) {
+  failures.push('Admin support read-receipt route is missing');
+}
+for (const marker of [
+  'verifySupportAttachments',
+  'CLIENT_REQUEST_ID_REUSED',
+  'CLIENT_MESSAGE_ID_REUSED',
+  'markSupportMessagesRead',
+]) {
+  if (!supportService.includes(marker)) failures.push(`Support-chat marker missing: ${marker}`);
 }
 const reviewsService = read('src/modules/reviews/reviews.service.ts');
 if (!reviewsService.includes("type: 'review_received'"))

@@ -2,12 +2,12 @@
 
 ## Responsibility boundaries
 
-| Component               | Responsibilities                                                                                                                                 | Explicitly not responsible for                                                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Component               | Responsibilities                                                                                                                                                                    | Explicitly not responsible for                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | PostgreSQL/Prisma       | Bookings, payments, wallet/receivable ledgers, earning clearance state, notifications, chat/support history, audit logs, realtime outbox, and durable object-storage deletion tasks | Cross-replica socket fanout or disposable cache data                                                                              |
-| Redis                   | Versioned read caches, Socket.IO adapter pub/sub, BullMQ transport, cross-replica location-write coalescing                                      | Financial balances, provider settlement truth, booking/dispute truth, or durable notifications                                    |
-| BullMQ worker           | Retry-safe periodic scans for mature earnings, stale calls, dispatched-outbox retention, and Cloudinary deletion tasks                            | Synchronous booking transactions, Stripe result handling, wallet mutations outside their PostgreSQL transactions, or WebRTC media |
-| Socket.IO Redis adapter | Cross-instance delivery to the existing private/public/admin rooms                                                                               | Durable event production; PostgreSQL's transactional outbox keeps that role                                                       |
+| Redis                   | Versioned read caches, Socket.IO adapter pub/sub, BullMQ transport, cross-replica location-write coalescing                                                                         | Financial balances, provider settlement truth, booking/dispute truth, or durable notifications                                    |
+| BullMQ worker           | Retry-safe periodic scans for booking auto-completion, mature earnings, stale calls, dispatched-outbox retention, and Cloudinary deletion tasks                                     | Synchronous booking transactions, Stripe result handling, wallet mutations outside their PostgreSQL transactions, or WebRTC media |
+| Socket.IO Redis adapter | Cross-instance delivery to the existing private/public/admin rooms                                                                                                                  | Durable event production; PostgreSQL's transactional outbox keeps that role                                                       |
 
 Redis cache failure therefore falls through to PostgreSQL. If jobs are enabled, Redis/queue/worker failure is surfaced as unhealthy by `/api/health`; the application does not claim that required maintenance was queued or processed.
 
@@ -39,14 +39,15 @@ The permission catalogue itself is code-backed and already an in-process constan
 
 One versioned queue (`latache-maintenance-v1`) has stable scheduler IDs:
 
-| Job                       | Default cadence | Safety                                                                                                                                         |
-| ------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `finance.release-mature`  | 60 seconds      | Existing PostgreSQL advisory/row locks, persisted earning status, unique idempotency keys, and debt-offset transactions prevent double release |
-| `realtime.expire-calls`   | 5 seconds       | Conditional lifecycle updates make repeat execution a no-op; resulting notifications/events are committed with the state change                |
-| `realtime.cleanup-outbox` | 1 hour          | Deletes bounded batches only where `publishedAt` is older than retention; pending/failed rows can never match                                  |
-| `storage.purge-deleted-assets` | 60 seconds | Conditionally claims persisted deletion tasks; unique public IDs, provider `not found` success, retry backoff, and stale-lock reclamation make duplicate/crashed workers safe |
+| Job                            | Default cadence | Safety                                                                                                                                                                        |
+| ------------------------------ | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `finance.release-mature`       | 60 seconds      | Existing PostgreSQL advisory/row locks, persisted earning status, unique idempotency keys, and debt-offset transactions prevent double release                                |
+| `realtime.expire-calls`        | 5 seconds       | Conditional lifecycle updates make repeat execution a no-op; resulting notifications/events are committed with the state change                                               |
+| `realtime.cleanup-outbox`      | 1 hour          | Deletes bounded batches only where `publishedAt` is older than retention; pending/failed rows can never match                                                                 |
+| `storage.purge-deleted-assets` | 60 seconds      | Conditionally claims persisted deletion tasks; unique public IDs, provider `not found` success, retry backoff, and stale-lock reclamation make duplicate/crashed workers safe |
+| `bookings.auto-complete`       | 60 seconds      | Locks mature `awaiting_customer_approval` rows; active disputes block completion, and terminal-state checks prevent duplicate counters/events/payment finalization            |
 
-BullMQ uses exponential retry, observable failed-job logs, configurable concurrency, and retained success/failure history. With `JOBS_ENABLED=false`, development retains the existing PostgreSQL-safe earnings/call interval and an hourly bounded cleanup interval. Production should use the dedicated worker.
+BullMQ uses exponential retry, observable failed-job logs, configurable concurrency, and retained success/failure history. With `JOBS_ENABLED=false`, local development retains the existing PostgreSQL-safe earnings/call interval and an hourly bounded cleanup interval; automatic booking completion intentionally does not pretend to run. Staging/production configuration validation requires Redis, jobs, and scheduler registration, and production should use the dedicated worker.
 
 Transactional email remains synchronous in this release. Registration/security endpoints continue to know whether SMTP accepted the message; moving it to a queue safely requires a durable email-intent/outbox record, delivery status API, and product decision about API semantics rather than treating a Redis enqueue as delivery.
 

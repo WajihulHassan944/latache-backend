@@ -5,22 +5,25 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import type { User } from '../../generated/prisma/client';
+import type { SupportTicket, User } from '../../generated/prisma/client';
 import { Prisma } from '../../generated/prisma/client';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { normalizePagination } from '../../common/utils/pagination.util';
+import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AdminAuditService } from '../admin-audit/admin-audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
+import { UploadsService } from '../uploads/uploads.service';
 import type {
   AdminSendSupportMessageDto,
   AdminSupportActionDto,
   AdminSupportQueryDto,
   CreateSupportTicketDto,
   ListOwnSupportTicketsQueryDto,
+  ListSupportMessagesQueryDto,
+  MarkSupportReadDto,
   SendSupportMessageDto,
   SupportFeedbackDto,
   SupportTicketUserActionDto,
@@ -43,78 +46,114 @@ const durationMinutes = (from: Date | null, to: Date | null): number | null => {
 export class SupportService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
     private readonly audit: AdminAuditService,
     private readonly platformSettings: PlatformSettingsService,
     private readonly realtime: RealtimeOutboxService,
+    private readonly uploads: UploadsService,
   ) {}
+
+  async capabilities() {
+    const settings = await this.platformSettings.view('general');
+    const general = settings.general as { liveChatEnabled?: boolean } | undefined;
+    return {
+      channels: ['ticket', 'live_chat'] as const,
+      liveChatEnabled: general?.liveChatEnabled !== false,
+      maxMessageLength: 5000,
+      idempotency: {
+        ticketCreationField: 'clientRequestId',
+        messageField: 'clientMessageId',
+        minLength: 8,
+        maxLength: 80,
+      },
+      attachments: this.uploads.supportAttachmentCapabilities(),
+      realtime: {
+        namespace: '/realtime',
+        path: '/socket.io',
+        subscribeEvent: 'support:subscribe',
+      },
+    };
+  }
 
   async create(user: User, dto: CreateSupportTicketDto) {
     this.assertSupportUser(user);
+    if (dto.clientRequestId) {
+      const existing = await this.prisma.supportTicket.findFirst({
+        where: { userId: user.id, requesterRole: user.role, clientRequestId: dto.clientRequestId },
+      });
+      if (existing) {
+        this.assertTicketRetryMatches(existing, dto);
+        return this.detailForUser(user, existing.id);
+      }
+    }
     await this.assertLiveChatAvailable(dto.channel ?? 'ticket');
     await this.assertLinkedContext(user, dto);
-    this.assertAttachmentOwnership(user, dto.attachments ?? []);
+    const attachments = await this.uploads.verifySupportAttachments(user, dto.attachments ?? []);
 
     const now = new Date();
-    const ticket = await this.prisma.$transaction(async (transaction) => {
-      const created = await transaction.supportTicket.create({
-        data: {
-          userId: user.id,
-          channel: dto.channel ?? 'ticket',
-          subject: dto.subject,
-          category: dto.category,
-          priority: dto.priority ?? 'normal',
-          status: 'open',
-          description: dto.description,
-          attachments: dto.attachments?.length
-            ? (dto.attachments as unknown as Prisma.InputJsonValue)
-            : Prisma.DbNull,
-          bookingId: dto.bookingId ?? null,
-          referenceType: dto.referenceType ?? null,
-          referenceId: dto.referenceId ?? null,
-          lastMessageAt: now,
-        },
+    try {
+      const ticket = await this.prisma.$transaction(async (transaction) => {
+        const created = await transaction.supportTicket.create({
+          data: {
+            userId: user.id,
+            requesterRole: user.role,
+            clientRequestId: dto.clientRequestId ?? null,
+            channel: dto.channel ?? 'ticket',
+            subject: dto.subject,
+            category: dto.category,
+            priority: dto.priority ?? 'normal',
+            status: 'open',
+            description: dto.description,
+            attachments: attachments.length
+              ? (attachments as unknown as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+            bookingId: dto.bookingId ?? null,
+            referenceType: dto.referenceType ?? null,
+            referenceId: dto.referenceId ?? null,
+            lastMessageAt: now,
+          },
+        });
+        const message = await transaction.supportTicketMessage.create({
+          data: {
+            ticketId: created.id,
+            senderId: user.id,
+            senderRole: user.role,
+            clientMessageId: null,
+            body: dto.description,
+            attachments: attachments.length
+              ? (attachments as unknown as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+            isInternalNote: false,
+          },
+        });
+        await this.realtime.enqueueSupportPublic(
+          created.id,
+          'support:message',
+          this.supportMessageEvent(message),
+          transaction,
+        );
+        await this.enqueueSupportTicketUpdated(created, transaction);
+        await this.notifySupportTeam(
+          created.id,
+          `New ${created.channel === 'live_chat' ? 'live chat' : 'support ticket'} from ${this.userName(user)}`,
+          dto.subject,
+          transaction,
+        );
+        return created;
       });
-      const message = await transaction.supportTicketMessage.create({
-        data: {
-          ticketId: created.id,
-          senderId: user.id,
-          senderRole: user.role,
-          body: dto.description,
-          attachments: dto.attachments?.length
-            ? (dto.attachments as unknown as Prisma.InputJsonValue)
-            : Prisma.DbNull,
-          isInternalNote: false,
-        },
-      });
-      await this.realtime.enqueueSupportPublic(
-        created.id,
-        'support:message',
-        this.supportMessageEvent(message),
-        transaction,
-      );
-      await this.realtime.enqueueSupportPublic(
-        created.id,
-        'support:ticket_updated',
-        {
-          ticketId: created.id,
-          status: created.status,
-          channel: created.channel,
-          updatedAt: created.updatedAt.toISOString(),
-        },
-        transaction,
-      );
-      return created;
-    });
-
-    await this.notifySupportTeam(
-      ticket.id,
-      `New ${ticket.channel === 'live_chat' ? 'live chat' : 'support ticket'} from ${this.userName(user)}`,
-      dto.subject,
-    );
-
-    return this.detailForUser(user.id, ticket.id);
+      return this.detailForUser(user, ticket.id);
+    } catch (error) {
+      if (dto.clientRequestId && hasPrismaErrorCode(error, 'P2002')) {
+        const existing = await this.prisma.supportTicket.findFirst({
+          where: { userId: user.id, requesterRole: user.role, clientRequestId: dto.clientRequestId },
+        });
+        if (existing) {
+          this.assertTicketRetryMatches(existing, dto);
+          return this.detailForUser(user, existing.id);
+        }
+      }
+      throw error;
+    }
   }
 
   async listOwn(user: User, query: ListOwnSupportTicketsQueryDto) {
@@ -122,6 +161,7 @@ export class SupportService {
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
     const where: Prisma.SupportTicketWhereInput = {
       userId: user.id,
+      requesterRole: user.role,
       ...(query.channel ? { channel: query.channel } : {}),
       ...(query.status ? { status: query.status } : {}),
     };
@@ -145,18 +185,38 @@ export class SupportService {
       }),
       this.prisma.supportTicket.count({ where }),
     ]);
+    const unreadByTicket = await this.unreadSupportMessagesByTicket(
+      rows.map((row) => row.id),
+      'user',
+    );
     return {
       page,
       limit,
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
-      items: rows.map((row) => this.serializeTicket(row)),
+      items: rows.map((row) => ({
+        ...this.serializeTicket(row),
+        unreadCount: unreadByTicket.get(row.id) ?? 0,
+      })),
     };
   }
 
-  async detailForUser(userId: number, ticketId: number) {
+  async unreadCountOwn(user: User): Promise<{ unreadCount: number }> {
+    this.assertSupportUser(user);
+    const unreadCount = await this.prisma.supportTicketMessage.count({
+      where: {
+        ticket: { userId: user.id, requesterRole: user.role },
+        isInternalNote: false,
+        senderRole: { in: [UserRole.Admin, UserRole.SuperAdmin] },
+        readAt: null,
+      },
+    });
+    return { unreadCount };
+  }
+
+  async detailForUser(user: User, ticketId: number) {
     const ticket = await this.prisma.supportTicket.findFirst({
-      where: { id: ticketId, userId },
+      where: { id: ticketId, userId: user.id, requesterRole: user.role },
       include: {
         assignedAdmin: {
           select: { id: true, firstName: true, lastName: true, profilePicture: true },
@@ -190,7 +250,7 @@ export class SupportService {
             },
           }
         : null,
-      reference: await this.referenceContext(ticket.referenceType, ticket.referenceId, userId),
+      reference: await this.referenceContext(ticket.referenceType, ticket.referenceId, user.id),
       feedback: ticket.feedbackAt
         ? {
             score: ticket.satisfactionScore,
@@ -201,179 +261,169 @@ export class SupportService {
     };
   }
 
-  async messagesOwn(user: User, ticketId: number) {
+  async messagesOwn(user: User, ticketId: number, query: ListSupportMessagesQueryDto) {
     this.assertSupportUser(user);
-    await this.requireOwnedTicket(user.id, ticketId);
-    await this.prisma.$transaction(async (transaction) => {
-      const readAt = new Date();
-      const result = await transaction.supportTicketMessage.updateMany({
-        where: {
-          ticketId,
-          senderId: { not: user.id },
-          isInternalNote: false,
-          readAt: null,
-        },
-        data: { readAt },
-      });
-      if (result.count > 0) {
-        await this.realtime.enqueueSupportPublic(
-          ticketId,
-          'support:read',
-          { ticketId, readerId: user.id, updated: result.count, readAt: readAt.toISOString() },
-          transaction,
-        );
-      }
-    });
-    const messages = await this.prisma.supportTicketMessage.findMany({
-      where: { ticketId, isInternalNote: false },
-      include: {
-        sender: {
-          select: { id: true, firstName: true, lastName: true, profilePicture: true, role: true },
-        },
-      },
-      orderBy: { createdAt: 'asc' },
-      take: 500,
-    });
-    return {
-      ticketId: this.ticketNumber(ticketId),
-      items: messages.map((message) => this.serializeMessage(message)),
-    };
+    await this.requireOwnedTicket(user.id, ticketId, user.role);
+    const result = await this.supportMessagePage(ticketId, query, false);
+    return result.response;
+  }
+
+  async markReadOwn(user: User, ticketId: number, dto: MarkSupportReadDto) {
+    this.assertSupportUser(user);
+    await this.requireOwnedTicket(user.id, ticketId, user.role);
+    return this.markSupportMessagesRead(ticketId, 'user', user.id, dto.throughMessageId);
   }
 
   async sendOwn(user: User, ticketId: number, dto: SendSupportMessageDto) {
     this.assertSupportUser(user);
     this.assertMessage(dto.body, dto.attachments?.length ?? 0);
-    this.assertAttachmentOwnership(user, dto.attachments ?? []);
-    const ticket = await this.requireOwnedTicket(user.id, ticketId);
-    if (ticket.status === 'closed' || ticket.status === 'resolved') {
-      throw new ConflictException('Reopen the ticket before sending another message');
+    await this.requireOwnedTicket(user.id, ticketId, user.role);
+    if (dto.clientMessageId) {
+      const existing = await this.prisma.supportTicketMessage.findFirst({
+        where: { senderId: user.id, ticketId, clientMessageId: dto.clientMessageId },
+      });
+      if (existing) {
+        this.assertSupportMessageRetryMatches(existing, ticketId, dto, false);
+        return this.serializeMessageWithUser(existing, user);
+      }
     }
-    const created = await this.prisma.$transaction(async (transaction) => {
-      const message = await transaction.supportTicketMessage.create({
-        data: {
-          ticketId,
-          senderId: user.id,
-          senderRole: user.role,
-          body: dto.body?.trim() || null,
-          attachments: dto.attachments?.length
-            ? (dto.attachments as unknown as Prisma.InputJsonValue)
-            : Prisma.DbNull,
-        },
-      });
-      const updatedTicket = await transaction.supportTicket.update({
-        where: { id: ticketId },
-        data: {
-          lastMessageAt: new Date(),
-          ...(ticket.status === 'waiting'
-            ? { status: ticket.assignedAdminId ? 'in_progress' : 'open', waitingSince: null }
-            : {}),
-        },
-      });
-      await this.realtime.enqueueSupportPublic(
-        ticketId,
-        'support:message',
-        this.supportMessageEvent(message),
-        transaction,
-      );
-      if (updatedTicket.status !== ticket.status) {
+    const attachments = await this.uploads.verifySupportAttachments(user, dto.attachments ?? []);
+    try {
+      const created = await this.prisma.$transaction(async (transaction) => {
+        const lockedTicket = await this.lockSupportTicket(transaction, ticketId, user.id, user.role);
+        if (lockedTicket.status === 'closed' || lockedTicket.status === 'resolved') {
+          throw new ConflictException('Reopen the ticket before sending another message');
+        }
+        const message = await transaction.supportTicketMessage.create({
+          data: {
+            ticketId,
+            senderId: user.id,
+            senderRole: user.role,
+            clientMessageId: dto.clientMessageId ?? null,
+            body: dto.body?.trim() || null,
+            attachments: attachments.length
+              ? (attachments as unknown as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+          },
+        });
+        const updatedTicket = await transaction.supportTicket.update({
+          where: { id: ticketId },
+          data: {
+            lastMessageAt: new Date(),
+            ...(lockedTicket.status === 'waiting'
+              ? {
+                  status: lockedTicket.assignedAdminId ? 'in_progress' : 'open',
+                  waitingSince: null,
+                }
+              : {}),
+          },
+        });
         await this.realtime.enqueueSupportPublic(
           ticketId,
-          'support:ticket_updated',
-          {
-            ticketId,
-            status: updatedTicket.status,
-            updatedAt: updatedTicket.updatedAt.toISOString(),
-          },
+          'support:message',
+          this.supportMessageEvent(message),
           transaction,
         );
-      }
-      return message;
-    });
-
-    if (ticket.assignedAdminId) {
-      await this.notifications.create(ticket.assignedAdminId, {
-        category: 'system',
-        type: 'support_user_reply',
-        title: `${this.ticketNumber(ticketId)} has a new reply`,
-        body: dto.body?.trim().slice(0, 220) || 'The user sent a support attachment.',
-        entityType: 'support_ticket',
-        entityId: String(ticketId),
+        await this.enqueueSupportTicketUpdated(updatedTicket, transaction);
+        if (lockedTicket.assignedAdminId) {
+          await this.notifications.create(
+            lockedTicket.assignedAdminId,
+            {
+              category: 'system',
+              type: 'support_user_reply',
+              title: `${this.ticketNumber(ticketId)} has a new reply`,
+              body: dto.body?.trim().slice(0, 220) || 'The user sent a support attachment.',
+              entityType: 'support_ticket',
+              entityId: String(ticketId),
+            },
+            transaction,
+          );
+        } else {
+          await this.notifySupportTeam(
+            ticketId,
+            `${this.ticketNumber(ticketId)} has a new reply`,
+            dto.body?.trim().slice(0, 220) || 'The user sent a support attachment.',
+            transaction,
+          );
+        }
+        return message;
       });
-    } else {
-      await this.notifySupportTeam(
-        ticketId,
-        `${this.ticketNumber(ticketId)} has a new reply`,
-        dto.body?.trim().slice(0, 220) || 'The user sent a support attachment.',
-      );
+      return this.serializeMessageWithUser(created, user);
+    } catch (error) {
+      if (dto.clientMessageId && hasPrismaErrorCode(error, 'P2002')) {
+        const existing = await this.prisma.supportTicketMessage.findFirst({
+          where: { senderId: user.id, ticketId, clientMessageId: dto.clientMessageId },
+        });
+        if (existing) {
+          this.assertSupportMessageRetryMatches(existing, ticketId, dto, false);
+          return this.serializeMessageWithUser(existing, user);
+        }
+      }
+      throw error;
     }
-    return this.serializeMessage({
-      ...created,
-      sender: {
-        id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        profilePicture: user.profilePicture,
-        role: user.role,
-      },
-    });
   }
 
   async userAction(user: User, ticketId: number, dto: SupportTicketUserActionDto) {
     this.assertSupportUser(user);
-    const ticket = await this.requireOwnedTicket(user.id, ticketId);
-    if (dto.action === 'close') {
-      if (ticket.status === 'closed') return this.detailForUser(user.id, ticketId);
-      await this.prisma.supportTicket.update({
+    await this.prisma.$transaction(async (transaction) => {
+      const ticket = await this.lockSupportTicket(transaction, ticketId, user.id, user.role);
+      if (dto.action === 'close') {
+        if (ticket.status === 'closed') return;
+        const updated = await transaction.supportTicket.update({
+          where: { id: ticketId },
+          data: { status: 'closed', closedAt: new Date() },
+        });
+        await this.enqueueSupportTicketUpdated(updated, transaction);
+        return;
+      }
+      if (!['resolved', 'closed'].includes(ticket.status)) {
+        throw new ConflictException('Only resolved or closed tickets can be reopened');
+      }
+      const updated = await transaction.supportTicket.update({
         where: { id: ticketId },
-        data: { status: 'closed', closedAt: new Date() },
+        data: {
+          status: 'open',
+          resolvedAt: null,
+          resolutionSummary: null,
+          closedAt: null,
+          escalatedAt: null,
+          escalationReason: null,
+          waitingSince: null,
+          reopenedCount: { increment: 1 },
+          lastMessageAt: new Date(),
+        },
       });
-      await this.emitSupportTicketUpdated(ticketId);
-      return this.detailForUser(user.id, ticketId);
-    }
-    if (!['resolved', 'closed'].includes(ticket.status)) {
-      throw new ConflictException('Only resolved or closed tickets can be reopened');
-    }
-    await this.prisma.supportTicket.update({
-      where: { id: ticketId },
-      data: {
-        status: 'open',
-        resolvedAt: null,
-        resolutionSummary: null,
-        closedAt: null,
-        escalatedAt: null,
-        escalationReason: null,
-        waitingSince: null,
-        reopenedCount: { increment: 1 },
-        lastMessageAt: new Date(),
-      },
+      await this.notifySupportTeam(
+        ticketId,
+        `${this.ticketNumber(ticketId)} was reopened`,
+        `${this.userName(user)} reopened the support ticket.`,
+        transaction,
+      );
+      await this.enqueueSupportTicketUpdated(updated, transaction);
     });
-    await this.notifySupportTeam(
-      ticketId,
-      `${this.ticketNumber(ticketId)} was reopened`,
-      `${this.userName(user)} reopened the support ticket.`,
-    );
-    await this.emitSupportTicketUpdated(ticketId);
-    return this.detailForUser(user.id, ticketId);
+    return this.detailForUser(user, ticketId);
   }
 
   async feedback(user: User, ticketId: number, dto: SupportFeedbackDto) {
     this.assertSupportUser(user);
-    const ticket = await this.requireOwnedTicket(user.id, ticketId);
-    if (!['resolved', 'closed'].includes(ticket.status)) {
-      throw new ConflictException(
-        'Feedback is available only after the support ticket is resolved',
-      );
-    }
-    if (ticket.feedbackAt) {
-      throw new ConflictException('Feedback has already been submitted for this ticket');
-    }
-    await this.prisma.supportTicket.update({
-      where: { id: ticketId },
-      data: {
-        satisfactionScore: dto.score,
-        feedbackComment: dto.comment ?? null,
-        feedbackAt: new Date(),
-      },
+    await this.prisma.$transaction(async (transaction) => {
+      const ticket = await this.lockSupportTicket(transaction, ticketId, user.id, user.role);
+      if (!['resolved', 'closed'].includes(ticket.status)) {
+        throw new ConflictException(
+          'Feedback is available only after the support ticket is resolved',
+        );
+      }
+      if (ticket.feedbackAt) {
+        throw new ConflictException('Feedback has already been submitted for this ticket');
+      }
+      await transaction.supportTicket.update({
+        where: { id: ticketId },
+        data: {
+          satisfactionScore: dto.score,
+          feedbackComment: dto.comment ?? null,
+          feedbackAt: new Date(),
+        },
+      });
     });
     return { submitted: true, score: dto.score };
   }
@@ -455,8 +505,8 @@ export class SupportService {
               },
             },
           },
-          orderBy: { createdAt: 'asc' },
-          take: 500,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 100,
         },
         _count: { select: { messages: true } },
       },
@@ -470,7 +520,7 @@ export class SupportService {
         id: String(ticket.user.id),
         name: this.userName(ticket.user),
         email: ticket.user.email,
-        role: ticket.user.role,
+        role: ticket.requesterRole,
         accountStatus: ticket.user.accountStatus,
         profilePicture: ticket.user.profilePicture ?? '',
       },
@@ -495,7 +545,14 @@ export class SupportService {
         ticket.referenceId,
         ticket.userId,
       ),
-      messages: ticket.messages.map((message) => this.serializeMessage(message)),
+      messages: ticket.messages.reverse().map((message) => this.serializeMessage(message)),
+      messageWindow: {
+        returned: ticket.messages.length,
+        total: ticket._count.messages,
+        hasMore: ticket._count.messages > ticket.messages.length,
+        nextCursor:
+          ticket._count.messages > ticket.messages.length ? (ticket.messages[0]?.id ?? null) : null,
+      },
       feedback: ticket.feedbackAt
         ? {
             score: ticket.satisfactionScore,
@@ -506,134 +563,150 @@ export class SupportService {
     };
   }
 
-  async adminMessages(ticketId: number) {
+  async adminMessages(ticketId: number, query: ListSupportMessagesQueryDto) {
     await this.requireTicket(ticketId);
-    await this.prisma.$transaction(async (transaction) => {
-      const readAt = new Date();
-      const result = await transaction.supportTicketMessage.updateMany({
-        where: {
-          ticketId,
-          senderRole: { in: [UserRole.Customer, UserRole.Tasker] },
-          readAt: null,
-        },
-        data: { readAt },
-      });
-      if (result.count > 0) {
-        await this.realtime.enqueueSupportPublic(
-          ticketId,
-          'support:read',
-          { ticketId, readerRole: 'support', updated: result.count, readAt: readAt.toISOString() },
-          transaction,
-        );
-      }
-    });
-    const rows = await this.prisma.supportTicketMessage.findMany({
-      where: { ticketId },
-      include: {
-        sender: {
-          select: { id: true, firstName: true, lastName: true, profilePicture: true, role: true },
-        },
-      },
-      orderBy: { createdAt: 'asc' },
-      take: 500,
-    });
-    return {
-      ticketId: this.ticketNumber(ticketId),
-      items: rows.map((row) => this.serializeMessage(row)),
-    };
+    const result = await this.supportMessagePage(ticketId, query, true);
+    return result.response;
+  }
+
+  async adminMarkRead(actor: User, ticketId: number, dto: MarkSupportReadDto) {
+    await this.requireTicket(ticketId);
+    return this.markSupportMessagesRead(ticketId, 'admin', actor.id, dto.throughMessageId);
   }
 
   async adminSend(actor: User, ticketId: number, dto: AdminSendSupportMessageDto) {
     this.assertMessage(dto.body, dto.attachments?.length ?? 0);
-    this.assertAttachmentOwnership(actor, dto.attachments ?? []);
-    const ticket = await this.requireTicket(ticketId);
-    if (ticket.status === 'closed') {
-      throw new ConflictException('Closed tickets must be reopened before adding a message');
+    await this.requireTicket(ticketId);
+    const internalNote = dto.internalNote ?? false;
+    if (dto.clientMessageId) {
+      const existing = await this.prisma.supportTicketMessage.findFirst({
+        where: { senderId: actor.id, ticketId, clientMessageId: dto.clientMessageId },
+      });
+      if (existing) {
+        this.assertSupportMessageRetryMatches(existing, ticketId, dto, internalNote);
+        return this.serializeMessageWithUser(existing, actor);
+      }
     }
-    const internalNote = Boolean(dto.internalNote);
+    const attachments = await this.uploads.verifySupportAttachments(actor, dto.attachments ?? []);
     const now = new Date();
-    const message = await this.prisma.$transaction(async (transaction) => {
-      const created = await transaction.supportTicketMessage.create({
-        data: {
-          ticketId,
-          senderId: actor.id,
-          senderRole: actor.role,
-          body: dto.body?.trim() || null,
-          attachments: dto.attachments?.length
-            ? (dto.attachments as unknown as Prisma.InputJsonValue)
-            : Prisma.DbNull,
-          isInternalNote: internalNote,
-        },
-      });
-      await transaction.supportTicket.update({
-        where: { id: ticketId },
-        data: {
-          lastMessageAt: now,
-          ...(!internalNote && !ticket.firstResponseAt ? { firstResponseAt: now } : {}),
-          ...(!internalNote && ['open', 'waiting'].includes(ticket.status)
-            ? { status: 'in_progress', waitingSince: null }
-            : {}),
-          ...(!internalNote && !ticket.assignedAdminId ? { assignedAdminId: actor.id } : {}),
-        },
-      });
-      await (internalNote
-        ? this.realtime.enqueueSupportAdmins(
+    try {
+      const message = await this.prisma.$transaction(async (transaction) => {
+        const lockedTicket = await this.lockSupportTicket(transaction, ticketId);
+        if (lockedTicket.status === 'closed') {
+          throw new ConflictException('Closed tickets must be reopened before adding a message');
+        }
+        if (!internalNote && lockedTicket.status === 'resolved') {
+          throw new ConflictException(
+            'Resolved tickets must be reopened before sending a public reply',
+          );
+        }
+        const created = await transaction.supportTicketMessage.create({
+          data: {
             ticketId,
-            'support:message',
-            this.supportMessageEvent(created),
+            senderId: actor.id,
+            senderRole: actor.role,
+            clientMessageId: dto.clientMessageId ?? null,
+            body: dto.body?.trim() || null,
+            attachments: attachments.length
+              ? (attachments as unknown as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+            isInternalNote: internalNote,
+          },
+        });
+        const updatedTicket = await transaction.supportTicket.update({
+          where: { id: ticketId },
+          data: {
+            lastMessageAt: now,
+            ...(!internalNote && !lockedTicket.firstResponseAt ? { firstResponseAt: now } : {}),
+            ...(!internalNote && ['open', 'waiting'].includes(lockedTicket.status)
+              ? { status: 'in_progress', waitingSince: null }
+              : {}),
+            ...(!internalNote && !lockedTicket.assignedAdminId
+              ? { assignedAdminId: actor.id }
+              : {}),
+          },
+        });
+        await (internalNote
+          ? this.realtime.enqueueSupportAdmins(
+              ticketId,
+              'support:message',
+              this.supportMessageEvent(created),
+              transaction,
+            )
+          : this.realtime.enqueueSupportPublic(
+              ticketId,
+              'support:message',
+              this.supportMessageEvent(created),
+              transaction,
+            ));
+        await this.enqueueSupportTicketUpdated(
+          updatedTicket,
+          transaction,
+          internalNote ? 'internal' : 'public',
+        );
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            targetUserId: lockedTicket.userId,
+            action: internalNote ? 'support_internal_note_added' : 'support_reply_sent',
+            entityType: 'support_ticket',
+            entityId: ticketId,
+            metadata: { channel: lockedTicket.channel },
+          },
+          transaction,
+        );
+        if (!internalNote) {
+          await this.notifications.create(
+            lockedTicket.userId,
+            {
+              category: 'system',
+              type: 'support_agent_reply',
+              title: `${this.ticketNumber(ticketId)} has a new support reply`,
+              body: dto.body?.trim().slice(0, 220) || 'Support sent an attachment.',
+              entityType: 'support_ticket',
+              entityId: String(ticketId),
+            },
             transaction,
-          )
-        : this.realtime.enqueueSupportPublic(
-            ticketId,
-            'support:message',
-            this.supportMessageEvent(created),
-            transaction,
-          ));
-      await this.audit.record(
-        {
-          actorId: actor.id,
-          targetUserId: ticket.userId,
-          action: internalNote ? 'support_internal_note_added' : 'support_reply_sent',
-          entityType: 'support_ticket',
-          entityId: ticketId,
-          metadata: { channel: ticket.channel },
-        },
-        transaction,
-      );
-      return created;
-    });
-
-    if (!internalNote) {
-      await this.notifications.create(ticket.userId, {
-        category: 'system',
-        type: 'support_agent_reply',
-        title: `${this.ticketNumber(ticketId)} has a new support reply`,
-        body: dto.body?.trim().slice(0, 220) || 'Support sent an attachment.',
-        entityType: 'support_ticket',
-        entityId: String(ticketId),
+          );
+        }
+        return created;
       });
+      return this.serializeMessageWithUser(message, actor);
+    } catch (error) {
+      if (dto.clientMessageId && hasPrismaErrorCode(error, 'P2002')) {
+        const existing = await this.prisma.supportTicketMessage.findFirst({
+          where: { senderId: actor.id, ticketId, clientMessageId: dto.clientMessageId },
+        });
+        if (existing) {
+          this.assertSupportMessageRetryMatches(existing, ticketId, dto, internalNote);
+          return this.serializeMessageWithUser(existing, actor);
+        }
+      }
+      throw error;
     }
-    return this.serializeMessage({
-      ...message,
-      sender: {
-        id: actor.id,
-        firstName: actor.firstName,
-        lastName: actor.lastName,
-        profilePicture: actor.profilePicture,
-        role: actor.role,
-      },
-    });
   }
 
   async adminAction(actor: User, ticketId: number, dto: AdminSupportActionDto) {
-    const ticket = await this.requireTicket(ticketId);
-    const now = new Date();
-
     if (dto.action === 'assign') {
-      const targetId = dto.assignedAdminId ?? actor.id;
-      await this.assertSupportAdmin(targetId);
-      await this.prisma.$transaction(async (transaction) => {
-        await transaction.supportTicket.update({
+      await this.assertSupportAdmin(dto.assignedAdminId ?? actor.id);
+    }
+    if (dto.action === 'set_priority' && !dto.priority) {
+      throw new BadRequestException('priority is required for set_priority');
+    }
+    if (dto.action === 'escalate' && !dto.reason?.trim()) {
+      throw new BadRequestException('reason is required to escalate a ticket');
+    }
+    if (dto.action === 'resolve' && !dto.resolutionSummary?.trim()) {
+      throw new BadRequestException('resolutionSummary is required to resolve a ticket');
+    }
+    const now = new Date();
+    await this.prisma.$transaction(async (transaction) => {
+      const ticket = await this.lockSupportTicket(transaction, ticketId);
+      let updated: SupportTicket;
+
+      if (dto.action === 'assign') {
+        const targetId = dto.assignedAdminId ?? actor.id;
+        updated = await transaction.supportTicket.update({
           where: { id: ticketId },
           data: {
             assignedAdminId: targetId,
@@ -651,24 +724,22 @@ export class SupportService {
           },
           transaction,
         );
-      });
-      if (targetId !== actor.id) {
-        await this.notifications.create(targetId, {
-          category: 'system',
-          type: 'support_ticket_assigned',
-          title: `${this.ticketNumber(ticketId)} assigned to you`,
-          body: ticket.subject,
-          entityType: 'support_ticket',
-          entityId: String(ticketId),
-        });
-      }
-      await this.emitSupportTicketUpdated(ticketId);
-      return this.adminDetail(ticketId);
-    }
-
-    if (dto.action === 'unassign') {
-      await this.prisma.$transaction(async (transaction) => {
-        await transaction.supportTicket.update({
+        if (targetId !== actor.id) {
+          await this.notifications.create(
+            targetId,
+            {
+              category: 'system',
+              type: 'support_ticket_assigned',
+              title: `${this.ticketNumber(ticketId)} assigned to you`,
+              body: ticket.subject,
+              entityType: 'support_ticket',
+              entityId: String(ticketId),
+            },
+            transaction,
+          );
+        }
+      } else if (dto.action === 'unassign') {
+        updated = await transaction.supportTicket.update({
           where: { id: ticketId },
           data: {
             assignedAdminId: null,
@@ -685,75 +756,64 @@ export class SupportService {
           },
           transaction,
         );
-      });
-      await this.emitSupportTicketUpdated(ticketId);
-      return this.adminDetail(ticketId);
-    }
-
-    if (dto.action === 'start') {
-      if (['resolved', 'closed'].includes(ticket.status)) {
-        throw new ConflictException('Resolved/closed tickets must be reopened before work resumes');
-      }
-      await this.prisma.supportTicket.update({
-        where: { id: ticketId },
-        data: {
-          status: 'in_progress',
-          waitingSince: null,
-          assignedAdminId: ticket.assignedAdminId ?? actor.id,
-        },
-      });
-      await this.emitSupportTicketUpdated(ticketId);
-      return this.adminDetail(ticketId);
-    }
-
-    if (dto.action === 'wait') {
-      if (['resolved', 'closed'].includes(ticket.status)) {
-        throw new ConflictException('Resolved/closed tickets cannot enter waiting state');
-      }
-      await this.prisma.supportTicket.update({
-        where: { id: ticketId },
-        data: {
-          status: 'waiting',
-          waitingSince: now,
-          assignedAdminId: ticket.assignedAdminId ?? actor.id,
-        },
-      });
-      await this.emitSupportTicketUpdated(ticketId);
-      return this.adminDetail(ticketId);
-    }
-
-    if (dto.action === 'set_priority') {
-      if (!dto.priority) throw new BadRequestException('priority is required for set_priority');
-      await this.prisma.supportTicket.update({
-        where: { id: ticketId },
-        data: { priority: dto.priority },
-      });
-      await this.audit.record({
-        actorId: actor.id,
-        targetUserId: ticket.userId,
-        action: 'support_ticket_priority_changed',
-        entityType: 'support_ticket',
-        entityId: ticketId,
-        metadata: { from: ticket.priority, to: dto.priority },
-      });
-      await this.emitSupportTicketUpdated(ticketId);
-      return this.adminDetail(ticketId);
-    }
-
-    if (dto.action === 'escalate') {
-      if (!dto.reason?.trim())
-        throw new BadRequestException('reason is required to escalate a ticket');
-      if (['resolved', 'closed'].includes(ticket.status)) {
-        throw new ConflictException('Resolved/closed tickets cannot be escalated');
-      }
-      await this.prisma.$transaction(async (transaction) => {
-        await transaction.supportTicket.update({
+      } else if (dto.action === 'start' || dto.action === 'wait') {
+        if (['resolved', 'closed'].includes(ticket.status)) {
+          throw new ConflictException(
+            dto.action === 'start'
+              ? 'Resolved/closed tickets must be reopened before work resumes'
+              : 'Resolved/closed tickets cannot enter waiting state',
+          );
+        }
+        updated = await transaction.supportTicket.update({
+          where: { id: ticketId },
+          data: {
+            status: dto.action === 'start' ? 'in_progress' : 'waiting',
+            waitingSince: dto.action === 'start' ? null : now,
+            assignedAdminId: ticket.assignedAdminId ?? actor.id,
+          },
+        });
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            targetUserId: ticket.userId,
+            action: dto.action === 'start' ? 'support_ticket_started' : 'support_ticket_waiting',
+            entityType: 'support_ticket',
+            entityId: ticketId,
+          },
+          transaction,
+        );
+      } else if (dto.action === 'set_priority') {
+        if (!dto.priority) {
+          throw new BadRequestException('priority is required for set_priority');
+        }
+        updated = await transaction.supportTicket.update({
+          where: { id: ticketId },
+          data: { priority: dto.priority },
+        });
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            targetUserId: ticket.userId,
+            action: 'support_ticket_priority_changed',
+            entityType: 'support_ticket',
+            entityId: ticketId,
+            metadata: { from: ticket.priority, to: dto.priority },
+          },
+          transaction,
+        );
+      } else if (dto.action === 'escalate') {
+        if (['resolved', 'closed'].includes(ticket.status)) {
+          throw new ConflictException('Resolved/closed tickets cannot be escalated');
+        }
+        const reason = dto.reason?.trim();
+        if (!reason) throw new BadRequestException('reason is required to escalate a ticket');
+        updated = await transaction.supportTicket.update({
           where: { id: ticketId },
           data: {
             status: 'escalated',
-            priority: ticket.priority === 'urgent' ? ticket.priority : 'urgent',
+            priority: 'urgent',
             escalatedAt: now,
-            escalationReason: dto.reason,
+            escalationReason: reason,
             assignedAdminId: ticket.assignedAdminId ?? actor.id,
             waitingSince: null,
           },
@@ -765,34 +825,36 @@ export class SupportService {
             action: 'support_ticket_escalated',
             entityType: 'support_ticket',
             entityId: ticketId,
-            reason: dto.reason,
+            reason,
           },
           transaction,
         );
-      });
-      await this.notifications.create(ticket.userId, {
-        category: 'system',
-        type: 'support_ticket_escalated',
-        title: `${this.ticketNumber(ticketId)} was escalated`,
-        body: 'Your support request has been escalated for additional review.',
-        entityType: 'support_ticket',
-        entityId: String(ticketId),
-      });
-      await this.emitSupportTicketUpdated(ticketId);
-      return this.adminDetail(ticketId);
-    }
-
-    if (dto.action === 'resolve') {
-      if (!dto.resolutionSummary?.trim()) {
-        throw new BadRequestException('resolutionSummary is required to resolve a ticket');
-      }
-      await this.prisma.$transaction(async (transaction) => {
-        await transaction.supportTicket.update({
+        await this.notifications.create(
+          ticket.userId,
+          {
+            category: 'system',
+            type: 'support_ticket_escalated',
+            title: `${this.ticketNumber(ticketId)} was escalated`,
+            body: 'Your support request has been escalated for additional review.',
+            entityType: 'support_ticket',
+            entityId: String(ticketId),
+          },
+          transaction,
+        );
+      } else if (dto.action === 'resolve') {
+        if (['resolved', 'closed'].includes(ticket.status)) {
+          throw new ConflictException('Only active tickets can be resolved');
+        }
+        const resolutionSummary = dto.resolutionSummary?.trim();
+        if (!resolutionSummary) {
+          throw new BadRequestException('resolutionSummary is required to resolve a ticket');
+        }
+        updated = await transaction.supportTicket.update({
           where: { id: ticketId },
           data: {
             status: 'resolved',
             resolvedAt: now,
-            resolutionSummary: dto.resolutionSummary,
+            resolutionSummary,
             assignedAdminId: ticket.assignedAdminId ?? actor.id,
             waitingSince: null,
           },
@@ -804,74 +866,73 @@ export class SupportService {
             action: 'support_ticket_resolved',
             entityType: 'support_ticket',
             entityId: ticketId,
-            reason: dto.resolutionSummary,
+            reason: resolutionSummary,
           },
           transaction,
         );
-      });
-      await this.notifications.create(ticket.userId, {
-        category: 'system',
-        type: 'support_ticket_resolved',
-        title: `${this.ticketNumber(ticketId)} was resolved`,
-        body: dto.resolutionSummary.slice(0, 220),
-        entityType: 'support_ticket',
-        entityId: String(ticketId),
-      });
-      await this.emitSupportTicketUpdated(ticketId);
-      return this.adminDetail(ticketId);
-    }
-
-    if (dto.action === 'close') {
-      if (ticket.status !== 'resolved') {
-        throw new ConflictException('Only resolved tickets can be closed by an administrator');
+        await this.notifications.create(
+          ticket.userId,
+          {
+            category: 'system',
+            type: 'support_ticket_resolved',
+            title: `${this.ticketNumber(ticketId)} was resolved`,
+            body: resolutionSummary.slice(0, 220),
+            entityType: 'support_ticket',
+            entityId: String(ticketId),
+          },
+          transaction,
+        );
+      } else if (dto.action === 'close') {
+        if (ticket.status !== 'resolved') {
+          throw new ConflictException('Only resolved tickets can be closed by an administrator');
+        }
+        updated = await transaction.supportTicket.update({
+          where: { id: ticketId },
+          data: { status: 'closed', closedAt: now },
+        });
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            targetUserId: ticket.userId,
+            action: 'support_ticket_closed',
+            entityType: 'support_ticket',
+            entityId: ticketId,
+          },
+          transaction,
+        );
+      } else {
+        if (!['resolved', 'closed'].includes(ticket.status)) {
+          throw new ConflictException('Only resolved or closed tickets can be reopened');
+        }
+        updated = await transaction.supportTicket.update({
+          where: { id: ticketId },
+          data: {
+            status: 'open',
+            resolvedAt: null,
+            resolutionSummary: null,
+            closedAt: null,
+            escalatedAt: null,
+            escalationReason: null,
+            waitingSince: null,
+            reopenedCount: { increment: 1 },
+            assignedAdminId: actor.id,
+            lastMessageAt: now,
+          },
+        });
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            targetUserId: ticket.userId,
+            action: 'support_ticket_reopened',
+            entityType: 'support_ticket',
+            entityId: ticketId,
+            reason: dto.reason,
+          },
+          transaction,
+        );
       }
-      await this.prisma.supportTicket.update({
-        where: { id: ticketId },
-        data: { status: 'closed', closedAt: now },
-      });
-      await this.audit.record({
-        actorId: actor.id,
-        targetUserId: ticket.userId,
-        action: 'support_ticket_closed',
-        entityType: 'support_ticket',
-        entityId: ticketId,
-      });
-      await this.emitSupportTicketUpdated(ticketId);
-      return this.adminDetail(ticketId);
-    }
-
-    if (!['resolved', 'closed'].includes(ticket.status)) {
-      throw new ConflictException('Only resolved or closed tickets can be reopened');
-    }
-    await this.prisma.$transaction(async (transaction) => {
-      await transaction.supportTicket.update({
-        where: { id: ticketId },
-        data: {
-          status: 'open',
-          resolvedAt: null,
-          resolutionSummary: null,
-          closedAt: null,
-          escalatedAt: null,
-          escalationReason: null,
-          waitingSince: null,
-          reopenedCount: { increment: 1 },
-          assignedAdminId: actor.id,
-          lastMessageAt: now,
-        },
-      });
-      await this.audit.record(
-        {
-          actorId: actor.id,
-          targetUserId: ticket.userId,
-          action: 'support_ticket_reopened',
-          entityType: 'support_ticket',
-          entityId: ticketId,
-          reason: dto.reason,
-        },
-        transaction,
-      );
+      await this.enqueueSupportTicketUpdated(updated, transaction);
     });
-    await this.emitSupportTicketUpdated(ticketId);
     return this.adminDetail(ticketId);
   }
 
@@ -904,6 +965,10 @@ export class SupportService {
       }),
       this.prisma.supportTicket.count({ where }),
     ]);
+    const unreadByTicket = await this.unreadSupportMessagesByTicket(
+      rows.map((row) => row.id),
+      'admin',
+    );
     return {
       view: query.view ?? 'support_tickets',
       summary,
@@ -913,10 +978,11 @@ export class SupportService {
       totalPages: Math.ceil(totalItems / limit),
       items: rows.map((row) => ({
         ...this.serializeTicket(row),
+        unreadCount: unreadByTicket.get(row.id) ?? 0,
         user: {
           id: String(row.user.id),
           name: this.userName(row.user),
-          role: row.user.role,
+          role: row.requesterRole,
           email: row.user.email,
           profilePicture: row.user.profilePicture ?? '',
         },
@@ -1080,7 +1146,7 @@ export class SupportService {
 
   private async summary() {
     const resolved24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [active, waiting, escalated, resolved] = await Promise.all([
+    const [active, waiting, escalated, resolved, unreadParticipantMessages] = await Promise.all([
       this.prisma.supportTicket.count({
         where: { status: { in: [...ACTIVE_SUPPORT_STATUSES] } },
       }),
@@ -1089,12 +1155,20 @@ export class SupportService {
       this.prisma.supportTicket.count({
         where: { resolvedAt: { gte: resolved24h } },
       }),
+      this.prisma.supportTicketMessage.count({
+        where: {
+          isInternalNote: false,
+          senderRole: { in: [UserRole.Customer, UserRole.Tasker] },
+          readAt: null,
+        },
+      }),
     ]);
     return {
       activeTickets: active,
       waiting,
       escalated,
       resolvedWithin24Hours: resolved,
+      unreadParticipantMessages,
     };
   }
 
@@ -1111,8 +1185,8 @@ export class SupportService {
       ...(date ? { createdAt: date } : {}),
     };
 
-    if (view === 'customer_issues') where.user = { role: UserRole.Customer };
-    if (view === 'tasker_issues') where.user = { role: UserRole.Tasker };
+    if (view === 'customer_issues') where.requesterRole = UserRole.Customer;
+    if (view === 'tasker_issues') where.requesterRole = UserRole.Tasker;
     if (view === 'escalated') where.status = 'escalated';
     if (view === 'live_chat') where.channel = 'live_chat';
 
@@ -1151,7 +1225,11 @@ export class SupportService {
       const owned = await this.prisma.booking.count({
         where: {
           id: dto.bookingId,
-          OR: [{ customerId: user.id }, { taskerId: user.id }],
+          ...(user.role === UserRole.Customer
+            ? { customerId: user.id }
+            : user.role === UserRole.Tasker
+              ? { taskerId: user.id }
+              : { id: -1 }),
         },
       });
       if (!owned)
@@ -1189,30 +1267,215 @@ export class SupportService {
     }
   }
 
-  private assertAttachmentOwnership(
-    user: User,
-    attachments: Array<{ publicId: string; secureUrl: string }>,
-  ): void {
-    if (attachments.length === 0) return;
-    const baseFolder = this.config
-      .get<string>('cloudinary.folder', 'latache')
-      .replace(/^\/+|\/+$/g, '');
-    const expectedPrefix = `${baseFolder}/support-attachments/${user.role}/${user.id}/`;
-    for (const attachment of attachments) {
-      if (!attachment.publicId.startsWith(expectedPrefix)) {
-        throw new ForbiddenException(
-          'Support attachments must be uploaded by the current account using the support-attachments Cloudinary folder',
+  private async supportMessagePage(
+    ticketId: number,
+    query: ListSupportMessagesQueryDto,
+    includeInternalNotes: boolean,
+  ) {
+    const { page, limit, offset } = normalizePagination(query.page, query.limit, 50);
+    const where: Prisma.SupportTicketMessageWhereInput = {
+      ticketId,
+      ...(includeInternalNotes ? {} : { isInternalNote: false }),
+    };
+    if (query.cursor) {
+      const cursor = await this.prisma.supportTicketMessage.findFirst({
+        where: { ...where, id: query.cursor },
+        select: { id: true },
+      });
+      if (!cursor) throw new BadRequestException('Message cursor is invalid for this ticket');
+    }
+    const [rows, totalItems] = await Promise.all([
+      this.prisma.supportTicketMessage.findMany({
+        where,
+        include: {
+          sender: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profilePicture: true,
+              role: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : { skip: offset }),
+        take: limit + 1,
+      }),
+      this.prisma.supportTicketMessage.count({ where }),
+    ]);
+    const hasMore = rows.length > limit;
+    const window = rows.slice(0, limit);
+    const nextCursor = hasMore ? (window.at(-1)?.id ?? null) : null;
+    return {
+      response: {
+        ticketId: this.ticketNumber(ticketId),
+        page: query.cursor ? null : page,
+        limit,
+        totalItems,
+        totalPages: Math.ceil(totalItems / limit),
+        nextCursor,
+        hasMore,
+        items: window.reverse().map((message) => this.serializeMessage(message)),
+      },
+    };
+  }
+
+  private async markSupportMessagesRead(
+    ticketId: number,
+    audience: 'user' | 'admin',
+    readerId: number,
+    throughMessageId?: string,
+  ) {
+    let boundary: { createdAt: Date; id: string } | null = null;
+    if (throughMessageId) {
+      boundary = await this.prisma.supportTicketMessage.findFirst({
+        where: {
+          id: throughMessageId,
+          ticketId,
+          ...(audience === 'user' ? { isInternalNote: false } : {}),
+        },
+        select: { createdAt: true, id: true },
+      });
+      if (!boundary) {
+        throw new BadRequestException('Read boundary is not a visible message on this ticket');
+      }
+    }
+    return this.prisma.$transaction(async (transaction) => {
+      const readAt = new Date();
+      const result = await transaction.supportTicketMessage.updateMany({
+        where: {
+          ticketId,
+          isInternalNote: false,
+          readAt: null,
+          senderRole:
+            audience === 'user'
+              ? { in: [UserRole.Admin, UserRole.SuperAdmin] }
+              : { in: [UserRole.Customer, UserRole.Tasker] },
+          ...(boundary
+            ? {
+                OR: [
+                  { createdAt: { lt: boundary.createdAt } },
+                  { createdAt: boundary.createdAt, id: { lte: boundary.id } },
+                ],
+              }
+            : {}),
+        },
+        data: { readAt },
+      });
+      if (result.count > 0) {
+        await this.realtime.enqueueSupportPublic(
+          ticketId,
+          'support:read',
+          {
+            ticketId,
+            readerId,
+            readerAudience: audience,
+            updated: result.count,
+            throughMessageId: throughMessageId ?? null,
+            readAt: readAt.toISOString(),
+          },
+          transaction,
         );
       }
-      let parsed: URL;
-      try {
-        parsed = new URL(attachment.secureUrl);
-      } catch {
-        throw new BadRequestException('Invalid support attachment URL');
-      }
-      if (parsed.protocol !== 'https:' || parsed.hostname !== 'res.cloudinary.com') {
-        throw new ForbiddenException('Support attachments must use secure Cloudinary URLs');
-      }
+      return {
+        ticketId: this.ticketNumber(ticketId),
+        updated: result.count,
+        throughMessageId: throughMessageId ?? null,
+        readAt: readAt.toISOString(),
+      };
+    });
+  }
+
+  private async unreadSupportMessagesByTicket(
+    ticketIds: number[],
+    audience: 'user' | 'admin',
+  ): Promise<Map<number, number>> {
+    if (ticketIds.length === 0) return new Map();
+    const rows = await this.prisma.supportTicketMessage.groupBy({
+      by: ['ticketId'],
+      where: {
+        ticketId: { in: ticketIds },
+        isInternalNote: false,
+        readAt: null,
+        senderRole:
+          audience === 'user'
+            ? { in: [UserRole.Admin, UserRole.SuperAdmin] }
+            : { in: [UserRole.Customer, UserRole.Tasker] },
+      },
+      _count: { id: true },
+    });
+    return new Map(rows.map((row) => [row.ticketId, row._count.id]));
+  }
+
+  private attachmentPublicIds(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((item) => {
+      if (!item || typeof item !== 'object' || !('publicId' in item)) return [];
+      const publicId = (item as { publicId?: unknown }).publicId;
+      return typeof publicId === 'string' ? [publicId] : [];
+    });
+  }
+
+  private assertSupportMessageRetryMatches(
+    message: {
+      ticketId: number;
+      body: string | null;
+      attachments: unknown;
+      isInternalNote: boolean;
+    },
+    ticketId: number,
+    dto: SendSupportMessageDto,
+    internalNote: boolean,
+  ): void {
+    const requestedIds = this.attachmentPublicIds(dto.attachments ?? []);
+    const storedIds = this.attachmentPublicIds(message.attachments);
+    const matches =
+      message.ticketId === ticketId &&
+      (message.body ?? '') === (dto.body?.trim() ?? '') &&
+      message.isInternalNote === internalNote &&
+      requestedIds.length === storedIds.length &&
+      requestedIds.every((value, index) => value === storedIds[index]);
+    if (!matches) {
+      throw new ConflictException({
+        code: 'CLIENT_MESSAGE_ID_REUSED',
+        message: 'clientMessageId was already used with different support message content',
+      });
+    }
+  }
+
+  private assertTicketRetryMatches(
+    ticket: {
+      channel: string;
+      subject: string;
+      category: string;
+      priority: string;
+      description: string | null;
+      bookingId: number | null;
+      referenceType: string | null;
+      referenceId: string | null;
+      attachments: unknown;
+    },
+    dto: CreateSupportTicketDto,
+  ): void {
+    const requestedIds = this.attachmentPublicIds(dto.attachments ?? []);
+    const storedIds = this.attachmentPublicIds(ticket.attachments);
+    const matches =
+      ticket.channel === (dto.channel ?? 'ticket') &&
+      ticket.subject === dto.subject &&
+      ticket.category === dto.category &&
+      ticket.priority === (dto.priority ?? 'normal') &&
+      (ticket.description ?? '') === dto.description &&
+      ticket.bookingId === (dto.bookingId ?? null) &&
+      ticket.referenceType === (dto.referenceType ?? null) &&
+      ticket.referenceId === (dto.referenceId ?? null) &&
+      requestedIds.length === storedIds.length &&
+      requestedIds.every((value, index) => value === storedIds[index]);
+    if (!matches) {
+      throw new ConflictException({
+        code: 'CLIENT_REQUEST_ID_REUSED',
+        message: 'clientRequestId was already used with different support ticket content',
+      });
     }
   }
 
@@ -1277,11 +1540,32 @@ export class SupportService {
     return null;
   }
 
-  private async requireOwnedTicket(userId: number, ticketId: number) {
+  private async requireOwnedTicket(userId: number, ticketId: number, requesterRole: string) {
     const ticket = await this.prisma.supportTicket.findFirst({
-      where: { id: ticketId, userId },
+      where: { id: ticketId, userId, requesterRole },
     });
     if (!ticket) throw new NotFoundException('Support ticket not found');
+    return ticket;
+  }
+
+  private async lockSupportTicket(
+    transaction: Prisma.TransactionClient,
+    ticketId: number,
+    userId?: number,
+    requesterRole?: string,
+  ): Promise<SupportTicket> {
+    const [ticket] = await transaction.$queryRaw<SupportTicket[]>`
+      SELECT * FROM "SupportTickets"
+      WHERE "id" = ${ticketId}
+      FOR UPDATE
+    `;
+    if (
+      !ticket ||
+      (userId !== undefined && ticket.userId !== userId) ||
+      (requesterRole !== undefined && ticket.requesterRole !== requesterRole)
+    ) {
+      throw new NotFoundException('Support ticket not found');
+    }
     return ticket;
   }
 
@@ -1311,8 +1595,14 @@ export class SupportService {
     }
   }
 
-  private async notifySupportTeam(ticketId: number, title: string, body: string): Promise<void> {
-    const admins = await this.prisma.user.findMany({
+  private async notifySupportTeam(
+    ticketId: number,
+    title: string,
+    body: string,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const client = transaction ?? this.prisma;
+    const admins = await client.user.findMany({
       where: {
         deletedAt: null,
         accountStatus: 'active',
@@ -1324,6 +1614,23 @@ export class SupportService {
       select: { id: true },
       take: 100,
     });
+    if (transaction) {
+      for (const admin of admins) {
+        await this.notifications.create(
+          admin.id,
+          {
+            category: 'system',
+            type: 'support_queue_update',
+            title,
+            body,
+            entityType: 'support_ticket',
+            entityId: String(ticketId),
+          },
+          transaction,
+        );
+      }
+      return;
+    }
     await Promise.allSettled(
       admins.map((admin) =>
         this.notifications.create(admin.id, {
@@ -1354,6 +1661,8 @@ export class SupportService {
 
   private serializeTicket(ticket: {
     id: number;
+    requesterRole: string;
+    clientRequestId: string | null;
     channel: string;
     subject: string;
     category: string;
@@ -1381,6 +1690,8 @@ export class SupportService {
   }) {
     return {
       id: String(ticket.id),
+      requesterRole: ticket.requesterRole,
+      clientRequestId: ticket.clientRequestId,
       ticketId: this.ticketNumber(ticket.id),
       channel: ticket.channel,
       subject: ticket.subject,
@@ -1409,20 +1720,19 @@ export class SupportService {
     };
   }
 
-  private async emitSupportTicketUpdated(ticketId: number): Promise<void> {
-    const ticket = await this.prisma.supportTicket.findUnique({
-      where: { id: ticketId },
-      select: {
-        id: true,
-        status: true,
-        priority: true,
-        assignedAdminId: true,
-        channel: true,
-        lastMessageAt: true,
-        updatedAt: true,
-      },
-    });
-    if (!ticket) return;
+  private async enqueueSupportTicketUpdated(
+    ticket: {
+      id: number;
+      status: string;
+      priority: string;
+      assignedAdminId: number | null;
+      channel: string;
+      lastMessageAt: Date;
+      updatedAt: Date;
+    },
+    transaction: Prisma.TransactionClient,
+    scope: 'public' | 'internal' = 'public',
+  ): Promise<void> {
     const payload: Prisma.InputJsonObject = {
       ticketId: ticket.id,
       status: ticket.status,
@@ -1432,10 +1742,19 @@ export class SupportService {
       lastMessageAt: ticket.lastMessageAt.toISOString(),
       updatedAt: ticket.updatedAt.toISOString(),
     };
-    await Promise.all([
-      this.realtime.enqueueSupportPublic(ticketId, 'support:ticket_updated', payload),
-      this.realtime.enqueueSupportAdmins(ticketId, 'support:ticket_updated', payload),
-    ]);
+    await (scope === 'internal'
+      ? this.realtime.enqueueSupportAdmins(
+          ticket.id,
+          'support:ticket_updated',
+          payload,
+          transaction,
+        )
+      : this.realtime.enqueueSupportPublic(
+          ticket.id,
+          'support:ticket_updated',
+          payload,
+          transaction,
+        ));
   }
 
   private supportMessageEvent(message: {
@@ -1443,6 +1762,7 @@ export class SupportService {
     ticketId: number;
     senderId: number;
     senderRole: string;
+    clientMessageId: string | null;
     body: string | null;
     attachments: unknown;
     isInternalNote: boolean;
@@ -1454,6 +1774,7 @@ export class SupportService {
       ticketId: message.ticketId,
       senderId: message.senderId,
       senderRole: message.senderRole,
+      clientMessageId: message.clientMessageId,
       body: message.body ?? '',
       attachments: (Array.isArray(message.attachments)
         ? message.attachments
@@ -1469,6 +1790,7 @@ export class SupportService {
     ticketId: number;
     senderId: number;
     senderRole: string;
+    clientMessageId: string | null;
     body: string | null;
     attachments: unknown;
     isInternalNote: boolean;
@@ -1484,6 +1806,7 @@ export class SupportService {
   }) {
     return {
       id: message.id,
+      clientMessageId: message.clientMessageId,
       ticketId: this.ticketNumber(message.ticketId),
       sender: {
         id: String(message.sender.id),
@@ -1497,6 +1820,33 @@ export class SupportService {
       readAt: message.readAt?.toISOString() ?? null,
       createdAt: message.createdAt.toISOString(),
     };
+  }
+
+  private serializeMessageWithUser(
+    message: {
+      id: string;
+      ticketId: number;
+      senderId: number;
+      senderRole: string;
+      clientMessageId: string | null;
+      body: string | null;
+      attachments: unknown;
+      isInternalNote: boolean;
+      readAt: Date | null;
+      createdAt: Date;
+    },
+    user: User,
+  ) {
+    return this.serializeMessage({
+      ...message,
+      sender: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        profilePicture: user.profilePicture,
+        role: user.role,
+      },
+    });
   }
 
   private ticketNumber(id: number): string {

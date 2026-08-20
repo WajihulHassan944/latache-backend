@@ -78,10 +78,20 @@ export class AdminEliteTaskersController {
   @ApiOperation({
     summary: 'Get Elite tier, benefit, and badge configuration',
     description:
-      'A single settings payload powers tier/benefit/badge management screens. Benefits are configuration only until a consuming module explicitly implements the effect; no discounts or bonuses are fabricated.',
+      'Returns tier policy, assigned backend-supported perks, badges, and the perk catalog. Tier/perk policy writes are Super-Admin-only; operational membership review remains permission-based.',
   })
   program(): Promise<Record<string, unknown>> {
     return this.elite.program();
+  }
+
+  @Get('program/perk-catalog')
+  @ApiOperation({
+    summary: 'Get backend-supported Elite perk catalog',
+    description:
+      'Returns the only perk codes that may be assigned to Gold/Platinum/Diamond. Perk effects are backend-enforced; policy writes are Super-Admin-only.',
+  })
+  perkCatalog(): Record<string, unknown> {
+    return this.elite.perkCatalog();
   }
 
   @Patch('program/tiers/:tierCode')
@@ -90,7 +100,7 @@ export class AdminEliteTaskersController {
   @ApiOperation({
     summary: 'Update one Elite tier policy and eligibility requirements',
     description:
-      'Stores real, administrator-configured thresholds for rating, completed tasks, completion rate, open complaints, and settled earnings. The application score is derived from these rules; no default threshold or fake score is invented.',
+      'Super-Admin policy endpoint. Stores real thresholds for rating, completed tasks, completion rate, open complaints, and settled earnings. Operational Admins may review memberships but cannot redefine tier eligibility.',
   })
   updateTierPolicy(
     @CurrentUser() actor: User,
@@ -106,7 +116,7 @@ export class AdminEliteTaskersController {
   @ApiOperation({
     summary: 'Replace all configured benefits for one Elite tier',
     description:
-      'Bulk replacement keeps the UI simple and prevents a separate CRUD call for every benefit row. The persisted benefit codes can later be integrated by payments, booking priority, support, or marketing modules.',
+      'Super-Admin-only policy assignment. Accepts only backend-supported perk codes from /program/perk-catalog. Active assignments are consumed by profile/discovery and pricing flows; arbitrary declarative perk codes are rejected.',
   })
   benefits(
     @CurrentUser() actor: User,

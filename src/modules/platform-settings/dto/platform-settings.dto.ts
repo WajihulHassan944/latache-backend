@@ -91,6 +91,15 @@ class ServiceRegionDto {
   isActive!: boolean;
 }
 
+export class GeneralContentTranslationDto {
+  @IsString()
+  @Matches(/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/)
+  locale!: string;
+
+  @IsOptional() @IsString() @Length(2, 120) platformName?: string;
+  @IsOptional() @IsString() @Length(0, 1000) description?: string;
+}
+
 export class GeneralSettingsDto {
   @IsOptional() @IsString() @Length(2, 120) platformName?: string;
   @IsOptional() @IsEmail() supportEmail?: string;
@@ -102,7 +111,8 @@ export class GeneralSettingsDto {
   @IsOptional() @IsBoolean() liveChatEnabled?: boolean;
   @IsOptional() @IsBoolean() maintenanceMode?: boolean;
   @ApiPropertyOptional({
-    type: 'array',
+    type: () => GeneralContentTranslationDto,
+    isArray: true,
     description:
       'Localized public platform identity/content. Locale codes are checked against SUPPORTED_LOCALES.',
     example: [{ locale: 'ar', platformName: 'Latache', description: 'منصة موثوقة للخدمات.' }],
@@ -115,17 +125,14 @@ export class GeneralSettingsDto {
   translations?: GeneralContentTranslationDto[];
 }
 
-export class GeneralContentTranslationDto {
-  @IsString()
-  @Matches(/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/)
-  locale!: string;
-
-  @IsOptional() @IsString() @Length(2, 120) platformName?: string;
-  @IsOptional() @IsString() @Length(0, 1000) description?: string;
-}
-
 export class CurrencySettingsDto {
-  @IsOptional() @IsString() @Length(3, 3) primaryCurrency?: string;
+  @ApiPropertyOptional({ enum: ['us', 'morocco', 'pakistan', 'france', 'spain'], default: 'us' })
+  @IsOptional()
+  @IsIn(['us', 'morocco', 'pakistan', 'france', 'spain'])
+  primaryMarket?: 'us' | 'morocco' | 'pakistan' | 'france' | 'spain';
+
+  @ApiPropertyOptional({ enum: ['USD', 'MAD', 'PKR', 'EUR'], description: 'Derived from primaryMarket; retained for backward compatibility.' })
+  @IsOptional() @IsIn(['USD', 'MAD', 'PKR', 'EUR', 'usd', 'mad', 'pkr', 'eur']) primaryCurrency?: string;
   @IsOptional() @IsString() @Length(1, 40) displayFormat?: string;
   @IsOptional() @IsIn(['manual', 'open_exchange_rates']) exchangeRateSource?:
     | 'manual'
@@ -134,6 +141,7 @@ export class CurrencySettingsDto {
   @IsOptional() @IsBoolean() autoRateRefresh?: boolean;
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(5)
   @ValidateNested({ each: true })
   @Type(() => CurrencyItemDto)
   activeCurrencies?: CurrencyItemDto[];
@@ -189,6 +197,18 @@ export class BookingRulesSettingsDto {
   @IsOptional() @IsBoolean() waitlistEnabled?: boolean;
   @IsOptional() @IsBoolean() emergencyBookingEnabled?: boolean;
   @IsOptional() @IsBoolean() groupBookingEnabled?: boolean;
+  @ApiPropertyOptional({
+    example: 24,
+    default: 24,
+    description:
+      'Hours after Tasker completion submission before an undisputed booking is automatically approved and finalized.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(168)
+  completionApprovalHours?: number;
 }
 
 export class ServiceRadiusSettingsDto {
@@ -330,35 +350,151 @@ export class TaskerFinanceSettingsDto {
   blockCashBookingsAtDebtLimit?: boolean;
 }
 
+
+export class DisputeSettingsDto {
+  @ApiPropertyOptional({ example: 72, default: 72, description: 'Hours after service completion during which a new participant dispute may be opened.' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(2160) filingWindowHours?: number;
+
+  @ApiPropertyOptional({ example: 72, default: 72, description: 'Hours after closure during which a participant may appeal.' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(2160) appealWindowHours?: number;
+
+  @ApiPropertyOptional({ example: 72, default: 72, description: 'Default SLA from dispute opening before automatic escalation.' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(2160) caseSlaHours?: number;
+
+  @ApiPropertyOptional({ example: 48, default: 48, description: 'Default participant response window for proposed dispute settlements.' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(720) settlementResponseHours?: number;
+
+  @ApiPropertyOptional({ example: 48, default: 48, description: 'Default response time for an Admin evidence request when no explicit due date is supplied.' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(720) evidenceResponseHours?: number;
+
+  @ApiPropertyOptional({ example: 24, default: 24, description: 'Reminder lead time before an evidence deadline.' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(720) evidenceReminderHoursBeforeDue?: number;
+
+  @ApiPropertyOptional({ example: 24, default: 24, description: 'Hours after an evidence deadline before the request expires and the case is escalated.' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(720) evidenceOverdueEscalationHours?: number;
+
+  @ApiPropertyOptional({ example: 30, default: 30, description: 'Maximum normalized evidence items stored across the entire dispute.' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(200) maxEvidenceItems?: number;
+
+  @ApiPropertyOptional({ example: 52428800, default: 52428800, description: 'Maximum known evidence bytes stored across the entire dispute.' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1048576) @Max(1073741824) maxEvidenceBytes?: number;
+
+  @ApiPropertyOptional({ default: true, description: 'Assign new disputes to the least-loaded active administrator with support.manage.' })
+  @IsOptional() @IsBoolean() autoAssignmentEnabled?: boolean;
+
+  @ApiPropertyOptional({ default: true, description: 'Queue dispute lifecycle emails through the durable dispute delivery table.' })
+  @IsOptional() @IsBoolean() emailNotificationsEnabled?: boolean;
+
+  @ApiPropertyOptional({ default: false, description: 'Requires a real APNs/FCM provider. Enabling is rejected while none is configured.' })
+  @IsOptional() @IsBoolean() mobilePushEnabled?: boolean;
+
+  @ApiPropertyOptional({ default: false, description: 'When enabled, configured strike thresholds can automatically suspend an account.' })
+  @IsOptional() @IsBoolean() automaticModerationEnabled?: boolean;
+
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(10) strikePointsPerWarning?: number;
+
+  @ApiPropertyOptional({ example: 3, default: 3 })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) suspendAtStrikePoints?: number;
+}
+
 export class ReferralSettingsDto {
-  @IsOptional() @IsBoolean() clientReferralEnabled?: boolean;
-  @IsOptional() @IsBoolean() taskerReferralEnabled?: boolean;
-  @IsOptional() @IsBoolean() uniqueCodesEnabled?: boolean;
+  @ApiPropertyOptional({ description: 'Customer-to-customer program switch.', default: false })
+  @IsOptional()
+  @IsBoolean()
+  clientReferralEnabled?: boolean;
+  @ApiPropertyOptional({ description: 'Tasker-to-tasker program switch.', default: false })
+  @IsOptional()
+  @IsBoolean()
+  taskerReferralEnabled?: boolean;
+  @ApiPropertyOptional({ description: 'Must remain true while either program is enabled.' })
+  @IsOptional()
+  @IsBoolean()
+  uniqueCodesEnabled?: boolean;
   @IsOptional() @IsBoolean() leaderboardEnabled?: boolean;
-  @IsOptional() @IsBoolean() bonusStackingEnabled?: boolean;
+  @ApiPropertyOptional({ description: 'Reserved for a future promotion engine; true is rejected.' })
+  @IsOptional()
+  @IsBoolean()
+  bonusStackingEnabled?: boolean;
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
+  @Max(1000000)
   clientReferralBonus?: number;
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
+  @Max(100)
   referredClientDiscountPercent?: number;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) referralExpiryDays?: number;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) maxClientReferrals?: number;
+  @ApiPropertyOptional({ description: 'Days from attribution to a qualifying paid booking.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  referralExpiryDays?: number;
+  @ApiPropertyOptional({ description: 'Zero means no program-level cap.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(1000000)
+  maxClientReferrals?: number;
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
+  @Max(1000000)
   taskerReferralBonus?: number;
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
+  @Max(1000000)
   referredTaskerBonus?: number;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) maxTaskerReferrals?: number;
+  @ApiPropertyOptional({ description: 'Zero means no program-level cap.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(1000000)
+  maxTaskerReferrals?: number;
+  @ApiPropertyOptional({ example: 14, description: 'Fraud/dispute hold before wallet release.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  rewardClearanceDays?: number;
+  @ApiPropertyOptional({ example: 25, description: 'Minimum net paid total that can qualify.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1000000)
+  minimumQualifyingBookingAmount?: number;
+  @ApiPropertyOptional({
+    example: 5,
+    description: 'Minimum real Stripe/wallet charge retained after a referred-customer discount.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1000000)
+  minimumCustomerChargeAmount?: number;
+  @ApiPropertyOptional({
+    example: 50,
+    description: 'Optional discount cap; zero means the percentage and minimum charge are the cap.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1000000)
+  referredClientDiscountMaxAmount?: number;
 }
 
 export class UpdatePlatformSettingsDto {
@@ -409,12 +545,18 @@ export class UpdatePlatformSettingsDto {
   @ValidateNested()
   @Type(() => ReferralSettingsDto)
   referral?: ReferralSettingsDto;
+
+  @ApiPropertyOptional({ type: DisputeSettingsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DisputeSettingsDto)
+  disputes?: DisputeSettingsDto;
 }
 
 export class PlatformSettingsQueryDto {
   @ApiPropertyOptional({
     example:
-      'general,currency,tax,bookingRules,serviceRadius,commission,taskerFinance,referral,eliteProgram',
+      'general,currency,tax,bookingRules,serviceRadius,commission,taskerFinance,referral,disputes,eliteProgram',
     description: 'Comma-separated sections. Omit to return all settings sections.',
   })
   @IsOptional()

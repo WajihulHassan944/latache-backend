@@ -9,6 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
+import { WALLET_ENTRY_KIND } from '../tasker-dashboard/tasker-dashboard.constants';
 import {
   EARNING_LEDGER_KIND,
   PLATFORM_LEDGER_KIND,
@@ -396,10 +397,26 @@ export class TaskerFinanceService {
     transaction?: Prisma.TransactionClient,
   ): Promise<void> {
     const client = transaction ?? this.prisma;
-    const active = await client.taskComplaint.count({
-      where: { bookingId, status: { in: ['open', 'under_investigation', 'escalated'] } },
-    });
-    if (active > 0) return;
+    const [active, providerDisputes] = await Promise.all([
+      client.taskComplaint.count({
+        where: { bookingId, status: { in: ['open', 'under_investigation', 'escalated'] } },
+      }),
+      client.stripeChargeback.count({
+        where: {
+          bookingId,
+          status: {
+            in: [
+              'warning_needs_response',
+              'warning_under_review',
+              'needs_response',
+              'under_review',
+              'lost',
+            ],
+          },
+        },
+      }),
+    ]);
+    if (active > 0 || providerDisputes > 0) return;
     await client.taskerEarning.updateMany({
       where: {
         bookingId,
@@ -418,6 +435,131 @@ export class TaskerFinanceService {
         clearedAt: new Date(),
       },
     });
+  }
+
+  async applyConfirmedCashRefundReceivableReversal(
+    transaction: Prisma.TransactionClient,
+    bookingId: number,
+    externalReference: string,
+    refundAmount: number,
+  ): Promise<{ reversalAmount: number; reimbursementAmount: number }> {
+    const receivable = await transaction.taskerPlatformReceivable.findUnique({
+      where: { bookingId },
+    });
+    if (!receivable) return { reversalAmount: 0, reimbursementAmount: 0 };
+
+    const idempotencyKey = `cash-refund:${externalReference}:receivable-reversal`;
+    const reimbursementKey = `cash-refund:${externalReference}:commission-reimbursement`;
+    await transaction.$queryRaw`
+      SELECT "id" FROM "TaskerPlatformReceivables"
+      WHERE "id" = ${receivable.id}
+      FOR UPDATE
+    `;
+    await transaction.$queryRaw`
+      SELECT "taskerId" FROM "TaskerPlatformAccounts"
+      WHERE "taskerId" = ${receivable.taskerId}
+      FOR UPDATE
+    `;
+    const locked = await transaction.taskerPlatformReceivable.findUniqueOrThrow({
+      where: { id: receivable.id },
+    });
+    const existingLedger = await transaction.taskerPlatformLedgerEntry.findUnique({
+      where: { idempotencyKey },
+    });
+    if (existingLedger) {
+      const reversalAmount = money(existingLedger.amount);
+      const reimbursementAmount = Math.max(
+        0,
+        money(reversalAmount - Math.abs(money(existingLedger.payableDelta))),
+      );
+      return { reversalAmount, reimbursementAmount };
+    }
+
+    const collected = money(locked.cashCollectedAmount);
+    if (collected <= 0) return { reversalAmount: 0, reimbursementAmount: 0 };
+    const originalPayable = money(locked.originalPayableAmount);
+    const alreadyReversed = money(locked.reversedAmount);
+    const proportional = money((money(refundAmount) / collected) * originalPayable);
+    const reversible = Math.max(0, money(originalPayable - alreadyReversed));
+    const reversal = Math.min(proportional, reversible);
+    if (reversal <= 0) return { reversalAmount: 0, reimbursementAmount: 0 };
+
+    const outstandingBefore = money(locked.outstandingAmount);
+    const outstandingReversal = Math.min(outstandingBefore, reversal);
+    const reimbursementAmount = Math.max(0, money(reversal - outstandingReversal));
+    const newOutstanding = money(outstandingBefore - outstandingReversal);
+    const newReversed = money(alreadyReversed + reversal);
+    const fullyReversed = newReversed >= originalPayable - 0.005;
+
+    await transaction.taskerPlatformReceivable.update({
+      where: { id: locked.id },
+      data: {
+        reversedAmount: decimal(newReversed),
+        outstandingAmount: decimal(newOutstanding),
+        status: fullyReversed
+          ? PLATFORM_RECEIVABLE_STATUS.Reversed
+          : PLATFORM_RECEIVABLE_STATUS.PartiallyReversed,
+      },
+    });
+    if (outstandingReversal > 0) {
+      await transaction.taskerPlatformAccount.update({
+        where: { taskerId: locked.taskerId },
+        data: { outstandingPayable: { decrement: decimal(outstandingReversal) } },
+      });
+    }
+
+    if (reimbursementAmount > 0) {
+      await transaction.taskerWallet.upsert({
+        where: { taskerId: locked.taskerId },
+        create: { taskerId: locked.taskerId, currency: locked.currency },
+        update: {},
+      });
+      await transaction.$queryRaw`
+        SELECT "taskerId" FROM "TaskerWallets"
+        WHERE "taskerId" = ${locked.taskerId}
+        FOR UPDATE
+      `;
+      const existingReimbursement = await transaction.taskerWalletLedgerEntry.findUnique({
+        where: { idempotencyKey: reimbursementKey },
+      });
+      if (!existingReimbursement) {
+        await transaction.taskerWallet.update({
+          where: { taskerId: locked.taskerId },
+          data: { availableBalance: { increment: decimal(reimbursementAmount) } },
+        });
+        await transaction.taskerWalletLedgerEntry.create({
+          data: {
+            taskerId: locked.taskerId,
+            bookingId,
+            kind: WALLET_ENTRY_KIND.Adjustment,
+            status: 'settled',
+            amount: decimal(reimbursementAmount),
+            availableDelta: decimal(reimbursementAmount),
+            pendingDelta: decimal(0),
+            currency: locked.currency,
+            description: `Platform commission reimbursement after confirmed cash refund for booking #${bookingId}`,
+            externalReference,
+            idempotencyKey: reimbursementKey,
+          },
+        });
+      }
+    }
+
+    await transaction.taskerPlatformLedgerEntry.create({
+      data: {
+        taskerId: locked.taskerId,
+        bookingId,
+        receivableId: locked.id,
+        kind: PLATFORM_LEDGER_KIND.ReceivableReversal,
+        amount: decimal(reversal),
+        payableDelta: decimal(-outstandingReversal),
+        currency: locked.currency,
+        description: `Cash dispute refund receivable reversal for booking #${bookingId}`,
+        externalReference,
+        idempotencyKey,
+      },
+    });
+    return { reversalAmount: reversal, reimbursementAmount };
   }
 
   async applyRefundAdjustment(
@@ -544,6 +686,18 @@ export class TaskerFinanceService {
   async releaseMatureEarning(earningId: string, now = new Date()): Promise<boolean> {
     const policy = await this.settings.taskerFinancePolicy();
     return this.prisma.$transaction(async (transaction) => {
+      const earningRef = await transaction.taskerEarning.findUnique({
+        where: { id: earningId },
+        select: { bookingId: true },
+      });
+      if (!earningRef) return false;
+      // Booking is the financial synchronization root for dispute/payment races.
+      // Stripe chargeback ingestion and participant dispute opening use the same lock order.
+      await transaction.$queryRaw`
+        SELECT "id" FROM "Bookings"
+        WHERE "id" = ${earningRef.bookingId}
+        FOR UPDATE
+      `;
       const locked = await transaction.$queryRaw<Array<{ id: string }>>`
         SELECT "id" FROM "TaskerEarnings"
         WHERE "id" = ${earningId}
@@ -564,18 +718,35 @@ export class TaskerFinanceService {
       )
         return false;
 
-      const activeDisputes = await transaction.taskComplaint.count({
-        where: {
-          bookingId: earning.bookingId,
-          status: { in: ['open', 'under_investigation', 'escalated'] },
-        },
-      });
-      if (activeDisputes > 0) {
+      const [activeDisputes, providerDisputes] = await Promise.all([
+        transaction.taskComplaint.count({
+          where: {
+            bookingId: earning.bookingId,
+            status: { in: ['open', 'under_investigation', 'escalated'] },
+          },
+        }),
+        transaction.stripeChargeback.count({
+          where: {
+            bookingId: earning.bookingId,
+            status: {
+              in: [
+                'warning_needs_response',
+                'warning_under_review',
+                'needs_response',
+                'under_review',
+                'lost',
+              ],
+            },
+          },
+        }),
+      ]);
+      if (activeDisputes > 0 || providerDisputes > 0) {
         await transaction.taskerEarning.update({
           where: { id: earning.id },
           data: {
             isBlocked: true,
-            blockReason: 'Active booking dispute',
+            blockReason:
+              providerDisputes > 0 ? 'Active Stripe chargeback review' : 'Active booking dispute',
             blockedAt: now,
           },
         });
@@ -585,7 +756,10 @@ export class TaskerFinanceService {
             category: 'wallet',
             type: 'booking_earning_blocked',
             title: 'Earning clearance paused',
-            body: 'This earning remains pending while an active booking dispute is reviewed.',
+            body:
+              providerDisputes > 0
+                ? 'This earning remains pending while an active Stripe card dispute is reviewed.'
+                : 'This earning remains pending while an active booking dispute is reviewed.',
             entityType: 'tasker_earning',
             entityId: earning.id,
           },
@@ -958,6 +1132,14 @@ export class TaskerFinanceService {
 
   async earningAction(input: EarningActionInput) {
     return this.prisma.$transaction(async (transaction) => {
+      const earningRef = await transaction.taskerEarning.findUnique({
+        where: { id: input.earningId },
+        select: { bookingId: true },
+      });
+      if (!earningRef) throw new NotFoundException('Tasker earning not found');
+      await transaction.$queryRaw`
+        SELECT "id" FROM "Bookings" WHERE "id" = ${earningRef.bookingId} FOR UPDATE
+      `;
       const locked = await transaction.$queryRaw<Array<{ id: string }>>`
         SELECT "id" FROM "TaskerEarnings" WHERE "id" = ${input.earningId} FOR UPDATE
       `;
@@ -987,9 +1169,9 @@ export class TaskerFinanceService {
           where: { id: earning.id },
           data: {
             holdExtendedUntil: input.holdUntil,
-            isBlocked: false,
-            blockReason: input.reason,
-            blockedAt: new Date(),
+            ...(earning.isBlocked
+              ? {}
+              : { blockReason: input.reason, blockedAt: new Date() }),
           },
         });
       } else if (input.action === 'block') {
@@ -998,15 +1180,33 @@ export class TaskerFinanceService {
           data: { isBlocked: true, blockReason: input.reason, blockedAt: new Date() },
         });
       } else {
-        const activeDisputes = await transaction.taskComplaint.count({
-          where: {
-            bookingId: earning.bookingId,
-            status: { in: ['open', 'under_investigation', 'escalated'] },
-          },
-        });
-        if (activeDisputes > 0) {
+        const [activeDisputes, providerDisputes] = await Promise.all([
+          transaction.taskComplaint.count({
+            where: {
+              bookingId: earning.bookingId,
+              status: { in: ['open', 'under_investigation', 'escalated'] },
+            },
+          }),
+          transaction.stripeChargeback.count({
+            where: {
+              bookingId: earning.bookingId,
+              status: {
+                in: [
+                  'warning_needs_response',
+                  'warning_under_review',
+                  'needs_response',
+                  'under_review',
+                  'lost',
+                ],
+              },
+            },
+          }),
+        ]);
+        if (activeDisputes > 0 || providerDisputes > 0) {
           throw new ConflictException(
-            'The earning cannot be unblocked while a booking dispute is active',
+            providerDisputes > 0
+              ? 'The earning cannot be unblocked while a Stripe chargeback requires review'
+              : 'The earning cannot be unblocked while a booking dispute is active',
           );
         }
         await transaction.taskerEarning.update({

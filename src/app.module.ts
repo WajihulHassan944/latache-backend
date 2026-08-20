@@ -35,6 +35,7 @@ import { RedisModule } from './infrastructure/redis/redis.module';
 import { ObservabilityModule } from './infrastructure/observability/observability.module';
 import { RequestLoggingInterceptor } from './infrastructure/observability/request-logging.interceptor';
 import { PerformanceJobsModule } from './infrastructure/jobs/performance-jobs.module';
+import { ReferralsModule } from './modules/referrals/referrals.module';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { PerformanceJobsModule } from './infrastructure/jobs/performance-jobs.mo
     ReviewsModule,
     PaymentsModule,
     FavoritesModule,
+    ReferralsModule,
     HealthModule,
     PerformanceJobsModule,
   ],

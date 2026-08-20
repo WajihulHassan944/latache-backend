@@ -29,6 +29,9 @@ import { estimatedTaskAmount, safeJsonArray, toIso } from '../tasker-dashboard.u
 import { NotificationsService } from '../../notifications/notifications.service';
 import { RealtimeOutboxService } from '../../realtime/realtime-outbox.service';
 import { RedisService } from '../../../infrastructure/redis/redis.service';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
+import { AdminAuditService } from '../../admin-audit/admin-audit.service';
+import { ReferralsService } from '../../referrals/services/referrals.service';
 
 type TaskerBookingWithRelations = Prisma.BookingGetPayload<{
   include: {
@@ -55,6 +58,9 @@ export class TaskerTasksService {
     private readonly realtime: RealtimeOutboxService,
     private readonly config: ConfigService,
     private readonly redis: RedisService,
+    private readonly platformSettings: PlatformSettingsService,
+    private readonly audit: AdminAuditService,
+    private readonly referrals: ReferralsService,
   ) {}
 
   async list(taskerId: number, query: ListTaskerTasksQueryDto): Promise<TaskerTaskListView> {
@@ -153,6 +159,7 @@ export class TaskerTasksService {
       if (
         [
           TASKER_BOOKING_STATUS.InProgress,
+          TASKER_BOOKING_STATUS.AwaitingCustomerApproval,
           TASKER_BOOKING_STATUS.Completed,
           TASKER_BOOKING_STATUS.Cancelled,
         ].includes(booking.status as never)
@@ -163,6 +170,11 @@ export class TaskerTasksService {
         where: { id: booking.availabilityId },
         data: { isBooked: false },
       });
+      await this.referrals.releaseCustomerDiscountReservation(
+        transaction,
+        bookingId,
+        `Tasker cancelled booking: ${dto.reason}`,
+      );
       const row = await transaction.booking.update({
         where: { id: bookingId },
         data: {
@@ -521,12 +533,19 @@ export class TaskerTasksService {
   async complete(taskerId: number, bookingId: number): Promise<TaskerTaskView> {
     const existing = await this.findOwnedBooking(taskerId, bookingId);
     if (!existing) throw new NotFoundException('Task not found');
-    if (existing.status === TASKER_BOOKING_STATUS.Completed) {
+    if (
+      existing.status === TASKER_BOOKING_STATUS.AwaitingCustomerApproval ||
+      existing.status === TASKER_BOOKING_STATUS.Completed
+    ) {
       return this.serialize(existing);
     }
+    const policy = await this.platformSettings.bookingCompletionPolicy();
     const updated = await this.prisma.$transaction(async (transaction) => {
       const booking = await this.lockOwnedBooking(taskerId, bookingId, transaction);
-      if (booking.status === TASKER_BOOKING_STATUS.Completed) {
+      if (
+        booking.status === TASKER_BOOKING_STATUS.AwaitingCustomerApproval ||
+        booking.status === TASKER_BOOKING_STATUS.Completed
+      ) {
         return transaction.booking.findUniqueOrThrow({
           where: { id: bookingId },
           include: this.includeRelations(),
@@ -542,28 +561,53 @@ export class TaskerTasksService {
         throw new ConflictException('Stop the task timer before completing the task');
       }
       const now = new Date();
+      const approvalDueAt = new Date(now.getTime() + policy.approvalHours * 60 * 60 * 1_000);
       const row = await transaction.booking.update({
         where: { id: bookingId },
-        data: { status: TASKER_BOOKING_STATUS.Completed, taskCompletedAt: now },
+        data: {
+          status: TASKER_BOOKING_STATUS.AwaitingCustomerApproval,
+          completionSubmittedAt: now,
+          completionApprovalDueAt: approvalDueAt,
+        },
         include: this.includeRelations(),
-      });
-      await transaction.user.update({
-        where: { id: taskerId },
-        data: { completedTasks: { increment: 1 } },
       });
       await this.notifications.create(
         booking.customerId,
         {
           category: 'tasks',
-          type: 'task_completed',
-          title: 'Task completed',
-          body: 'Your tasker marked the booking as completed.',
+          type: 'task_completion_submitted',
+          title: 'Please review the completed task',
+          body: `Your tasker submitted completion. Approve it or open a dispute before ${approvalDueAt.toISOString()}.`,
           entityType: 'booking',
           entityId: String(bookingId),
+          metadata: {
+            approvalDueAt: approvalDueAt.toISOString(),
+            approvalHours: policy.approvalHours,
+          },
         },
         transaction,
       );
-      await this.enqueueBookingUpdate(bookingId, 'completed', 'tasker_completed', transaction);
+      await this.audit.record(
+        {
+          actorId: taskerId,
+          targetUserId: booking.customerId,
+          action: 'booking_completion_submitted',
+          entityType: 'booking',
+          entityId: bookingId,
+          metadata: {
+            submittedAt: now.toISOString(),
+            approvalDueAt: approvalDueAt.toISOString(),
+            approvalHours: policy.approvalHours,
+          },
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(
+        bookingId,
+        TASKER_BOOKING_STATUS.AwaitingCustomerApproval,
+        'tasker_submitted_completion',
+        transaction,
+      );
       return row;
     });
     return this.serialize(updated);
@@ -720,7 +764,7 @@ export class TaskerTasksService {
   private serialize(booking: TaskerBookingWithRelations): TaskerTaskView {
     const hourly = Number(booking.hourlyRate);
     const estimated = estimatedTaskAmount(hourly, booking.startTime, booking.endTime);
-    const currency = this.config.get<string>('taskerPayout.currency', 'USD').toUpperCase();
+    const currency = booking.paymentCurrency;
     return {
       id: String(booking.id),
       status: booking.status,
@@ -758,6 +802,11 @@ export class TaskerTasksService {
         enRouteAt: toIso(booking.enRouteAt),
         arrivedAt: toIso(booking.arrivedAt),
         taskStartedAt: toIso(booking.taskStartedAt),
+        completionSubmittedAt: toIso(booking.completionSubmittedAt),
+        completionApprovalDueAt: toIso(booking.completionApprovalDueAt),
+        completionApprovedAt: toIso(booking.completionApprovedAt),
+        completionApprovedByRole: booking.completionApprovedByRole,
+        completionAutoApprovedAt: toIso(booking.completionAutoApprovedAt),
         taskCompletedAt: toIso(booking.taskCompletedAt),
         cancelledAt: toIso(booking.cancelledAt),
         cancellationReason: booking.cancellationReason,
@@ -769,7 +818,12 @@ export class TaskerTasksService {
   private actions(status: string, timerStatus: string | null): TaskActionView {
     return {
       confirm: status === TASKER_BOOKING_STATUS.Pending,
-      cancel: !TERMINAL_TASK_STATUSES.has(status) && status !== TASKER_BOOKING_STATUS.InProgress,
+      cancel:
+        !TERMINAL_TASK_STATUSES.has(status) &&
+        ![
+          TASKER_BOOKING_STATUS.InProgress,
+          TASKER_BOOKING_STATUS.AwaitingCustomerApproval,
+        ].includes(status as never),
       startNavigation: status === TASKER_BOOKING_STATUS.Confirmed,
       markArrived: status === TASKER_BOOKING_STATUS.EnRoute,
       startTimer: status === TASKER_BOOKING_STATUS.Arrived && timerStatus === null,

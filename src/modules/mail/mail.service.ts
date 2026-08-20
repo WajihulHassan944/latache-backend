@@ -11,6 +11,7 @@ import { MAIL_TRANSPORTER } from './mail.constants';
 import type { MailRecipientAddress, MailTransporter } from './mail.types';
 import {
   adminWelcomeTemplate,
+  disputeLifecycleEmailTemplate,
   emailPlainText,
   emailSubject,
   passwordResetOtpTemplate,
@@ -103,6 +104,23 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
         email: params.to,
         temporaryPassword: params.temporaryPassword,
       }),
+    });
+  }
+
+  async sendDisputeLifecycleEmail(params: {
+    to: string;
+    name: string;
+    disputeId: string;
+    eventType: string;
+    detail: string;
+    locale?: string;
+  }): Promise<void> {
+    const rendered = disputeLifecycleEmailTemplate(params);
+    await this.send({
+      to: params.to,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
     });
   }
 

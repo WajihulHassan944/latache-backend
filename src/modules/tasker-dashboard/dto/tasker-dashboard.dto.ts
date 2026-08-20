@@ -284,20 +284,30 @@ export class ActivateTaskerSkillDto {
   @Length(1, 120)
   serviceSlug!: string;
 
-  @ApiProperty({ example: 35 })
+  @ApiProperty({
+    example: 35,
+    minimum: 0.01,
+    maximum: 1000000,
+    description: 'Hourly rate in the current platform currency. The selected Service minimum/maximum bounds are enforced transactionally.',
+  })
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(1)
-  @Max(10000)
+  @Min(0.01)
+  @Max(1000000)
   hourlyRate!: number;
 }
 
 export class UpdateTaskerSkillDto {
-  @ApiProperty({ example: 42.5 })
+  @ApiProperty({
+    example: 42.5,
+    minimum: 0.01,
+    maximum: 1000000,
+    description: 'Hourly rate in the current platform currency. Must remain within the Service rate limits.',
+  })
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(1)
-  @Max(10000)
+  @Min(0.01)
+  @Max(1000000)
   hourlyRate!: number;
 }
 

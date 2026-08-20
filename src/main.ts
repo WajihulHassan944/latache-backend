@@ -132,7 +132,11 @@ async function bootstrap(): Promise<void> {
         .setDescription(
           'Production API for Latache customers, taskers and administrators. Dynamic catalogue content supports English (en), Arabic (ar), and Moroccan Darija (ary) through a saved user preference or Accept-Language with English/canonical fallback. UI labels and machine-readable domain codes remain frontend-owned and language-neutral. Shared role-aware APIs preserve provider-backed finance, transactional realtime, and persisted notification semantics.',
         )
-        .setVersion('3.18.0')
+        .setVersion('3.22.0')
+        .addServer(
+          config.get<string>('app.baseUrl', 'http://localhost:8080'),
+          'Configured API origin',
+        )
         .addTag('01 Auth', 'Customer, tasker, admin, super-admin, session, and password flows')
         .addTag(
           '02 Uploads',
@@ -175,6 +179,14 @@ async function bootstrap(): Promise<void> {
         .addTag(
           '16 Realtime',
           'Authenticated Socket.IO contract for notifications, chat, booking state, live location, and WebRTC voice/video signaling',
+        )
+        .addTag(
+          '33 Referrals',
+          'Customer/Tasker referral codes, attribution, qualification, reward history, and optional masked leaderboard',
+        )
+        .addTag(
+          '34 Admin - Referrals',
+          'RBAC-controlled referral investigation and immutable reward clawbacks',
         )
         .addTag(
           '26 Admin - Payments & Finance',

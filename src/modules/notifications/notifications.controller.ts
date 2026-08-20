@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { UserRole } from '../../common/enums/user-role.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -33,13 +34,13 @@ export class NotificationsController {
     @Query() query: ListNotificationsQueryDto,
     @RequestLocale() locale: string,
   ): Promise<NotificationListView> {
-    return this.notifications.list(user.id, query, locale);
+    return this.notifications.list(user.id, query, locale, user.role as UserRole);
   }
 
   @Get('unread-count')
   @ApiOperation({ summary: 'Get unread notification count for the authenticated user' })
   unreadCount(@CurrentUser() user: User): Promise<{ unreadCount: number }> {
-    return this.notifications.unreadCount(user.id);
+    return this.notifications.unreadCount(user.id, user.role as UserRole);
   }
 
   @Patch(':id/read')
@@ -49,12 +50,12 @@ export class NotificationsController {
     @Param() params: NotificationIdParamDto,
     @RequestLocale() locale: string,
   ): Promise<NotificationView> {
-    return this.notifications.markRead(user.id, params.id, locale);
+    return this.notifications.markRead(user.id, params.id, locale, user.role as UserRole);
   }
 
   @Post('read-all')
   @ApiOperation({ summary: 'Mark all owned notifications as read' })
   markAllRead(@CurrentUser() user: User): Promise<{ updated: number }> {
-    return this.notifications.markAllRead(user.id);
+    return this.notifications.markAllRead(user.id, user.role as UserRole);
   }
 }

@@ -3,6 +3,7 @@ export const REALTIME_PATH = '/socket.io';
 
 export const realtimeRoom = {
   user: (userId: number): string => `user:${userId}`,
+  userRole: (userId: number, role: string): string => `user:${userId}:role:${role}`,
   booking: (bookingId: number): string => `booking:${bookingId}`,
   conversation: (bookingId: number): string => `conversation:${bookingId}`,
   supportPublic: (ticketId: number): string => `support:${ticketId}:public`,
@@ -23,6 +24,7 @@ export const REALTIME_SERVER_EVENTS = [
   'booking:updated',
   'booking:location',
   'booking:timer',
+  'referral:updated',
   'call:incoming',
   'call:state',
   'call:offer',

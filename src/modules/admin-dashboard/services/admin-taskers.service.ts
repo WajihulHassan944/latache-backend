@@ -46,17 +46,17 @@ export class AdminTaskersService {
     const { page, limit, skip } = pagination(query.page, query.limit);
     const search = query.search?.trim();
     const where: Prisma.UserWhereInput = {
-      role: UserRole.Tasker,
+      roles: { has: UserRole.Tasker },
       deletedAt: null,
       ...(pendingOnly
         ? {
-            accountStatus: AccountStatus.PendingApproval,
+            taskerProfile: { is: { status: 'pending_approval' } },
             onboardingStatus: query.onboardingStatus
               ? query.onboardingStatus
               : { in: ['submitted', 'pending_review'] },
           }
         : {
-            ...(query.status ? { accountStatus: query.status } : {}),
+            ...(query.status ? { taskerProfile: { is: { status: query.status } } } : { taskerProfile: { isNot: null } }),
             ...(query.onboardingStatus ? { onboardingStatus: query.onboardingStatus } : {}),
           }),
       ...(query.isElite === undefined ? {} : { isElite: query.isElite }),
@@ -94,6 +94,7 @@ export class AdminTaskersService {
           profilePicture: true,
           accountStatus: true,
           onboardingStatus: true,
+          taskerProfile: { select: { status: true, rating: true, reviewsCount: true } },
           isVerified: true,
           isDocVerified: true,
           isElite: true,
@@ -132,13 +133,13 @@ export class AdminTaskersService {
         email: tasker.email,
         phone: `${tasker.phoneCountryCode ?? ''}${tasker.phoneNumber ?? ''}`,
         profilePicture: tasker.profilePicture ?? '',
-        accountStatus: tasker.accountStatus,
+        accountStatus: tasker.taskerProfile?.status ?? tasker.accountStatus,
         onboardingStatus: tasker.onboardingStatus,
         isVerified: tasker.isVerified,
         isDocVerified: tasker.isDocVerified,
         isElite: tasker.isElite,
-        rating: Number(tasker.rating),
-        reviewsCount: tasker.reviewsCount,
+        rating: Number(tasker.taskerProfile?.rating ?? tasker.rating),
+        reviewsCount: tasker.taskerProfile?.reviewsCount ?? tasker.reviewsCount,
         completedTasks: tasker.completedTasks,
         bookingsCount: tasker._count.bookingsAsTasker,
         serviceCount: tasker._count.userServices,
@@ -154,8 +155,9 @@ export class AdminTaskersService {
 
   async details(taskerId: number) {
     const tasker = await this.prisma.user.findFirst({
-      where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
+      where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null },
       include: {
+        taskerProfile: true,
         userServices: { include: { service: true }, orderBy: { createdAt: 'asc' } },
         availability: { orderBy: [{ date: 'asc' }, { startTime: 'asc' }], take: 100 },
       },
@@ -195,13 +197,13 @@ export class AdminTaskersService {
         phoneNumber: tasker.phoneNumber ?? '',
         profilePicture: tasker.profilePicture ?? '',
         bio: tasker.bio ?? '',
-        accountStatus: tasker.accountStatus,
+        accountStatus: tasker.taskerProfile?.status ?? tasker.accountStatus,
         onboardingStatus: tasker.onboardingStatus,
         isVerified: tasker.isVerified,
         isDocVerified: tasker.isDocVerified,
         isElite: tasker.isElite,
-        rating: Number(tasker.rating),
-        reviewsCount: tasker.reviewsCount,
+        rating: Number(tasker.taskerProfile?.rating ?? tasker.rating),
+        reviewsCount: tasker.taskerProfile?.reviewsCount ?? tasker.reviewsCount,
         completedTasks: tasker.completedTasks,
         yearsOfExperience: tasker.yearsOfExperience,
         submittedAt: tasker.submittedAt?.toISOString() ?? null,
@@ -271,15 +273,16 @@ export class AdminTaskersService {
 
   async verify(actor: User, taskerId: number, dto: TaskerVerificationActionDto) {
     const tasker = await this.prisma.user.findFirst({
-      where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
+      where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null },
       include: {
+        taskerProfile: true,
         _count: { select: { userServices: true, availability: true } },
       },
     });
     if (!tasker) throw new NotFoundException('Tasker not found');
 
     const isAwaitingVerification =
-      tasker.accountStatus === AccountStatus.PendingApproval &&
+      tasker.taskerProfile?.status === 'pending_approval' &&
       ['submitted', 'pending_review'].includes(tasker.onboardingStatus ?? '');
     if (!isAwaitingVerification) {
       throw new ConflictException('Tasker is not currently awaiting administrator verification');
@@ -308,20 +311,19 @@ export class AdminTaskersService {
         where: { id: taskerId },
         data:
           dto.action === 'approve'
-            ? {
-                accountStatus: AccountStatus.Active,
-                onboardingStatus: 'approved',
-                isDocVerified: true,
-              }
-            : {
-                accountStatus: AccountStatus.Deactivated,
-                onboardingStatus: 'rejected',
-                isDocVerified: false,
-              },
+            ? { onboardingStatus: 'approved', isDocVerified: true }
+            : { onboardingStatus: 'rejected', isDocVerified: false },
+      });
+      const profile = await transaction.taskerProfile.update({
+        where: { userId: taskerId },
+        data:
+          dto.action === 'approve'
+            ? { status: 'active', approvedAt: new Date(), rejectedAt: null, statusReason: null }
+            : { status: 'rejected', rejectedAt: new Date(), approvedAt: null, statusReason: dto.reason?.trim() ?? dto.reasonCode ?? 'rejected' },
       });
 
       if (dto.action === 'reject') {
-        await this.sessions.revokeAll(taskerId, transaction);
+        await this.sessions.revokeRole(taskerId, UserRole.Tasker, transaction);
       }
       await this.audit.record(
         {
@@ -333,9 +335,9 @@ export class AdminTaskersService {
           reason: dto.reason,
           metadata: {
             reasonCode: dto.reasonCode ?? null,
-            previousAccountStatus: tasker.accountStatus,
+            previousAccountStatus: tasker.taskerProfile?.status ?? tasker.accountStatus,
             previousOnboardingStatus: tasker.onboardingStatus,
-            nextAccountStatus: updated.accountStatus,
+            nextAccountStatus: profile.status,
             nextOnboardingStatus: updated.onboardingStatus,
           },
         },
@@ -362,14 +364,14 @@ export class AdminTaskersService {
         },
         transaction,
       );
-      return updated;
+      return { updated, profile };
     });
 
     return {
-      id: String(result.id),
-      accountStatus: result.accountStatus,
-      onboardingStatus: result.onboardingStatus,
-      isDocVerified: result.isDocVerified,
+      id: String(result.updated.id),
+      accountStatus: result.profile.status,
+      onboardingStatus: result.updated.onboardingStatus,
+      isDocVerified: result.updated.isDocVerified,
       action: dto.action,
     };
   }
@@ -379,21 +381,21 @@ export class AdminTaskersService {
     if (dto.action !== 'reactivate' && !dto.reason?.trim()) {
       throw new BadRequestException('A reason is required when suspending or banning a tasker');
     }
-    if (dto.action === 'suspend' && tasker.accountStatus === AccountStatus.Deactivated) {
+    if (dto.action === 'suspend' && tasker.taskerProfile?.status === 'deactivated') {
       throw new ConflictException('A deactivated/banned tasker cannot be suspended');
     }
-    if (dto.action === 'suspend' && tasker.accountStatus === AccountStatus.Suspended) {
+    if (dto.action === 'suspend' && tasker.taskerProfile?.status === 'suspended') {
       throw new ConflictException('Tasker is already suspended');
     }
-    if (dto.action === 'ban' && tasker.accountStatus === AccountStatus.Deactivated) {
+    if (dto.action === 'ban' && tasker.taskerProfile?.status === 'deactivated') {
       throw new ConflictException('Tasker is already deactivated/banned');
     }
-    if (dto.action === 'reactivate' && tasker.accountStatus === AccountStatus.Active) {
+    if (dto.action === 'reactivate' && tasker.taskerProfile?.status === 'active') {
       throw new ConflictException('Tasker is already active');
     }
     if (
       dto.action === 'reactivate' &&
-      tasker.accountStatus === AccountStatus.Deactivated &&
+      tasker.taskerProfile?.status === 'deactivated' &&
       actor.role !== UserRole.SuperAdmin
     ) {
       throw new ForbiddenException(
@@ -407,19 +409,20 @@ export class AdminTaskersService {
     }
 
     const nextStatus =
-      dto.action === 'suspend'
-        ? AccountStatus.Suspended
-        : dto.action === 'ban'
-          ? AccountStatus.Deactivated
-          : AccountStatus.Active;
+      dto.action === 'suspend' ? 'suspended' : dto.action === 'ban' ? 'deactivated' : 'active';
 
     const updated = await this.prisma.$transaction(async (transaction) => {
-      const changed = await transaction.user.update({
-        where: { id: taskerId },
-        data: { accountStatus: nextStatus },
+      const changed = await transaction.taskerProfile.update({
+        where: { userId: taskerId },
+        data: {
+          status: nextStatus,
+          suspendedAt: nextStatus === 'suspended' ? new Date() : null,
+          deactivatedAt: nextStatus === 'deactivated' ? new Date() : null,
+          statusReason: nextStatus === 'active' ? null : dto.reason?.trim() ?? null,
+        },
       });
       if (dto.action !== 'reactivate') {
-        await this.sessions.revokeAll(taskerId, transaction);
+        await this.sessions.revokeRole(taskerId, UserRole.Tasker, transaction);
       }
       await this.audit.record(
         {
@@ -429,7 +432,7 @@ export class AdminTaskersService {
           entityType: 'tasker',
           entityId: taskerId,
           reason: dto.reason,
-          metadata: { previousStatus: tasker.accountStatus, nextStatus },
+          metadata: { previousStatus: tasker.taskerProfile?.status ?? tasker.accountStatus, nextStatus },
         },
         transaction,
       );
@@ -454,9 +457,9 @@ export class AdminTaskersService {
     });
 
     return {
-      id: String(updated.id),
-      accountStatus: updated.accountStatus,
-      onboardingStatus: updated.onboardingStatus,
+      id: String(taskerId),
+      accountStatus: updated.status,
+      onboardingStatus: tasker.onboardingStatus,
       action: dto.action,
       sessionsRevoked: dto.action !== 'reactivate',
     };
@@ -488,7 +491,8 @@ export class AdminTaskersService {
 
   private async requireTasker(taskerId: number) {
     const tasker = await this.prisma.user.findFirst({
-      where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
+      where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null, taskerProfile: { isNot: null } },
+      include: { taskerProfile: true },
     });
     if (!tasker) throw new NotFoundException('Tasker not found');
     return tasker;

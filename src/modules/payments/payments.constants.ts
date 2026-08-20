@@ -25,6 +25,7 @@ export const PAYMENT_TRANSACTION_KIND = {
   WalletTopup: 'wallet_topup',
   Refund: 'refund',
   CashCollection: 'cash_collection',
+  Chargeback: 'chargeback',
 } as const;
 
 export const CUSTOMER_WALLET_ENTRY_KIND = {

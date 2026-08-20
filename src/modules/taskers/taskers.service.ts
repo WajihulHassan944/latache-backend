@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { hasUserRole } from '../../common/utils/user-role.util';
 import {
   dateOnlyFromDate,
   dateOnlyToDate,
@@ -51,11 +52,51 @@ export class TaskersService {
       if (lockedUsers.length === 0) throw new NotFoundException('User not found');
       const user = await transaction.user.findUnique({ where: { id: userId } });
       if (!user) throw new NotFoundException('User not found');
-      if (user.role !== UserRole.Tasker) {
+      if (!hasUserRole(user, UserRole.Tasker)) {
         throw new ForbiddenException('Only taskers can submit onboarding applications');
       }
 
+      const initialServiceRecords = await this.repository.findServicesBySlugs(
+        requestedSlugs,
+        transaction,
+      );
+      const serviceIds = [...new Set(initialServiceRecords.map((service) => service.id))].sort(
+        (left, right) => left - right,
+      );
+      if (serviceIds.length) {
+        await transaction.$queryRaw(
+          Prisma.sql`SELECT "id" FROM "Services" WHERE "id" IN (${Prisma.join(
+            serviceIds,
+          )}) ORDER BY "id" FOR SHARE`,
+        );
+      }
       const serviceRecords = await this.repository.findServicesBySlugs(requestedSlugs, transaction);
+      const currency = await this.platformSettings.currencyContext(transaction);
+      const serviceBySlug = new Map(
+        serviceRecords.filter((service) => service.slug).map((service) => [service.slug as string, service]),
+      );
+      const canonicalRateBySlug = new Map<string, number>();
+      for (const requested of dto.services) {
+        const service = serviceBySlug.get(requested.slug);
+        if (!service) continue;
+        const canonicalRate = this.platformSettings.convertPlatformAmountToUsd(
+          requested.hourlyRate,
+          currency,
+        );
+        const minimum = Number(service.minHourlyRateUsd);
+        const maximum = Number(service.maxHourlyRateUsd);
+        if (canonicalRate < minimum || canonicalRate > maximum) {
+          throw new BadRequestException({
+            code: 'TASKER_RATE_OUT_OF_SERVICE_RANGE',
+            message: `Rate for ${requested.slug} must be between ${currency.symbol}${this.platformSettings.convertUsdAmount(minimum, currency)} and ${currency.symbol}${this.platformSettings.convertUsdAmount(maximum, currency)}.`,
+            serviceSlug: requested.slug,
+            minimumHourlyRate: this.platformSettings.convertUsdAmount(minimum, currency),
+            maximumHourlyRate: this.platformSettings.convertUsdAmount(maximum, currency),
+            currency: currency.code,
+          });
+        }
+        canonicalRateBySlug.set(requested.slug, canonicalRate);
+      }
       const serviceIdBySlug = new Map<string, number>();
       for (const service of serviceRecords) {
         if (service.slug && !serviceIdBySlug.has(service.slug)) {
@@ -135,8 +176,14 @@ export class TaskersService {
         data: dto.services.map((service) => ({
           userId,
           serviceId: serviceIdBySlug.get(service.slug) as number,
-          hourlyRate: service.hourlyRate.toFixed(2),
+          hourlyRate: (canonicalRateBySlug.get(service.slug) as number).toFixed(2),
         })),
+      });
+
+      await transaction.taskerProfile.upsert({
+        where: { userId },
+        create: { userId, status: 'pending_approval' },
+        update: { status: 'pending_approval', rejectedAt: null, statusReason: null },
       });
 
       await transaction.user.update({
@@ -182,7 +229,28 @@ export class TaskersService {
           effectiveQuery.radius = query.radius ?? fallback;
         }
       }
-      return await this.repository.list(effectiveQuery, locale);
+      const currency = await this.platformSettings.currencyContext();
+      if (effectiveQuery.minPrice !== undefined) {
+        effectiveQuery.minPrice = this.platformSettings.convertPlatformAmountToUsd(
+          effectiveQuery.minPrice,
+          currency,
+        );
+      }
+      if (effectiveQuery.maxPrice !== undefined) {
+        effectiveQuery.maxPrice = this.platformSettings.convertPlatformAmountToUsd(
+          effectiveQuery.maxPrice,
+          currency,
+        );
+      }
+      const result = await this.repository.list(effectiveQuery, locale);
+      return {
+        ...result,
+        currency: { code: currency.code, symbol: currency.symbol, market: currency.market },
+        items: result.items.map((item) => ({
+          ...item,
+          pricePerHour: this.platformSettings.convertUsdAmount(item.pricePerHour, currency),
+        })),
+      };
     } catch (error) {
       if (error instanceof Error && error.message === 'LAT_LNG_PAIR_REQUIRED') {
         throw new BadRequestException('lat and lng must be provided together');
@@ -195,18 +263,29 @@ export class TaskersService {
   }
 
   async getById(id: number, serviceSlug: string | undefined, locale: string) {
-    const tasker = await this.repository.getById(id, serviceSlug, locale);
+    const [tasker, currency] = await Promise.all([
+      this.repository.getById(id, serviceSlug, locale),
+      this.platformSettings.currencyContext(),
+    ]);
     if (!tasker) throw new NotFoundException('Tasker not found');
-    return tasker;
+    return {
+      ...tasker,
+      pricePerHour: this.platformSettings.convertUsdAmount(tasker.pricePerHour, currency),
+      services: tasker.services.map((service) => ({
+        ...service,
+        hourlyRate: this.platformSettings.convertUsdAmount(service.hourlyRate, currency),
+      })),
+      currency: { code: currency.code, symbol: currency.symbol, market: currency.market },
+    };
   }
 
   async getPublicReviews(id: number, query: PublicTaskerReviewsQueryDto) {
     const tasker = await this.prisma.user.findFirst({
-      where: { id, role: UserRole.Tasker, deletedAt: null, accountStatus: 'active' },
+      where: { id, roles: { has: UserRole.Tasker }, deletedAt: null, accountStatus: 'active', onboardingStatus: 'approved', taskerProfile: { is: { status: 'active' } } },
       select: { id: true },
     });
     if (!tasker) throw new NotFoundException('Tasker not found');
-    return this.reviews.list(id, {
+    return this.reviews.list(id, UserRole.Tasker, {
       view: 'received',
       rating: query.rating,
       page: query.page,

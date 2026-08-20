@@ -11,6 +11,7 @@ import {
   ValidateNested,
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
 } from 'class-validator';
 import { TranslationDto } from '../../localization/translation.dto';
 
@@ -87,6 +88,33 @@ export class UpdateEliteTierPolicyDto {
   @ValidateNested()
   @Type(() => EliteTierRequirementsDto)
   requirements?: EliteTierRequirementsDto | null;
+
+
+  @ApiPropertyOptional({ default: false, description: 'When enabled, the maintenance worker may promote eligible Taskers into this tier without a manual request.' })
+  @IsOptional()
+  @IsBoolean()
+  autoPromotionEnabled?: boolean;
+
+  @ApiPropertyOptional({ default: true, description: 'When enabled, members who remain below this tier requirements past the grace period are automatically demoted one level.' })
+  @IsOptional()
+  @IsBoolean()
+  autoDemotionEnabled?: boolean;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 90, default: 14 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(90)
+  retentionGraceDays?: number;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 30, default: 3, description: 'Cooldown after a rejected/cancelled application or upgrade before another request for the same direction.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(30)
+  requestCooldownDays?: number;
 
   @ApiPropertyOptional({ type: [EliteTierTranslationDto] })
   @IsOptional()

@@ -161,7 +161,7 @@ export class BookingsController {
       'Customer and Tasker use the same endpoint. ETA/distance remain null until a real routing provider is integrated.',
   })
   navigation(@CurrentUser() user: User, @Param() params: BookingParamDto) {
-    return this.bookings.navigation(user.id, params.bookingId);
+    return this.bookings.navigation(user, params.bookingId);
   }
 
   @Put(':bookingId/location')
@@ -189,7 +189,7 @@ export class BookingsController {
   @Get(':bookingId/timer')
   @ApiOperation({ summary: 'Get the shared persisted task timer state' })
   timer(@CurrentUser() user: User, @Param() params: BookingParamDto) {
-    return this.bookings.timer(user.id, params.bookingId);
+    return this.bookings.timer(user, params.bookingId);
   }
 
   @Post(':bookingId/timer/start')
@@ -228,13 +228,25 @@ export class BookingsController {
 
   @Post(':bookingId/complete')
   @ApiOperation({
-    summary: 'Complete a stopped task and start real final-payment orchestration',
+    summary: 'Submit or approve completion of a stopped task',
     description:
-      'Customer and Tasker use the same endpoint. The timer must be stopped. Online payment state reflects genuine Stripe/customer-wallet settlement and creates a pending Tasker earning; cash returns cash_confirmation_required and does not create wallet funds.',
+      'Tasker submission enters awaiting_customer_approval and does not charge the customer. Customer approval completes the booking and starts genuine final-payment orchestration. If no active dispute is opened, a database-locked worker auto-approves after the configured review window. Online settlement creates a pending Tasker earning; cash requires physical collection confirmation and never creates fake wallet funds.',
   })
   async complete(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     if (user.role === UserRole.Tasker) {
       await this.taskerTasks.complete(user.id, params.bookingId);
+      const booking = await this.bookings.get(user, params.bookingId);
+      return {
+        booking,
+        payment: {
+          bookingId: params.bookingId,
+          status:
+            booking.status === 'awaiting_customer_approval'
+              ? 'awaiting_customer_approval'
+              : booking.payment.status,
+          approvalDueAt: booking.timing.completionApprovalDueAt,
+        },
+      };
     } else {
       await this.bookings.completeByCustomer(user.id, params.bookingId);
     }

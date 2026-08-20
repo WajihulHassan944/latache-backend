@@ -57,6 +57,8 @@ export interface BookingPaymentStatusView {
   serviceSurchargeAmount: number;
   tipAmount: number;
   donationAmount: number;
+  referralDiscountAmount: number;
+  referralDiscountPercent: number;
   totalChargedAmount: number | null;
   failureReason: string | null;
   paidAt: string | null;
@@ -94,4 +96,25 @@ export interface BookingRefundResult {
   providerReference: string | null;
   status: string;
   amount: { amount: number; currency: string };
+}
+
+export interface ConfirmManualCashDisputeRefundInput {
+  complaintId: string;
+  resolutionId?: string;
+  actorId: number;
+  manualTransferReference: string;
+  confirmationNotes: string;
+}
+
+export interface ManualCashDisputeRefundResult {
+  bookingId: number;
+  complaintId: string;
+  resolutionId: string;
+  cashRefundId: string;
+  transactionId: string;
+  status: string;
+  amount: { amount: number; currency: string };
+  manualTransferReference: string;
+  platformReceivableReversalAmount: number;
+  platformCommissionReimbursementAmount: number;
 }

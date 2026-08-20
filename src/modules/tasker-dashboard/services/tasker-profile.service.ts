@@ -4,17 +4,18 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccountStatus } from '../../../common/enums/account-status.enum';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { AuthSessionsRepository } from '../../auth/repositories/auth-sessions.repository';
 import { PrismaService } from '../../../database/prisma.service';
-import type { Prisma } from '../../../generated/prisma/client';
+import type { Prisma, Service } from '../../../generated/prisma/client';
 import type {
   TaskerBusinessProfileView,
   TaskerPersonalProfileView,
   TaskerSkillView,
 } from '../tasker-dashboard.contracts';
 import { TASKER_BOOKING_STATUS, WITHDRAWAL_STATUS } from '../tasker-dashboard.constants';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
+import type { PlatformCurrencyContext } from '../../platform-settings/platform-settings.types';
 import type {
   ActivateTaskerSkillDto,
   UpdateTaskerBusinessProfileDto,
@@ -28,6 +29,7 @@ const ACTIVE_TASK_STATUSES = [
   TASKER_BOOKING_STATUS.EnRoute,
   TASKER_BOOKING_STATUS.Arrived,
   TASKER_BOOKING_STATUS.InProgress,
+  TASKER_BOOKING_STATUS.AwaitingCustomerApproval,
 ] as const;
 
 @Injectable()
@@ -35,6 +37,7 @@ export class TaskerProfileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sessions: AuthSessionsRepository,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   async personal(taskerId: number): Promise<TaskerPersonalProfileView> {
@@ -100,60 +103,55 @@ export class TaskerProfileService {
 
   async listSkills(taskerId: number): Promise<TaskerSkillView[]> {
     await this.requireTasker(taskerId);
-    const [catalogue, active] = await Promise.all([
+    const [catalogue, active, currency] = await Promise.all([
       this.prisma.service.findMany({
         where: { isActive: true },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }, { id: 'asc' }],
       }),
       this.prisma.userService.findMany({ where: { userId: taskerId } }),
+      this.platformSettings.currencyContext(),
     ]);
     const byService = new Map(active.map((row) => [row.serviceId, row]));
-    return catalogue.map((service) => {
-      const selected = byService.get(service.id);
-      return {
-        serviceId: String(service.id),
-        slug: service.slug ?? '',
-        name: service.name ?? '',
-        description: service.description ?? '',
-        icon: service.icon ?? '',
-        active: Boolean(selected),
-        hourlyRate: selected ? Number(selected.hourlyRate) : null,
-      };
-    });
+    return catalogue.map((service) =>
+      this.skillView(service, byService.get(service.id)?.hourlyRate ?? null, currency),
+    );
   }
 
   async activateSkill(taskerId: number, dto: ActivateTaskerSkillDto): Promise<TaskerSkillView> {
     await this.requireTasker(taskerId);
-    const service = await this.prisma.service.findFirst({
-      where: { slug: dto.serviceSlug, isActive: true },
-    });
-    if (!service) throw new NotFoundException('Service not found');
+    const result = await this.prisma.$transaction(async (transaction) => {
+      const candidate = await transaction.service.findFirst({
+        where: { slug: dto.serviceSlug, isActive: true },
+        select: { id: true },
+      });
+      if (!candidate) throw new NotFoundException('Service not found');
 
-    const selected = await this.prisma.$transaction(async (transaction) => {
-      const row = await transaction.userService.upsert({
+      await transaction.$queryRaw`
+        SELECT "id" FROM "Services" WHERE "id" = ${candidate.id} FOR SHARE
+      `;
+      const service = await transaction.service.findFirst({
+        where: { id: candidate.id, isActive: true },
+      });
+      if (!service) throw new NotFoundException('Service not found');
+
+      const currency = await this.platformSettings.currencyContext(transaction);
+      const canonicalRate = this.canonicalTaskerRate(dto.hourlyRate, service, currency);
+      const selected = await transaction.userService.upsert({
         where: {
           userId_serviceId: { userId: taskerId, serviceId: service.id },
         },
         create: {
           userId: taskerId,
           serviceId: service.id,
-          hourlyRate: dto.hourlyRate.toFixed(2),
+          hourlyRate: canonicalRate.toFixed(2),
         },
-        update: { hourlyRate: dto.hourlyRate.toFixed(2) },
+        update: { hourlyRate: canonicalRate.toFixed(2) },
       });
       await this.syncTaskerSkillSnapshot(taskerId, transaction);
-      return row;
+      return { selected, service, currency };
     });
 
-    return {
-      serviceId: String(service.id),
-      slug: service.slug ?? '',
-      name: service.name ?? '',
-      description: service.description ?? '',
-      icon: service.icon ?? '',
-      active: true,
-      hourlyRate: Number(selected.hourlyRate),
-    };
+    return this.skillView(result.service, result.selected.hourlyRate, result.currency);
   }
 
   async updateSkill(
@@ -162,28 +160,27 @@ export class TaskerProfileService {
     dto: UpdateTaskerSkillDto,
   ): Promise<TaskerSkillView> {
     await this.requireTasker(taskerId);
-    const existing = await this.prisma.userService.findUnique({
-      where: { userId_serviceId: { userId: taskerId, serviceId } },
-      include: { service: true },
-    });
-    if (!existing) throw new NotFoundException('Active skill not found');
-    const updated = await this.prisma.$transaction(async (transaction) => {
-      const row = await transaction.userService.update({
+    const result = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT "id" FROM "Services" WHERE "id" = ${serviceId} FOR SHARE
+      `;
+      const existing = await transaction.userService.findUnique({
         where: { userId_serviceId: { userId: taskerId, serviceId } },
-        data: { hourlyRate: dto.hourlyRate.toFixed(2) },
+        include: { service: true },
+      });
+      if (!existing || !existing.service.isActive) {
+        throw new NotFoundException('Active skill not found');
+      }
+      const currency = await this.platformSettings.currencyContext(transaction);
+      const canonicalRate = this.canonicalTaskerRate(dto.hourlyRate, existing.service, currency);
+      const updated = await transaction.userService.update({
+        where: { userId_serviceId: { userId: taskerId, serviceId } },
+        data: { hourlyRate: canonicalRate.toFixed(2) },
       });
       await this.syncTaskerSkillSnapshot(taskerId, transaction);
-      return row;
+      return { existing, updated, currency };
     });
-    return {
-      serviceId: String(serviceId),
-      slug: existing.service.slug ?? '',
-      name: existing.service.name ?? '',
-      description: existing.service.description ?? '',
-      icon: existing.service.icon ?? '',
-      active: true,
-      hourlyRate: Number(updated.hourlyRate),
-    };
+    return this.skillView(result.existing.service, result.updated.hourlyRate, result.currency);
   }
 
   async deleteSkill(
@@ -245,21 +242,78 @@ export class TaskerProfileService {
     }
 
     await this.prisma.$transaction(async (transaction) => {
-      await transaction.user.update({
-        where: { id: taskerId },
+      await transaction.taskerProfile.update({
+        where: { userId: taskerId },
         data: {
-          accountStatus: AccountStatus.Deactivated,
-          isProfilePublic: false,
+          status: 'deactivated',
+          deactivatedAt: new Date(),
+          statusReason: 'Tasker self-deactivated',
         },
       });
-      await this.sessions.revokeAll(taskerId, transaction);
+      await transaction.user.update({
+        where: { id: taskerId },
+        data: { isProfilePublic: false },
+      });
+      await this.sessions.revokeRole(taskerId, UserRole.Tasker, transaction);
     });
     return { deactivated: true };
   }
 
+  private canonicalTaskerRate(
+    platformRate: number,
+    service: Service,
+    currency: PlatformCurrencyContext,
+  ): number {
+    const canonical = this.platformSettings.convertPlatformAmountToUsd(platformRate, currency);
+    const minimum = Number(service.minHourlyRateUsd);
+    const maximum = Number(service.maxHourlyRateUsd);
+    if (canonical < minimum || canonical > maximum) {
+      throw new BadRequestException({
+        code: 'TASKER_RATE_OUT_OF_SERVICE_RANGE',
+        message: `Hourly rate must be between ${currency.symbol}${this.platformSettings.convertUsdAmount(minimum, currency)} and ${currency.symbol}${this.platformSettings.convertUsdAmount(maximum, currency)}.`,
+        minimumHourlyRate: this.platformSettings.convertUsdAmount(minimum, currency),
+        maximumHourlyRate: this.platformSettings.convertUsdAmount(maximum, currency),
+        currency: currency.code,
+        symbol: currency.symbol,
+      });
+    }
+    return canonical;
+  }
+
+  private skillView(
+    service: Service,
+    canonicalRate: Prisma.Decimal | string | number | null,
+    currency: PlatformCurrencyContext,
+  ): TaskerSkillView {
+    return {
+      serviceId: String(service.id),
+      slug: service.slug ?? '',
+      name: service.name ?? '',
+      description: service.description ?? '',
+      icon: service.icon ?? '',
+      active: canonicalRate !== null,
+      hourlyRate:
+        canonicalRate === null
+          ? null
+          : this.platformSettings.convertUsdAmount(Number(canonicalRate), currency),
+      rateLimits: {
+        minimumHourlyRate: this.platformSettings.convertUsdAmount(
+          Number(service.minHourlyRateUsd),
+          currency,
+        ),
+        maximumHourlyRate: this.platformSettings.convertUsdAmount(
+          Number(service.maxHourlyRateUsd),
+          currency,
+        ),
+      },
+      currency: currency.code,
+      currencySymbol: currency.symbol,
+    };
+  }
+
   private async requireTasker(taskerId: number) {
     const user = await this.prisma.user.findFirst({
-      where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
+      where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null, taskerProfile: { isNot: null } },
     });
     if (!user) throw new NotFoundException('Tasker account not found');
     return user;

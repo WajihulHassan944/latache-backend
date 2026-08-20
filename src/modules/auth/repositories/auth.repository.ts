@@ -45,6 +45,28 @@ export class AuthRepository {
     return (transaction ?? this.prisma).service.count({ where: { id: { in: serviceIds } } });
   }
 
+  findCustomerProfile(userId: number, transaction?: Prisma.TransactionClient) {
+    return (transaction ?? this.prisma).customerProfile.findUnique({ where: { userId } });
+  }
+
+  findTaskerProfile(userId: number, transaction?: Prisma.TransactionClient) {
+    return (transaction ?? this.prisma).taskerProfile.findUnique({ where: { userId } });
+  }
+
+  createCustomerProfile(
+    data: Prisma.CustomerProfileUncheckedCreateInput,
+    transaction?: Prisma.TransactionClient,
+  ) {
+    return (transaction ?? this.prisma).customerProfile.create({ data });
+  }
+
+  createTaskerProfile(
+    data: Prisma.TaskerProfileUncheckedCreateInput,
+    transaction?: Prisma.TransactionClient,
+  ) {
+    return (transaction ?? this.prisma).taskerProfile.create({ data });
+  }
+
   transaction<T>(callback: (transaction: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     return this.prisma.$transaction(callback);
   }

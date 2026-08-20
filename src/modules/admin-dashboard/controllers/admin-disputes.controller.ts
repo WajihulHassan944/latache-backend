@@ -31,7 +31,7 @@ export class AdminDisputesController {
   @ApiOperation({
     summary: 'Unified Dispute Management list for every dashboard tab',
     description:
-      'Use view=open, under_investigation, escalated, resolved, evidence_review, resolution_actions, or all. The response includes real queue metrics. Satisfaction remains null until a genuine post-dispute survey is implemented.',
+      'Use view=open, under_investigation, escalated, resolved, evidence_review, resolution_actions, or all. The response includes real queue metrics and genuine post-dispute satisfaction aggregates from participant surveys.',
   })
   list(@Query() query: AdminDisputesQueryDto) {
     return this.disputes.list(query);
@@ -43,7 +43,7 @@ export class AdminDisputesController {
   @ApiOperation({
     summary: 'Get complete dispute case context',
     description:
-      'Returns related booking/payment data, initial and requested evidence, evidence requests, admin review notes, resolution history, timeline, and remaining refundable amount.',
+      'Returns booking/payment data, verified evidence and evidence SLA state, participant comments/actions, settlement proposals, cash-refund confirmation state, disciplinary actions, satisfaction responses, delivery state, Stripe chargebacks, timeline, and remaining refundable amount.',
   })
   details(@Param('id') id: string) {
     return this.disputes.details(id);
@@ -55,7 +55,7 @@ export class AdminDisputesController {
     summary:
       'Single mutation endpoint for investigation, escalation, evidence, and resolution actions',
     description:
-      'Supports start_investigation, assign, set_priority, escalate, request_evidence, add_evidence, review_evidence, save_resolution_draft, resolve, and reopen. Refund resolution types additionally require finance.manage. Stripe refunds are real provider calls; wallet refunds are real ledger movements.',
+      'Supports start_investigation, assign, set_priority, escalate, request_evidence, add_evidence, review_evidence, save_resolution_draft, propose_resolution, resolve, confirm_cash_refund, and reopen. Refund actions additionally require finance.manage. Stripe refunds use real provider calls, wallet refunds use real ledger movements, and physical-cash refunds remain pending until an authorized Admin records an auditable manual-transfer confirmation.',
   })
   @ApiBody({
     type: AdminDisputeActionDto,

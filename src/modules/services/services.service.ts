@@ -16,6 +16,8 @@ import type { TranslationDto } from '../localization/translation.dto';
 import { ConfigService } from '@nestjs/config';
 import { AppCacheService, CacheNamespace } from '../../infrastructure/redis/app-cache.service';
 import { ObjectStorageDeletionService } from '../account-deletion/object-storage-deletion.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
+import type { PlatformCurrencyContext } from '../platform-settings/platform-settings.types';
 
 export interface ServiceResponse {
   id: string;
@@ -28,6 +30,7 @@ export interface ServiceResponse {
   resolvedLocale?: string;
   translationFallback?: boolean;
   translations?: TranslationRow[];
+  rateLimits: { minimumHourlyRate: number; maximumHourlyRate: number; currency: string; symbol: string };
 }
 
 interface TranslationRow {
@@ -45,6 +48,7 @@ export class ServicesService {
     private readonly cache: AppCacheService,
     private readonly config: ConfigService,
     private readonly storage: ObjectStorageDeletionService,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   async list(query: ListServicesQueryDto, locale: string) {
@@ -83,7 +87,8 @@ export class ServicesService {
         : {}),
     };
 
-    const [totalItems, rows] = await Promise.all([
+    const [currency, totalItems, rows] = await Promise.all([
+      this.platformSettings.currencyContext(),
       this.prisma.service.count({ where }),
       this.prisma.service.findMany({
         where,
@@ -99,7 +104,7 @@ export class ServicesService {
     ]);
 
     return {
-      items: rows.map((service) => this.serialize(service, locale)),
+      items: rows.map((service) => this.serialize(service, locale, currency)),
       page,
       limit,
       totalItems,
@@ -135,13 +140,28 @@ export class ServicesService {
       },
     });
     if (!service) throw new NotFoundException('Active service not found');
+    const currency = await this.platformSettings.currencyContext();
     return {
-      ...this.serialize(service, locale),
+      ...this.serialize(service, locale, currency),
       options: service.options.map((option) => this.serializeOption(option, locale)),
     };
   }
 
   async create(actor: User, dto: CreateServiceDto): Promise<ServiceResponse> {
+    const currency = await this.platformSettings.currencyContext();
+    if (dto.minimumHourlyRate > dto.maximumHourlyRate) {
+      throw new BadRequestException(
+        'minimumHourlyRate must be less than or equal to maximumHourlyRate',
+      );
+    }
+    const minHourlyRateUsd = this.platformSettings.convertPlatformAmountToUsd(
+      dto.minimumHourlyRate,
+      currency,
+    );
+    const maxHourlyRateUsd = this.platformSettings.convertPlatformAmountToUsd(
+      dto.maximumHourlyRate,
+      currency,
+    );
     const translations = this.normalizeTranslations(dto.translations);
     const service = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`
@@ -160,6 +180,8 @@ export class ServicesService {
           icon: dto.icon,
           isActive: dto.isActive ?? true,
           sortOrder: dto.sortOrder ?? 0,
+          minHourlyRateUsd: minHourlyRateUsd.toFixed(2),
+          maxHourlyRateUsd: maxHourlyRateUsd.toFixed(2),
           createdAt: now,
           updatedAt: now,
         },
@@ -174,7 +196,12 @@ export class ServicesService {
           action: 'service_category_created',
           entityType: 'service',
           entityId: created.id,
-          metadata: { slug: created.slug, name: created.name },
+          metadata: {
+            slug: created.slug,
+            name: created.name,
+            minHourlyRateUsd,
+            maxHourlyRateUsd,
+          },
         },
         transaction,
       );
@@ -184,18 +211,35 @@ export class ServicesService {
       });
     });
     await this.invalidateServiceCaches();
-    return this.serializeAdmin(service);
+    return this.serializeAdmin(service, currency);
   }
 
   async update(actor: User, serviceId: number, dto: UpdateServiceDto): Promise<ServiceResponse> {
     const service = await this.prisma.service.findUnique({ where: { id: serviceId } });
     if (!service) throw new NotFoundException('Service not found');
+    const currency = await this.platformSettings.currencyContext();
+    const minHourlyRateUsd =
+      dto.minimumHourlyRate !== undefined
+        ? this.platformSettings.convertPlatformAmountToUsd(dto.minimumHourlyRate, currency)
+        : Number(service.minHourlyRateUsd);
+    const maxHourlyRateUsd =
+      dto.maximumHourlyRate !== undefined
+        ? this.platformSettings.convertPlatformAmountToUsd(dto.maximumHourlyRate, currency)
+        : Number(service.maxHourlyRateUsd);
+    if (minHourlyRateUsd > maxHourlyRateUsd) {
+      throw new BadRequestException(
+        'minimumHourlyRate must be less than or equal to maximumHourlyRate',
+      );
+    }
     const translations = this.normalizeTranslations(dto.translations);
     const english = translations.find(
       (translation) => translation.locale === this.locales.defaultLocale,
     );
 
     const updated = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT "id" FROM "Services" WHERE "id" = ${serviceId} FOR UPDATE
+      `;
       if (dto.slug && dto.slug.toLowerCase() !== service.slug?.toLowerCase()) {
         await transaction.$queryRaw`
           SELECT pg_advisory_xact_lock(hashtext(${`latache-service:${dto.slug.toLowerCase()}`}))
@@ -207,6 +251,26 @@ export class ServicesService {
           },
         });
         if (duplicate) throw new ConflictException('Service slug already exists');
+      }
+
+      if (dto.minimumHourlyRate !== undefined || dto.maximumHourlyRate !== undefined) {
+        const outOfBounds = await transaction.userService.count({
+          where: {
+            serviceId,
+            OR: [
+              { hourlyRate: { lt: minHourlyRateUsd } },
+              { hourlyRate: { gt: maxHourlyRateUsd } },
+            ],
+          },
+        });
+        if (outOfBounds > 0) {
+          throw new ConflictException({
+            code: 'SERVICE_RATE_BOUNDS_CONFLICT',
+            message:
+              'Existing Tasker rates fall outside the requested limits. Adjust those Tasker rates before narrowing the service range.',
+            affectedTaskers: outOfBounds,
+          });
+        }
       }
 
       const row = await transaction.service.update({
@@ -222,6 +286,12 @@ export class ServicesService {
           ...(dto.icon !== undefined ? { icon: dto.icon } : {}),
           ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
           ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+          ...(dto.minimumHourlyRate !== undefined
+            ? { minHourlyRateUsd: minHourlyRateUsd.toFixed(2) }
+            : {}),
+          ...(dto.maximumHourlyRate !== undefined
+            ? { maxHourlyRateUsd: maxHourlyRateUsd.toFixed(2) }
+            : {}),
         },
       });
       await this.upsertServiceTranslations(transaction, serviceId, translations, {
@@ -234,7 +304,7 @@ export class ServicesService {
           action: 'service_category_updated',
           entityType: 'service',
           entityId: serviceId,
-          metadata: { fields: Object.keys(dto) },
+          metadata: { fields: Object.keys(dto), minHourlyRateUsd, maxHourlyRateUsd },
         },
         transaction,
       );
@@ -244,7 +314,7 @@ export class ServicesService {
       });
     });
     await this.invalidateServiceCaches();
-    return this.serializeAdmin(updated);
+    return this.serializeAdmin(updated, currency);
   }
 
   async delete(actor: User, serviceId: number): Promise<{ deleted: true; id: string }> {
@@ -472,6 +542,7 @@ export class ServicesService {
   private serialize(
     service: Service & { translations?: TranslationRow[] },
     locale: string,
+    currency: PlatformCurrencyContext,
   ): ServiceResponse {
     const selected = this.locales.selectTranslation(service.translations ?? [], locale);
     return {
@@ -482,12 +553,16 @@ export class ServicesService {
       slug: service.slug,
       isActive: service.isActive,
       sortOrder: service.sortOrder,
+      rateLimits: this.rateLimits(service, currency),
       resolvedLocale: selected.translation ? selected.resolvedLocale : 'canonical',
       translationFallback: selected.translation ? selected.fallback : true,
     };
   }
 
-  private serializeAdmin(service: Service & { translations: TranslationRow[] }): ServiceResponse {
+  private serializeAdmin(
+    service: Service & { translations: TranslationRow[] },
+    currency: PlatformCurrencyContext,
+  ): ServiceResponse {
     return {
       id: service.id.toString(),
       name: service.name,
@@ -496,7 +571,23 @@ export class ServicesService {
       slug: service.slug,
       isActive: service.isActive,
       sortOrder: service.sortOrder,
+      rateLimits: this.rateLimits(service, currency),
       translations: service.translations.map((translation) => ({ ...translation })),
+    };
+  }
+
+  private rateLimits(service: Service, currency: PlatformCurrencyContext) {
+    return {
+      minimumHourlyRate: this.platformSettings.convertUsdAmount(
+        Number(service.minHourlyRateUsd),
+        currency,
+      ),
+      maximumHourlyRate: this.platformSettings.convertUsdAmount(
+        Number(service.maxHourlyRateUsd),
+        currency,
+      ),
+      currency: currency.code,
+      symbol: currency.symbol,
     };
   }
 

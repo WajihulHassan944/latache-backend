@@ -36,6 +36,8 @@ import type { AuthenticatedRequest } from '../../common/types/authenticated-requ
 import type { User } from '../../generated/prisma/client';
 import { AuthService } from './auth.service';
 import {
+  AddCustomerRoleDto,
+  AddTaskerRoleDto,
   ChangePasswordDto,
   CreateAdminDto,
   ForgotPasswordDto,
@@ -46,6 +48,7 @@ import {
   ResendVerificationEmailDto,
   ResetPasswordDto,
   SessionParamDto,
+  SwitchRoleDto,
   UpdateProfileDto,
   VerifyEmailDto,
   VerifyResetOtpDto,
@@ -179,6 +182,48 @@ export class AuthController {
     return this.auth.registerTasker(dto, this.metadata(dto.device, request), locale);
   }
 
+  @Post('roles/customer')
+  @ApiBearerAuth('bearer')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Enable Customer access on the current identity',
+    description:
+      'Adds a CustomerProfile and customer role to an existing verified Tasker identity without creating another User, email, password, or session identity.',
+  })
+  @ApiCreatedResponse({
+    description: 'Customer role added. Returned tokens are scoped to the customer portal.',
+  })
+  @ApiConflictResponse({ description: 'Customer role already exists.' })
+  @ApiForbiddenResponse({ description: 'Administrative identities cannot add marketplace roles.' })
+  addCustomerRole(
+    @CurrentUser() user: User,
+    @Body() dto: AddCustomerRoleDto,
+    @Req() request: Request,
+  ) {
+    return this.auth.addCustomerRole(user.id, dto, this.metadata(undefined, request));
+  }
+
+  @Post('roles/tasker')
+  @ApiBearerAuth('bearer')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Submit a Tasker profile on the current identity',
+    description:
+      'Adds Tasker capability to an existing verified Customer identity. Shared credentials remain on the same User; the new TaskerProfile enters pending approval and the returned tokens are tasker-scoped.',
+  })
+  @ApiCreatedResponse({
+    description: 'Tasker role added and application submitted for Admin approval.',
+  })
+  @ApiBadRequestResponse({ description: 'Invalid services, availability, rate, documents, or service area.' })
+  @ApiConflictResponse({ description: 'Tasker role already exists.' })
+  addTaskerRole(
+    @CurrentUser() user: User,
+    @Body() dto: AddTaskerRoleDto,
+    @Req() request: Request,
+  ) {
+    return this.auth.addTaskerRole(user.id, dto, this.metadata(undefined, request));
+  }
+
   @Post('admins/register')
   @ApiBearerAuth('bearer')
   @UseGuards(AdminAuthGuard, PermissionsGuard)
@@ -253,12 +298,12 @@ export class AuthController {
   @ApiOperation({
     summary: 'Login a customer, tasker, admin, or super administrator',
     description:
-      'Authenticates local credentials, enforces email/account state, optionally validates the intended portal role, records the device session, and returns rotating tokens.',
+      'Authenticates the single email/password identity, selects one enabled role for the session, enforces role-profile state, records the active role on the refresh session, and returns rotating tokens.',
   })
   @ApiBody({
     type: LoginDto,
     description:
-      'Use expectedRole to assert the intended portal. An admin portal login accepts both admin and super_admin accounts; explicit super_admin requires the super_admin value.',
+      'Use role to select customer/tasker/admin/super_admin. expectedRole remains a backward-compatible alias. A dual Customer+Tasker identity must select a role.',
     examples: loginRequestExamples,
   })
   @ApiOkResponse({
@@ -275,6 +320,30 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: 'Invalid email or password.' })
   login(@Body() dto: LoginDto, @Req() request: Request) {
     return this.auth.login(dto, this.metadata(dto.device, request));
+  }
+
+  @Post('switch-role')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('bearer')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Switch the active Customer/Tasker portal role',
+    description:
+      'Validates that the role belongs to this identity, revokes the current role-scoped session, and returns a fresh access/refresh pair for the selected role.',
+  })
+  @ApiOkResponse({ description: 'Role switched and a new role-scoped token pair issued.' })
+  @ApiForbiddenResponse({ description: 'Requested role is not enabled or its profile is inactive.' })
+  switchRole(
+    @CurrentUser() user: User,
+    @Body() dto: SwitchRoleDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.auth.switchRole(
+      user.id,
+      request.auth.sessionId,
+      dto.role,
+      this.metadata(dto.device, request),
+    );
   }
 
   @Post('refresh')
@@ -485,8 +554,8 @@ export class AuthController {
       },
     },
   })
-  me(@CurrentUser() user: User) {
-    return this.auth.me(user.id);
+  me(@CurrentUser() user: User, @Req() request: AuthenticatedRequest) {
+    return this.auth.me(user.id, request.auth.role);
   }
 
   @Patch('me')
@@ -514,8 +583,12 @@ export class AuthController {
       },
     },
   })
-  updateMe(@CurrentUser() user: User, @Body() dto: UpdateProfileDto) {
-    return this.auth.updateMe(user.id, dto);
+  updateMe(
+    @CurrentUser() user: User,
+    @Body() dto: UpdateProfileDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.auth.updateMe(user.id, dto, request.auth.role);
   }
 
   @Get('sessions')

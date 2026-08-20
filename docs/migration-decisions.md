@@ -9,3 +9,4 @@
 - Non-auth domain routes remain stable. Authentication intentionally uses only the canonical role-specific routes documented in `auth-route-migration.md`; old Express aliases are not registered.
 - Prisma migrations are the only supported schema mutation mechanism. `prisma migrate reset` is prohibited for existing or production databases.
 - Generated Prisma files, dependencies, build output, environment files, and credentials are excluded from the distributed archive.
+- `20260818140000_complete_referral_reward_system` is additive: it introduces referral attribution/reward ledgers, stable user codes, wallet-ledger links, and booking discount snapshots without updating or deleting existing operational rows. Deploy it with `prisma migrate deploy`; never reset an existing database.

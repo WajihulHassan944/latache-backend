@@ -1,7 +1,7 @@
 {
   "name": "latache-backend-nestjs-prisma",
-  "version": "3.18.0",
-  "description": "Latache API with permanent RBAC-controlled deletion, durable Cloudinary cleanup, premium shared email design, en/ar/ary localization, Redis/BullMQ, multi-instance Socket.IO, provider-backed finance, Prisma/PostgreSQL, Stripe, and RBAC",
+  "version": "3.26.2",
+  "description": "Latache API with Super-Admin-owned referral/reward policy and backend-enforced Elite perk entitlements, hardened dispute lifecycle, production referral accounting, private/support chat, transactional realtime, WebRTC signaling, completion approval, secure auth, en/ar/ary localization, Redis/BullMQ, provider-backed finance, Prisma/PostgreSQL, Stripe, and RBAC",
   "private": true,
   "license": "UNLICENSED",
   "engines": {

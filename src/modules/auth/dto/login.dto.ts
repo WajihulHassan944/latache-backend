@@ -16,7 +16,20 @@ export class LoginDto {
   @Length(1, 128)
   password!: string;
 
-  @ApiPropertyOptional({ enum: UserRole, description: 'Optional portal-role assertion.' })
+  @ApiPropertyOptional({
+    enum: UserRole,
+    description:
+      'Role to activate for this login. Required when one identity owns multiple marketplace roles.',
+  })
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole;
+
+  @ApiPropertyOptional({
+    enum: UserRole,
+    deprecated: true,
+    description: 'Backward-compatible alias for role.',
+  })
   @IsOptional()
   @IsEnum(UserRole)
   expectedRole?: UserRole;

@@ -10,6 +10,9 @@ import { BookingDiscoveryController, BookingsController } from './bookings.contr
 import { ParticipantDisputesController } from './participant-disputes.controller';
 import { BookingsRepository } from './bookings.repository';
 import { BookingsService } from './bookings.service';
+import { AdminAuditModule } from '../admin-audit/admin-audit.module';
+import { DisputesModule } from '../disputes/disputes.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 
 @Module({
   imports: [
@@ -20,6 +23,9 @@ import { BookingsService } from './bookings.service';
     TaskerFinanceModule,
     PlatformSettingsModule,
     RealtimeModule,
+    AdminAuditModule,
+    DisputesModule,
+    ReferralsModule,
   ],
   controllers: [BookingDiscoveryController, BookingsController, ParticipantDisputesController],
   providers: [BookingsService, BookingsRepository],

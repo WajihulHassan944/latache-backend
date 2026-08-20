@@ -58,6 +58,7 @@ export class AdminFinanceService {
         to: query.to ? new Date(`${query.to}T23:59:59.999Z`) : undefined,
       });
     }
+    if (view === 'chargebacks') return this.chargebacks(query);
     return this.revenue(query);
   }
 
@@ -66,12 +67,18 @@ export class AdminFinanceService {
   ): Promise<{ body: string; filename: string; truncated: boolean }> {
     const view = query.view ?? 'transactions';
     if (
-      !['transactions', 'refunds', 'payouts', 'revenue', 'earnings', 'cash_receivables'].includes(
-        view,
-      )
+      ![
+        'transactions',
+        'refunds',
+        'payouts',
+        'revenue',
+        'earnings',
+        'cash_receivables',
+        'chargebacks',
+      ].includes(view)
     ) {
       throw new BadRequestException(
-        'CSV export is available for transactions, refunds, payouts, revenue, earnings, and cash_receivables views',
+        'CSV export is available for transactions, refunds, payouts, revenue, earnings, cash_receivables, and chargebacks views',
       );
     }
     const data = await this.read({ ...query, format: 'json', page: 1, limit: 100 });
@@ -712,6 +719,101 @@ export class AdminFinanceService {
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
       items: rows.map((row) => this.serializePayout(row)),
+    };
+  }
+
+  private async chargebacks(query: AdminFinanceQueryDto) {
+    const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
+    const date = this.dateFilter(query);
+    const search = query.search?.trim();
+    const where: Prisma.StripeChargebackWhereInput = {
+      createdAt: date,
+      ...(query.status ? { status: query.status } : {}),
+      ...(search
+        ? {
+            OR: [
+              { id: { contains: search, mode: 'insensitive' } },
+              { chargeId: { contains: search, mode: 'insensitive' } },
+              { paymentIntentId: { contains: search, mode: 'insensitive' } },
+              { reason: { contains: search, mode: 'insensitive' } },
+              {
+                booking: {
+                  customer: { email: { contains: search, mode: 'insensitive' } },
+                },
+              },
+              {
+                booking: {
+                  tasker: { email: { contains: search, mode: 'insensitive' } },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+    const [rows, totalItems, statusCounts] = await Promise.all([
+      this.prisma.stripeChargeback.findMany({
+        where,
+        include: {
+          booking: {
+            include: {
+              customer: { select: { id: true, firstName: true, lastName: true, email: true } },
+              tasker: { select: { id: true, firstName: true, lastName: true, email: true } },
+              service: { select: { id: true, name: true } },
+            },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      this.prisma.stripeChargeback.count({ where }),
+      this.prisma.stripeChargeback.groupBy({
+        by: ['status'],
+        where: { createdAt: date },
+        _count: true,
+        _sum: { amount: true },
+      }),
+    ]);
+    return {
+      view: 'chargebacks',
+      summary: Object.fromEntries(
+        statusCounts.map((row) => [
+          row.status,
+          { count: row._count, amount: money(row._sum.amount) },
+        ]),
+      ),
+      page,
+      limit,
+      totalItems,
+      totalPages: Math.ceil(totalItems / limit),
+      items: rows.map((row) => ({
+        id: row.id,
+        bookingId: row.bookingId,
+        chargeId: row.chargeId,
+        paymentIntentId: row.paymentIntentId,
+        status: row.status,
+        reason: row.reason,
+        amount: money(row.amount),
+        currency: row.currency,
+        evidenceDueBy: row.evidenceDueBy?.toISOString() ?? null,
+        isChargeRefundable: row.isChargeRefundable,
+        balanceTransactionId: row.balanceTransactionId,
+        latestStripeEventType: row.latestStripeEventType,
+        customer: row.booking?.customer ?? null,
+        tasker: row.booking?.tasker ?? null,
+        service: row.booking?.service ?? null,
+        openedAt: row.openedAt.toISOString(),
+        closedAt: row.closedAt?.toISOString() ?? null,
+        updatedAt: row.updatedAt.toISOString(),
+        financialHandling:
+          row.status === 'lost'
+            ? 'Tasker finance remains blocked pending an auditable financial review; no clawback is fabricated.'
+            : ['warning_needs_response', 'warning_under_review', 'needs_response', 'under_review'].includes(
+                  row.status,
+                )
+              ? 'Tasker finance is held while the Stripe dispute is active.'
+              : 'Provider dispute is closed; normal release rules still require all internal/provider holds to be clear.',
+      })),
     };
   }
 

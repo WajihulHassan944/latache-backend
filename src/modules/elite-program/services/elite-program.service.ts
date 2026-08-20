@@ -34,14 +34,18 @@ import type {
   UpdateEliteTierPolicyDto,
 } from '../dto';
 import {
+  ELITE_PERK_CATALOG,
+  ELITE_PERK_CODES,
   ELITE_PROGRAM_HISTORY_COMPLETE_FROM,
   ELITE_TIER_CODES,
+  type ElitePerkCode,
   type EliteTierCode,
 } from '../elite-program.constants';
 import { LocaleService } from '../../localization/locale.service';
 import type { TranslationDto } from '../../localization/translation.dto';
 import type { EliteBenefitTranslationDto } from '../dto/elite-benefits.dto';
 import { ObjectStorageDeletionService } from '../../account-deletion/object-storage-deletion.service';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 
@@ -56,6 +60,7 @@ type MetricsSnapshot = {
   completedTasks: number;
   completionRate: number;
   settledEarnings: number;
+  settledEarningsCurrency: 'USD';
   openComplaints: number;
   measuredAt: string;
 };
@@ -87,6 +92,7 @@ export class EliteProgramService {
     private readonly cache: AppCacheService,
     private readonly config: ConfigService,
     private readonly storage: ObjectStorageDeletionService,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   async overview(query: AdminDateRangeQueryDto): Promise<Record<string, unknown>> {
@@ -98,7 +104,7 @@ export class EliteProgramService {
         this.prisma.user.groupBy({
           by: ['eliteTierId'],
           where: {
-            role: UserRole.Tasker,
+            roles: { has: UserRole.Tasker },
             deletedAt: null,
             isElite: true,
             eliteTierId: { not: null },
@@ -189,11 +195,20 @@ export class EliteProgramService {
 
   async details(taskerId: number): Promise<Record<string, unknown>> {
     const tasker = await this.prisma.user.findFirst({
-      where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
+      where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null },
       include: {
-        eliteTier: { include: { benefits: { orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] } } },
+        taskerProfile: true,
+        eliteTier: {
+          include: {
+            benefits: {
+              where: { isActive: true, code: { in: [...ELITE_PERK_CODES] } },
+              orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+            },
+          },
+        },
         eliteRequests: { orderBy: { createdAt: 'desc' }, take: 20 },
         eliteTransitions: { orderBy: { createdAt: 'desc' }, take: 20 },
+        eliteEvaluations: { orderBy: { evaluatedAt: 'desc' }, take: 20 },
         eliteBadges: {
           where: { revokedAt: null },
           include: { badge: { include: { tier: true } } },
@@ -220,13 +235,18 @@ export class EliteProgramService {
         name: fullName(tasker.firstName, tasker.lastName),
         email: tasker.email,
         profilePicture: tasker.profilePicture ?? '',
-        accountStatus: tasker.accountStatus,
+        accountStatus: tasker.taskerProfile?.status ?? tasker.accountStatus,
         onboardingStatus: tasker.onboardingStatus,
         rating: Number(tasker.rating),
         reviewsCount: tasker.reviewsCount,
         completedTasks: tasker.completedTasks,
         isElite: tasker.isElite,
         eliteSince: tasker.eliteSince?.toISOString() ?? null,
+      retention: {
+        atRiskSince: tasker.eliteAtRiskSince?.toISOString() ?? null,
+        graceUntil: tasker.eliteGraceUntil?.toISOString() ?? null,
+        lastEvaluatedAt: tasker.eliteLastEvaluatedAt?.toISOString() ?? null,
+      },
         tier: tasker.eliteTier ? this.serializeTier(tasker.eliteTier) : null,
         services: tasker.userServices.map((item) => ({
           id: String(item.service.id),
@@ -243,6 +263,15 @@ export class EliteProgramService {
         badge: this.serializeBadge(assignment.badge),
       })),
       requests: tasker.eliteRequests.map((request) => this.serializeRequest(request)),
+      evaluations: tasker.eliteEvaluations.map((evaluation) => ({
+        id: evaluation.id,
+        currentTier: evaluation.currentTierCode,
+        targetTier: evaluation.targetTierCode,
+        outcome: evaluation.outcome,
+        score: evaluation.score === null ? null : Number(evaluation.score),
+        eligible: evaluation.eligible,
+        evaluatedAt: evaluation.evaluatedAt.toISOString(),
+      })),
       transitions: tasker.eliteTransitions.map((transition) => ({
         id: transition.id,
         fromTier: transition.fromTierCode,
@@ -256,7 +285,7 @@ export class EliteProgramService {
 
   async taskerState(taskerId: number, locale: string): Promise<Record<string, unknown>> {
     const tasker = await this.prisma.user.findFirst({
-      where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
+      where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null },
       include: {
         eliteTier: {
           include: {
@@ -264,7 +293,7 @@ export class EliteProgramService {
               where: { locale: { in: [locale, this.locales.defaultLocale] } },
             },
             benefits: {
-              where: { isActive: true },
+              where: { isActive: true, code: { in: [...ELITE_PERK_CODES] } },
               orderBy: { sortOrder: 'asc' },
               include: {
                 translations: {
@@ -275,6 +304,7 @@ export class EliteProgramService {
           },
         },
         eliteRequests: { where: { status: 'pending' }, orderBy: { createdAt: 'desc' }, take: 1 },
+        eliteEvaluations: { orderBy: { evaluatedAt: 'desc' }, take: 5 },
         eliteBadges: {
           where: { revokedAt: null, badge: { isActive: true } },
           include: {
@@ -327,6 +357,14 @@ export class EliteProgramService {
       pendingRequest: tasker.eliteRequests[0]
         ? this.serializeRequest(tasker.eliteRequests[0])
         : null,
+      recentEvaluations: tasker.eliteEvaluations.map((evaluation) => ({
+        outcome: evaluation.outcome,
+        currentTier: evaluation.currentTierCode,
+        targetTier: evaluation.targetTierCode,
+        score: evaluation.score === null ? null : Number(evaluation.score),
+        eligible: evaluation.eligible,
+        evaluatedAt: evaluation.evaluatedAt.toISOString(),
+      })),
       availableActions: {
         canApply: !tasker.isElite && !tasker.eliteRequests.length && tiers.length > 0,
         canRequestUpgrade: tasker.isElite && Boolean(nextTier) && !tasker.eliteRequests.length,
@@ -344,10 +382,396 @@ export class EliteProgramService {
         note:
           eligibility.score === null
             ? 'No automatic Elite eligibility thresholds are configured for the target tier. Admin review uses the real tasker metrics below.'
-            : 'The score is calculated only from the configured target-tier requirements and real tasker metrics. It does not automatically approve a request.',
+            : 'The score is calculated only from configured target-tier requirements and real Tasker metrics. A submitted membership request still requires Admin approval; independently, the scheduled Elite worker may promote an eligible Tasker only when that target tier has autoPromotionEnabled=true.',
         metrics,
       },
     };
+  }
+
+  async runMaintenance(batchSize = 200): Promise<Record<string, number>> {
+    const taskers = await this.prisma.user.findMany({
+      where: {
+        roles: { has: UserRole.Tasker },
+        taskerProfile: { is: { status: AccountStatus.Active } },
+        deletedAt: null,
+        isVerified: true,
+        isDocVerified: true,
+        onboardingStatus: 'approved',
+      },
+      orderBy: [{ eliteLastEvaluatedAt: 'asc' }, { id: 'asc' }],
+      take: Math.max(1, Math.min(1000, Math.trunc(batchSize))),
+      select: { id: true },
+    });
+
+    const totals = {
+      evaluated: 0,
+      promoted: 0,
+      demoted: 0,
+      atRisk: 0,
+      recovered: 0,
+      badgesAwarded: 0,
+      badgesRevoked: 0,
+    };
+
+    for (const candidate of taskers) {
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT "id" FROM "Users" WHERE "id" = ${candidate.id} FOR UPDATE`;
+          const tasker = await tx.user.findUnique({
+            where: { id: candidate.id },
+            include: { eliteTier: true, taskerProfile: true },
+          });
+          if (!tasker || tasker.deletedAt || tasker.taskerProfile?.status !== AccountStatus.Active) {
+            return null;
+          }
+
+          const tiers = await tx.eliteTier.findMany({
+            where: { isActive: true },
+            orderBy: { rank: 'asc' },
+          });
+          const metrics = await this.metricsSnapshot(tx, tasker.id);
+          const now = new Date();
+          const currentIndex = tasker.eliteTier
+            ? tiers.findIndex((tier) => tier.id === tasker.eliteTierId)
+            : -1;
+          const currentTier = currentIndex >= 0 ? (tiers[currentIndex] ?? null) : null;
+          let effectiveTier = currentTier;
+          let outcome = tasker.isElite ? 'retained' : 'standard';
+          let targetTier = currentTier;
+          let eligibility = currentTier
+            ? this.evaluateEligibility(metrics, currentTier.requirements)
+            : this.evaluateEligibility(metrics, null);
+          let promoted = 0;
+          let demoted = 0;
+          let atRisk = 0;
+          let recovered = 0;
+
+          if (!currentTier) {
+            const entry = tiers[0] ?? null;
+            if (entry?.autoPromotionEnabled) {
+              const entryEligibility = this.evaluateEligibility(metrics, entry.requirements);
+              eligibility = entryEligibility;
+              targetTier = entry;
+              if (entryEligibility.eligible === true) {
+                await this.cancelPendingRequestForSystemTransition(tx, tasker.id);
+                await this.applyTierChange(tx, {
+                  tasker,
+                  toTierCode: entry.code,
+                  source: 'system',
+                  actorId: null,
+                  reason: 'Automatic Elite promotion after meeting configured entry requirements',
+                });
+                await this.audit.record(
+                  {
+                    actorId: null,
+                    action: 'elite_tier_auto_promoted',
+                    entityType: 'tasker',
+                    entityId: tasker.id,
+                    metadata: { fromTier: null, toTier: entry.code, score: entryEligibility.score },
+                  },
+                  tx,
+                );
+                await this.notifications.create(
+                  tasker.id,
+                  {
+                    category: 'system',
+                    type: 'elite_auto_promoted',
+                    title: 'Elite status unlocked',
+                    body: `You qualified for the ${entry.name} Elite tier.`,
+                    entityType: 'elite_tier',
+                    entityId: entry.id,
+                  },
+                  tx,
+                );
+                effectiveTier = entry;
+                outcome = 'promoted';
+                promoted = 1;
+              }
+            }
+          } else if (eligibility.eligible === false && currentTier.autoDemotionEnabled) {
+            const graceDays = Math.max(0, Number(currentTier.retentionGraceDays ?? 14));
+            const graceUntil = tasker.eliteGraceUntil;
+            if (!tasker.eliteAtRiskSince || !graceUntil) {
+              const until = new Date(now.getTime() + graceDays * 86_400_000);
+              if (graceDays > 0) {
+                await tx.user.update({
+                  where: { id: tasker.id },
+                  data: {
+                    eliteAtRiskSince: now,
+                    eliteGraceUntil: until,
+                    eliteLastEvaluatedAt: now,
+                  },
+                });
+                await this.notifications.create(
+                  tasker.id,
+                  {
+                    category: 'system',
+                    type: 'elite_retention_warning',
+                    title: 'Elite tier retention warning',
+                    body: `Your ${currentTier.name} status is at risk. Restore the tier requirements before ${until.toISOString()}.`,
+                    entityType: 'elite_tier',
+                    entityId: currentTier.id,
+                  },
+                  tx,
+                );
+                outcome = 'at_risk';
+                atRisk = 1;
+              }
+            }
+
+            if (graceDays > 0 && tasker.eliteAtRiskSince && graceUntil && graceUntil.getTime() > now.getTime()) {
+              outcome = 'at_risk';
+              atRisk = 1;
+            }
+            const due = graceDays === 0 || (graceUntil?.getTime() ?? Number.POSITIVE_INFINITY) <= now.getTime();
+            if (due) {
+              const lowerTier = currentIndex > 0 ? (tiers[currentIndex - 1] ?? null) : null;
+              await this.cancelPendingRequestForSystemTransition(tx, tasker.id);
+              await this.applyTierChange(tx, {
+                tasker,
+                toTierCode: lowerTier?.code ?? null,
+                source: 'system',
+                actorId: null,
+                reason: 'Automatic Elite demotion after retention grace period expired',
+              });
+              await this.audit.record(
+                {
+                  actorId: null,
+                  action: 'elite_tier_auto_demoted',
+                  entityType: 'tasker',
+                  entityId: tasker.id,
+                  metadata: {
+                    fromTier: currentTier.code,
+                    toTier: lowerTier?.code ?? null,
+                    score: eligibility.score,
+                  },
+                },
+                tx,
+              );
+              await this.notifications.create(
+                tasker.id,
+                {
+                  category: 'system',
+                  type: 'elite_auto_demoted',
+                  title: 'Elite tier updated',
+                  body: lowerTier
+                    ? `Your Elite tier changed to ${lowerTier.name} because the previous tier requirements were not restored during the grace period.`
+                    : 'Your Elite status ended because the tier requirements were not restored during the grace period.',
+                  entityType: 'elite_tier',
+                  entityId: lowerTier?.id ?? currentTier.id,
+                },
+                tx,
+              );
+              effectiveTier = lowerTier;
+              targetTier = lowerTier;
+              outcome = 'demoted';
+              demoted = 1;
+              atRisk = 0;
+            }
+          } else {
+            if (tasker.eliteAtRiskSince || tasker.eliteGraceUntil) {
+              await tx.user.update({
+                where: { id: tasker.id },
+                data: {
+                  eliteAtRiskSince: null,
+                  eliteGraceUntil: null,
+                  eliteLastEvaluatedAt: now,
+                },
+              });
+              outcome = 'recovered';
+              recovered = 1;
+              await this.notifications.create(
+                tasker.id,
+                {
+                  category: 'system',
+                  type: 'elite_retention_recovered',
+                  title: 'Elite tier secured',
+                  body: `You are meeting the ${currentTier.name} retention requirements again.`,
+                  entityType: 'elite_tier',
+                  entityId: currentTier.id,
+                },
+                tx,
+              );
+            }
+            const nextTier = tiers[currentIndex + 1] ?? null;
+            if (nextTier?.autoPromotionEnabled) {
+              const nextEligibility = this.evaluateEligibility(metrics, nextTier.requirements);
+              if (nextEligibility.eligible === true) {
+                await this.cancelPendingRequestForSystemTransition(tx, tasker.id);
+                await this.applyTierChange(tx, {
+                  tasker,
+                  toTierCode: nextTier.code,
+                  source: 'system',
+                  actorId: null,
+                  reason: 'Automatic Elite promotion after meeting configured next-tier requirements',
+                });
+                await this.audit.record(
+                  {
+                    actorId: null,
+                    action: 'elite_tier_auto_promoted',
+                    entityType: 'tasker',
+                    entityId: tasker.id,
+                    metadata: {
+                      fromTier: currentTier.code,
+                      toTier: nextTier.code,
+                      score: nextEligibility.score,
+                    },
+                  },
+                  tx,
+                );
+                await this.notifications.create(
+                  tasker.id,
+                  {
+                    category: 'system',
+                    type: 'elite_auto_promoted',
+                    title: 'Elite tier upgraded',
+                    body: `You qualified for the ${nextTier.name} Elite tier.`,
+                    entityType: 'elite_tier',
+                    entityId: nextTier.id,
+                  },
+                  tx,
+                );
+                effectiveTier = nextTier;
+                targetTier = nextTier;
+                eligibility = nextEligibility;
+                outcome = 'promoted';
+                promoted = 1;
+              }
+            }
+          }
+
+          await tx.user.update({
+            where: { id: tasker.id },
+            data: { eliteLastEvaluatedAt: now },
+          });
+          await tx.eliteEvaluation.create({
+            data: {
+              taskerId: tasker.id,
+              currentTierCode: currentTier?.code ?? null,
+              targetTierCode: targetTier?.code ?? null,
+              outcome,
+              score: eligibility.score,
+              eligible: eligibility.eligible,
+              metricsSnapshot: metrics as unknown as Prisma.InputJsonValue,
+              requirementsSnapshot: eligibility.requirements
+                ? (eligibility.requirements as unknown as Prisma.InputJsonValue)
+                : Prisma.DbNull,
+            },
+          });
+
+          const badgeResult = await this.syncAutomaticBadges(
+            tx,
+            tasker.id,
+            effectiveTier,
+            metrics,
+          );
+          return { promoted, demoted, atRisk, recovered, ...badgeResult };
+        },
+        { maxWait: 15_000, timeout: 30_000 },
+      );
+      if (!result) continue;
+      totals.evaluated += 1;
+      totals.promoted += result.promoted;
+      totals.demoted += result.demoted;
+      totals.atRisk += result.atRisk;
+      totals.recovered += result.recovered;
+      totals.badgesAwarded += result.badgesAwarded;
+      totals.badgesRevoked += result.badgesRevoked;
+    }
+    return totals;
+  }
+
+  private async cancelPendingRequestForSystemTransition(
+    tx: Prisma.TransactionClient,
+    taskerId: number,
+  ): Promise<void> {
+    await tx.eliteMembershipRequest.updateMany({
+      where: { taskerId, status: 'pending' },
+      data: {
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        decisionReason: 'Superseded by automatic Elite tier lifecycle evaluation.',
+      },
+    });
+  }
+
+  private async syncAutomaticBadges(
+    tx: Prisma.TransactionClient,
+    taskerId: number,
+    tier: { id: string; code: string; rank: number } | null,
+    metrics: MetricsSnapshot,
+  ): Promise<{ badgesAwarded: number; badgesRevoked: number }> {
+    const [badges, profileBenefits] = await Promise.all([
+      tx.eliteBadge.findMany({
+        where: { isActive: true },
+        include: { tier: true },
+      }),
+      tx.eliteBenefit.findMany({
+        where: { code: 'elite_profile_badge', isActive: true },
+        select: { tierId: true },
+      }),
+    ]);
+    const profileBenefitTierIds = new Set(profileBenefits.map((benefit) => benefit.tierId));
+    let badgesAwarded = 0;
+    let badgesRevoked = 0;
+    for (const badge of badges) {
+      const criteria =
+        badge.criteria && typeof badge.criteria === 'object' && !Array.isArray(badge.criteria)
+          ? (badge.criteria as Record<string, unknown>)
+          : null;
+      if (criteria?.autoAward !== true) continue;
+      const tierEligible = !badge.tier || Boolean(tier && tier.rank >= badge.tier.rank);
+      const metricEligibility = this.evaluateEligibility(metrics, criteria);
+      const metricsEligible =
+        metricEligibility.eligible === true ||
+        (metricEligibility.eligible === null && metricEligibility.checks.length === 0);
+      const builtInTierBadge = Boolean(
+        badge.tier && ['elite_gold', 'elite_platinum', 'elite_diamond'].includes(badge.code),
+      );
+      const perkEligible =
+        !builtInTierBadge || Boolean(badge.tierId && profileBenefitTierIds.has(badge.tierId));
+      const qualifies = perkEligible && tierEligible && metricsEligible;
+      const assignment = await tx.eliteTaskerBadge.findUnique({
+        where: { taskerId_badgeId: { taskerId, badgeId: badge.id } },
+      });
+      if (qualifies && (!assignment || assignment.revokedAt)) {
+        await tx.eliteTaskerBadge.upsert({
+          where: { taskerId_badgeId: { taskerId, badgeId: badge.id } },
+          create: { taskerId, badgeId: badge.id, awardedById: null },
+          update: {
+            awardedById: null,
+            awardedAt: new Date(),
+            revokedAt: null,
+            revokeReason: null,
+          },
+        });
+        await this.notifications.create(
+          taskerId,
+          {
+            category: 'system',
+            type: 'elite_badge_auto_awarded',
+            title: 'New Elite badge unlocked',
+            body: `You unlocked the ${badge.name} badge.`,
+            entityType: 'elite_badge',
+            entityId: badge.id,
+          },
+          tx,
+        );
+        badgesAwarded += 1;
+      } else if (
+        !qualifies &&
+        assignment &&
+        !assignment.revokedAt &&
+        criteria.autoRevoke !== false
+      ) {
+        await tx.eliteTaskerBadge.update({
+          where: { taskerId_badgeId: { taskerId, badgeId: badge.id } },
+          data: { revokedAt: new Date(), revokeReason: 'Automatic badge criteria no longer met' },
+        });
+        badgesRevoked += 1;
+      }
+    }
+    return { badgesAwarded, badgesRevoked };
   }
 
   async submitRequest(
@@ -358,12 +782,13 @@ export class EliteProgramService {
     try {
       request = await this.prisma.$transaction(
         async (tx) => {
+          await tx.$queryRaw`SELECT "id" FROM "Users" WHERE "id" = ${taskerId} FOR UPDATE`;
           const tasker = await tx.user.findFirst({
-            where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
-            include: { eliteTier: true },
+            where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null },
+            include: { eliteTier: true, taskerProfile: true },
           });
           if (!tasker) throw new NotFoundException('Tasker not found');
-          if (tasker.accountStatus !== AccountStatus.Active) {
+          if (tasker.taskerProfile?.status !== AccountStatus.Active) {
             throw new ForbiddenException('Only active taskers can submit Elite Program requests');
           }
           if (
@@ -384,6 +809,35 @@ export class EliteProgramService {
 
           const target = await this.resolveRequestedTarget(tx, tasker.eliteTier, dto.kind);
           const metrics = await this.metricsSnapshot(tx, taskerId);
+          if (dto.kind !== 'downgrade' && target) {
+            const eligibility = this.evaluateEligibility(metrics, target.requirements);
+            if (eligibility.eligible === false) {
+              throw new ConflictException({
+                code: 'ELITE_NOT_ELIGIBLE',
+                message: `Current performance does not meet the ${target.name} requirements`,
+                targetTier: target.code,
+                score: eligibility.score,
+                checks: eligibility.checks,
+              });
+            }
+            const cooldownDays = Number(target.requestCooldownDays ?? 0);
+            if (cooldownDays > 0) {
+              const latest = await tx.eliteMembershipRequest.findFirst({
+                where: { taskerId, kind: dto.kind, status: { in: ['rejected', 'cancelled'] } },
+                orderBy: { updatedAt: 'desc' },
+              });
+              if (latest) {
+                const retryAt = new Date(latest.updatedAt.getTime() + cooldownDays * 86_400_000);
+                if (retryAt.getTime() > Date.now()) {
+                  throw new ConflictException({
+                    code: 'ELITE_REQUEST_COOLDOWN',
+                    message: 'Elite request cooldown is still active',
+                    retryAt: retryAt.toISOString(),
+                  });
+                }
+              }
+            }
+          }
           return tx.eliteMembershipRequest.create({
             data: {
               taskerId,
@@ -431,6 +885,13 @@ export class EliteProgramService {
   ): Promise<Record<string, unknown>> {
     const result = await this.prisma.$transaction(
       async (tx) => {
+        const requestOwner = await tx.eliteMembershipRequest.findUnique({
+          where: { id: requestId },
+          select: { taskerId: true },
+        });
+        if (!requestOwner) throw new NotFoundException('Elite request not found');
+        await tx.$queryRaw`SELECT "id" FROM "Users" WHERE "id" = ${requestOwner.taskerId} FOR UPDATE`;
+        await tx.$queryRaw`SELECT "id" FROM "EliteMembershipRequests" WHERE "id" = ${requestId} FOR UPDATE`;
         const request = await tx.eliteMembershipRequest.findUnique({
           where: { id: requestId },
           include: { tasker: { include: { eliteTier: true } } },
@@ -448,6 +909,25 @@ export class EliteProgramService {
         const decisionReason = dto.reason?.trim();
         if (dto.action === 'reject' && !decisionReason) {
           throw new BadRequestException('A rejection reason is required');
+        }
+
+        if (dto.action === 'approve' && request.kind !== 'downgrade' && request.toTierCode) {
+          const target = await tx.eliteTier.findUnique({ where: { code: request.toTierCode } });
+          if (!target || !target.isActive) {
+            throw new ConflictException('Requested Elite tier is no longer active');
+          }
+          const currentMetrics = await this.metricsSnapshot(tx, request.taskerId);
+          const eligibility = this.evaluateEligibility(currentMetrics, target.requirements);
+          if (eligibility.eligible === false) {
+            throw new ConflictException({
+              code: 'ELITE_ELIGIBILITY_CHANGED',
+              message: 'Tasker no longer meets the requested tier requirements; a fresh review is required',
+              targetTier: target.code,
+              score: eligibility.score,
+              checks: eligibility.checks,
+              metrics: currentMetrics,
+            });
+          }
         }
 
         if (dto.action === 'reject') {
@@ -487,6 +967,15 @@ export class EliteProgramService {
           reason: dto.reason,
           requestId: request.id,
         });
+        const approvedTier = request.toTierCode
+          ? await tx.eliteTier.findUnique({ where: { code: request.toTierCode } })
+          : null;
+        await this.syncAutomaticBadges(
+          tx,
+          request.taskerId,
+          approvedTier,
+          await this.metricsSnapshot(tx, request.taskerId),
+        );
         const updated = await tx.eliteMembershipRequest.update({
           where: { id: request.id },
           data: {
@@ -550,8 +1039,9 @@ export class EliteProgramService {
     const targetCode = dto.tier === 'standard' ? null : dto.tier;
     const transition = await this.prisma.$transaction(
       async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "Users" WHERE "id" = ${taskerId} FOR UPDATE`;
         const tasker = await tx.user.findFirst({
-          where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
+          where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null },
           include: { eliteTier: true },
         });
         if (!tasker) throw new NotFoundException('Tasker not found');
@@ -573,6 +1063,15 @@ export class EliteProgramService {
             decisionReason: 'Superseded by direct administrator tier assignment.',
           },
         });
+        const assignedTier = targetCode
+          ? await tx.eliteTier.findUnique({ where: { code: targetCode } })
+          : null;
+        await this.syncAutomaticBadges(
+          tx,
+          taskerId,
+          assignedTier,
+          await this.metricsSnapshot(tx, taskerId),
+        );
         await this.audit.record(
           {
             actorId: actor.id,
@@ -624,6 +1123,7 @@ export class EliteProgramService {
         include: {
           translations: { orderBy: { locale: 'asc' } },
           benefits: {
+            where: { code: { in: [...ELITE_PERK_CODES] } },
             orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
             include: { translations: { orderBy: { locale: 'asc' } } },
           },
@@ -651,10 +1151,20 @@ export class EliteProgramService {
         ...this.serializeBadge(badge),
         activeAssignmentCount: badge._count.assignments,
       })),
+      perkCatalog: this.perkCatalogPayload(),
       benefitEnforcement: {
-        status: 'configuration_only',
-        note: 'Benefit definitions are real persisted program configuration. Financial/booking effects are applied only when a consuming module explicitly integrates the benefit code; this API never fabricates discounts or bonuses.',
+        status: 'fully_enforced_catalog',
+        policyOwner: 'super_admin',
+        enforcedPerks: [...ELITE_PERK_CODES],
+        note: 'Only backend-defined perk codes can be assigned. Active perk assignments are consumed by public profile/discovery and the pricing engine; unsupported custom benefit codes are not accepted.',
       },
+    };
+  }
+
+  perkCatalog(): Record<string, unknown> {
+    return {
+      policyOwner: 'super_admin',
+      perks: this.perkCatalogPayload(),
     };
   }
 
@@ -663,6 +1173,7 @@ export class EliteProgramService {
     tierCode: string,
     dto: UpdateEliteTierPolicyDto,
   ): Promise<Record<string, unknown>> {
+    this.assertSuperAdminProgramPolicy(actor);
     const code = this.normalizeTierCode(tierCode);
     const existing = await this.prisma.eliteTier.findUnique({ where: { code } });
     if (!existing) throw new NotFoundException('Elite tier not found');
@@ -674,6 +1185,10 @@ export class EliteProgramService {
       dto.name === undefined &&
       dto.description === undefined &&
       dto.requirements === undefined &&
+      dto.autoPromotionEnabled === undefined &&
+      dto.autoDemotionEnabled === undefined &&
+      dto.retentionGraceDays === undefined &&
+      dto.requestCooldownDays === undefined &&
       translations.length === 0
     ) {
       throw new BadRequestException('At least one tier policy field must be provided');
@@ -697,6 +1212,10 @@ export class EliteProgramService {
                     ? Prisma.DbNull
                     : (dto.requirements as Prisma.InputJsonValue),
               }),
+          ...(dto.autoPromotionEnabled === undefined ? {} : { autoPromotionEnabled: dto.autoPromotionEnabled }),
+          ...(dto.autoDemotionEnabled === undefined ? {} : { autoDemotionEnabled: dto.autoDemotionEnabled }),
+          ...(dto.retentionGraceDays === undefined ? {} : { retentionGraceDays: dto.retentionGraceDays }),
+          ...(dto.requestCooldownDays === undefined ? {} : { requestCooldownDays: dto.requestCooldownDays }),
         },
       });
       await this.upsertTierTranslations(tx, updated.id, translations, {
@@ -734,12 +1253,23 @@ export class EliteProgramService {
     tierCode: string,
     dto: ReplaceEliteBenefitsDto,
   ): Promise<Record<string, unknown>> {
-    const normalized = dto.benefits.map((benefit) => ({
-      ...benefit,
-      code: this.normalizeCode(benefit.code),
-      name: benefit.name.trim(),
-      translations: this.normalizeBenefitTranslations(benefit.translations),
-    }));
+    this.assertSuperAdminProgramPolicy(actor);
+    const normalized = dto.benefits.map((benefit) => {
+      const code = this.normalizeCode(benefit.code);
+      if (!ELITE_PERK_CODES.includes(code as ElitePerkCode)) {
+        throw new BadRequestException({
+          code: 'UNSUPPORTED_ELITE_PERK',
+          message: `Unsupported Elite perk code: ${code}`,
+          allowedPerks: [...ELITE_PERK_CODES],
+        });
+      }
+      return {
+        ...benefit,
+        code: code as ElitePerkCode,
+        name: benefit.name.trim(),
+        translations: this.normalizeBenefitTranslations(benefit.translations),
+      };
+    });
     const duplicates = normalized.filter(
       (benefit, index) =>
         normalized.findIndex((candidate) => candidate.code === benefit.code) !== index,
@@ -755,7 +1285,13 @@ export class EliteProgramService {
     await this.prisma.$transaction(async (tx) => {
       const codes = normalized.map((benefit) => benefit.code);
       await tx.eliteBenefit.deleteMany({
-        where: { tierId: tier.id, ...(codes.length ? { code: { notIn: codes } } : {}) },
+        where: {
+          tierId: tier.id,
+          code: {
+            in: [...ELITE_PERK_CODES],
+            ...(codes.length ? { notIn: codes } : {}),
+          },
+        },
       });
       for (const benefit of normalized) {
         const row = await tx.eliteBenefit.upsert({
@@ -766,9 +1302,7 @@ export class EliteProgramService {
             name: benefit.name,
             description: benefit.description?.trim() || null,
             displayValue: benefit.displayValue?.trim() || null,
-            metadata: benefit.metadata
-              ? (benefit.metadata as Prisma.InputJsonValue)
-              : Prisma.DbNull,
+            metadata: this.perkMetadata(tier, benefit.code, benefit.metadata),
             isActive: benefit.isActive ?? true,
             sortOrder: benefit.sortOrder ?? 0,
           },
@@ -776,9 +1310,7 @@ export class EliteProgramService {
             name: benefit.name,
             description: benefit.description?.trim() || null,
             displayValue: benefit.displayValue?.trim() || null,
-            metadata: benefit.metadata
-              ? (benefit.metadata as Prisma.InputJsonValue)
-              : Prisma.DbNull,
+            metadata: this.perkMetadata(tier, benefit.code, benefit.metadata),
             isActive: benefit.isActive ?? true,
             sortOrder: benefit.sortOrder ?? 0,
           },
@@ -957,7 +1489,7 @@ export class EliteProgramService {
   ): Promise<Record<string, unknown>> {
     const [tasker, badge] = await Promise.all([
       this.prisma.user.findFirst({
-        where: { id: taskerId, role: UserRole.Tasker, deletedAt: null },
+        where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null },
         include: { eliteTier: true },
       }),
       this.prisma.eliteBadge.findUnique({ where: { id: badgeId }, include: { tier: true } }),
@@ -1036,7 +1568,7 @@ export class EliteProgramService {
     const range = resolveAdminDateRange(query);
     const date = dateFilter(range);
     const elite = await this.prisma.user.findMany({
-      where: { role: UserRole.Tasker, deletedAt: null, isElite: true, eliteTierId: { not: null } },
+      where: { roles: { has: UserRole.Tasker }, deletedAt: null, isElite: true, eliteTierId: { not: null } },
       select: {
         id: true,
         firstName: true,
@@ -1070,7 +1602,8 @@ export class EliteProgramService {
         where: { taskerId: { in: ids }, ...(date ? { createdAt: date } : {}) },
         _count: { _all: true },
       }),
-      this.prisma.taskerWalletLedgerEntry.aggregate({
+      this.prisma.taskerWalletLedgerEntry.groupBy({
+        by: ['currency'],
         where: {
           taskerId: { in: ids },
           kind: 'earning',
@@ -1093,7 +1626,7 @@ export class EliteProgramService {
           status: 'settled',
           ...(date ? { createdAt: date } : {}),
         },
-        select: { taskerId: true, amount: true, createdAt: true },
+        select: { taskerId: true, amount: true, currency: true, createdAt: true },
       }),
       this.prisma.booking.findMany({
         where: {
@@ -1112,10 +1645,11 @@ export class EliteProgramService {
 
     const earningsByTasker = new Map<number, number>();
     for (const row of earningRows) {
-      earningsByTasker.set(
-        row.taskerId,
-        (earningsByTasker.get(row.taskerId) ?? 0) + Number(row.amount),
+      const amountUsd = this.platformSettings.convertCurrencyAmountToUsd(
+        Number(row.amount),
+        row.currency,
       );
+      earningsByTasker.set(row.taskerId, (earningsByTasker.get(row.taskerId) ?? 0) + amountUsd);
     }
     const topPerformers = [...elite]
       .sort((a, b) => (earningsByTasker.get(b.id) ?? 0) - (earningsByTasker.get(a.id) ?? 0))
@@ -1137,7 +1671,17 @@ export class EliteProgramService {
         totalElite: elite.length,
         averageRating,
         completionRate: percentage(completed, completed + cancelled),
-        settledEarnings: money(earnings._sum.amount),
+        settledEarnings: money(
+          earnings.reduce(
+            (total, row) =>
+              total +
+              this.platformSettings.convertCurrencyAmountToUsd(
+                Number(row._sum.amount ?? 0),
+                row.currency,
+              ),
+            0,
+          ),
+        ),
         platformFeesFromPaidEliteBookings: money(fees._sum.platformFeeAmount),
         disputes,
       },
@@ -1179,7 +1723,10 @@ export class EliteProgramService {
     const tiers = await this.prisma.eliteTier.findMany({
       orderBy: { rank: 'asc' },
       include: {
-        benefits: { where: { isActive: true }, orderBy: { sortOrder: 'asc' } },
+        benefits: {
+          where: { isActive: true, code: { in: [...ELITE_PERK_CODES] } },
+          orderBy: { sortOrder: 'asc' },
+        },
         _count: { select: { members: true } },
       },
     });
@@ -1214,7 +1761,7 @@ export class EliteProgramService {
     const { page, limit, skip } = pagination(query.page, query.limit);
     const search = query.search?.trim();
     const where: Prisma.UserWhereInput = {
-      role: UserRole.Tasker,
+      roles: { has: UserRole.Tasker },
       deletedAt: null,
       isElite: true,
       eliteTier: query.tier ? { code: query.tier } : { isNot: null },
@@ -1253,6 +1800,7 @@ export class EliteProgramService {
           reviewsCount: true,
           completedTasks: true,
           accountStatus: true,
+          taskerProfile: { select: { status: true } },
           eliteSince: true,
           eliteTier: true,
           userServices: { take: 3, orderBy: { createdAt: 'asc' }, include: { service: true } },
@@ -1276,7 +1824,7 @@ export class EliteProgramService {
       name: fullName(member.firstName, member.lastName),
       email: member.email,
       profilePicture: member.profilePicture ?? '',
-      accountStatus: member.accountStatus,
+      accountStatus: member.taskerProfile?.status ?? member.accountStatus,
       tier: member.eliteTier ? this.serializeTier(member.eliteTier) : null,
       joinedEliteAt: member.eliteSince?.toISOString() ?? null,
       rating: Number(member.rating),
@@ -1422,8 +1970,8 @@ export class EliteProgramService {
         eliteTier: { code: string } | null;
       };
       toTierCode: string | null;
-      source: 'request' | 'admin';
-      actorId: number;
+      source: 'request' | 'admin' | 'system';
+      actorId: number | null;
       reason?: string;
       requestId?: string;
     },
@@ -1445,6 +1993,9 @@ export class EliteProgramService {
             ? input.tasker.eliteSince
             : new Date()
           : null,
+        eliteAtRiskSince: null,
+        eliteGraceUntil: null,
+        eliteLastEvaluatedAt: new Date(),
       },
     });
     return tx.eliteTierTransition.create({
@@ -1471,11 +2022,17 @@ export class EliteProgramService {
         where: { taskerId, status: { in: ['completed', 'cancelled'] } },
         _count: { _all: true },
       }),
-      client.taskerWalletLedgerEntry.aggregate({
+      client.taskerWalletLedgerEntry.groupBy({
+        by: ['currency'],
         where: { taskerId, kind: 'earning', status: 'settled' },
         _sum: { amount: true },
       }),
-      client.taskComplaint.count({ where: { booking: { taskerId }, status: 'open' } }),
+      client.taskComplaint.count({
+        where: {
+          booking: { taskerId },
+          status: { in: ['open', 'under_investigation', 'escalated'] },
+        },
+      }),
     ]);
     const completed = statuses.find((row) => row.status === 'completed')?._count._all ?? 0;
     const cancelled = statuses.find((row) => row.status === 'cancelled')?._count._all ?? 0;
@@ -1483,7 +2040,18 @@ export class EliteProgramService {
       rating: Number(tasker?.rating ?? 0),
       completedTasks: tasker?.completedTasks ?? completed,
       completionRate: percentage(completed, completed + cancelled),
-      settledEarnings: money(earnings._sum.amount),
+      settledEarnings: money(
+        earnings.reduce(
+          (total, row) =>
+            total +
+            this.platformSettings.convertCurrencyAmountToUsd(
+              Number(row._sum.amount ?? 0),
+              row.currency,
+            ),
+          0,
+        ),
+      ),
+      settledEarningsCurrency: 'USD',
       openComplaints,
       measuredAt: new Date().toISOString(),
     };
@@ -1588,6 +2156,10 @@ export class EliteProgramService {
       description: string | null;
       requirements?: unknown;
       isActive?: boolean;
+      autoPromotionEnabled?: boolean;
+      autoDemotionEnabled?: boolean;
+      retentionGraceDays?: number;
+      requestCooldownDays?: number;
       translations?: EliteTranslation[];
     },
     locale?: string,
@@ -1603,6 +2175,10 @@ export class EliteProgramService {
       description: selected?.translation?.description ?? tier.description,
       requirements: 'requirements' in tier ? tier.requirements : null,
       isActive: 'isActive' in tier ? tier.isActive : true,
+      autoPromotionEnabled: 'autoPromotionEnabled' in tier ? Boolean(tier.autoPromotionEnabled) : false,
+      autoDemotionEnabled: 'autoDemotionEnabled' in tier ? Boolean(tier.autoDemotionEnabled) : true,
+      retentionGraceDays: 'retentionGraceDays' in tier ? Number(tier.retentionGraceDays ?? 14) : 14,
+      requestCooldownDays: 'requestCooldownDays' in tier ? Number(tier.requestCooldownDays ?? 3) : 3,
       ...(locale
         ? {
             resolvedLocale: selected?.translation ? selected.resolvedLocale : 'canonical',
@@ -1911,6 +2487,7 @@ export class EliteProgramService {
       completedTasks,
       completionRate,
       settledEarnings,
+      settledEarningsCurrency: 'USD',
       openComplaints,
       measuredAt: typeof source.measuredAt === 'string' ? source.measuredAt : '',
     };
@@ -1928,6 +2505,35 @@ export class EliteProgramService {
       .replace(/^_+|_+$/g, '');
     if (!normalized) throw new BadRequestException('A valid code is required');
     return normalized;
+  }
+
+  private assertSuperAdminProgramPolicy(actor: User): void {
+    if (actor.role !== UserRole.SuperAdmin) {
+      throw new ForbiddenException(
+        'Only Super Admin can change Elite tier rules and perk assignments',
+      );
+    }
+  }
+
+  private perkCatalogPayload(): Array<Record<string, unknown>> {
+    return ELITE_PERK_CODES.map((code) => ({ ...ELITE_PERK_CATALOG[code] }));
+  }
+
+  private perkMetadata(
+    tier: { code: string; rank: number },
+    code: ElitePerkCode,
+    presentationMetadata?: Record<string, unknown>,
+  ): Prisma.InputJsonValue {
+    const perk = ELITE_PERK_CATALOG[code];
+    return {
+      enforcement: perk.enforcement,
+      configurationSource: perk.configurationSource,
+      tierCode: tier.code,
+      ...(code === 'search_priority_boost' ? { tierRank: tier.rank } : {}),
+      ...(presentationMetadata && Object.keys(presentationMetadata).length
+        ? { presentation: presentationMetadata }
+        : {}),
+    } as Prisma.InputJsonValue;
   }
 
   private normalizeTierCode(value: string): EliteTierCode {

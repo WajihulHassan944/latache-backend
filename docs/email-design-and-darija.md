@@ -2,13 +2,15 @@
 
 ## Shared transactional email shell
 
-Every current Nodemailer flow uses `src/modules/mail/email-layout.ts`. The shell owns the premium copper/cream design, responsive table structure, RTL direction, security panel, app callout, and footer. Individual TypeScript templates provide only escaped dynamic center content, subject, preheader, and plain-text alternative.
+Every current Nodemailer flow uses `src/modules/mail/email-layout.ts`. The shell owns the premium copper/cream design, responsive table structure, RTL direction, security panel, and footer. Individual TypeScript templates provide only escaped dynamic center content, subject, preheader, and plain-text alternative.
 
 The logo is loaded from the requested canonical URL:
 
 `https://latache-web.vercel.app/images/logo-full.svg`
 
 The header panorama, security shield, and dune footer use the supplied versioned Cloudinary URLs. They are ordinary decorative remote images shared by every recipient; the email contains no recipient-specific image token and no multi-megabyte CID attachment. The center content and plain-text alternative remain usable when a mail client initially blocks remote images. No standalone HTML, Handlebars, or EJS templates are used.
+
+The logo and shield use explicit HTML `<center>` wrappers plus table alignment for older email clients. The app-download heading, tagline, App Store badge, and Google Play badge are intentionally omitted from every transactional email.
 
 The canonical build is rooted at `src` and emits `dist/main.js`. Email delivery has no runtime filesystem dependency, which avoids Windows/Railway/Docker asset-path differences and keeps the SMTP message small.
 

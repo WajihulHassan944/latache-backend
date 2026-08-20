@@ -27,6 +27,17 @@ export class RealtimeOutboxService {
     return this.enqueue(realtimeRoom.user(userId), eventName, payload, transaction);
   }
 
+
+  enqueueUserRole(
+    userId: number,
+    role: string,
+    eventName: string,
+    payload: Prisma.InputJsonValue,
+    transaction?: Prisma.TransactionClient,
+  ) {
+    return this.enqueue(realtimeRoom.userRole(userId, role), eventName, payload, transaction);
+  }
+
   enqueueBooking(
     bookingId: number,
     eventName: string,

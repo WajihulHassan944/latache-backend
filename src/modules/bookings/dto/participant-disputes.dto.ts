@@ -8,6 +8,8 @@ export const PARTICIPANT_DISPUTE_STATUSES = [
   'under_investigation',
   'escalated',
   'resolved',
+  'dismissed',
+  'withdrawn',
 ] as const;
 
 export class ListParticipantDisputesQueryDto {
@@ -45,4 +47,47 @@ export class ParticipantDisputeParamDto {
   @MinLength(1)
   @MaxLength(40)
   disputeId!: string;
+}
+
+export const PARTICIPANT_DISPUTE_ACTIONS = [
+  'withdraw',
+  'accept_proposal',
+  'reject_proposal',
+  'appeal',
+  'comment',
+] as const;
+
+export class ParticipantDisputeActionDto {
+  @ApiProperty({ enum: PARTICIPANT_DISPUTE_ACTIONS })
+  @IsIn(PARTICIPANT_DISPUTE_ACTIONS)
+  action!: (typeof PARTICIPANT_DISPUTE_ACTIONS)[number];
+
+  @ApiPropertyOptional({ example: 'cm123resolution' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  resolutionId?: string;
+
+  @ApiPropertyOptional({ example: 'I do not agree with the proposed settlement because…' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(5000)
+  message?: string;
+}
+
+export class SubmitDisputeSatisfactionDto {
+  @ApiProperty({ minimum: 1, maximum: 5, example: 5 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  rating!: number;
+
+  @ApiPropertyOptional({ example: 'The dispute was handled fairly and quickly.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  comment?: string;
 }
