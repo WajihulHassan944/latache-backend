@@ -6,6 +6,7 @@ import { Prisma, type User } from '../../../generated/prisma/client';
 import { recalculateRoleRating } from '../../reviews/review-rating.util';
 import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { AdminReviewModerationDto, AdminReviewsQueryDto } from '../dto/admin-reviews.dto';
+import { AppCacheService, CacheNamespace } from '../../../infrastructure/redis/app-cache.service';
 
 const REVIEW_INCLUDE = {
   booking: {
@@ -39,6 +40,7 @@ export class AdminReviewsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AdminAuditService,
+    private readonly cache: AppCacheService,
   ) {}
 
   async list(query: AdminReviewsQueryDto) {
@@ -84,7 +86,7 @@ export class AdminReviewsService {
   }
 
   async moderate(actor: User, reviewId: string, dto: AdminReviewModerationDto) {
-    return this.prisma.$transaction(async (transaction) => {
+    const result = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Reviews" WHERE "id" = ${reviewId} FOR UPDATE`;
       const review = await transaction.review.findUnique({ where: { id: reviewId } });
       if (!review) throw new NotFoundException('Review not found');
@@ -123,6 +125,8 @@ export class AdminReviewsService {
       );
       return this.view(updated);
     });
+    await this.cache.invalidate(CacheNamespace.ManagedContent);
+    return result;
   }
 
   private view(row: AdminReviewRow) {

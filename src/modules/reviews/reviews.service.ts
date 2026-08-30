@@ -7,6 +7,7 @@ import { Prisma, type User } from '../../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateReviewDto, ListReviewsQueryDto, UpdateReviewDto } from './reviews.dto';
 import { recalculateRoleRating } from './review-rating.util';
+import { AppCacheService, CacheNamespace } from '../../infrastructure/redis/app-cache.service';
 import type { ReviewListView, ReviewPersonView, ReviewView } from './reviews.types';
 
 const REVIEW_INCLUDE = {
@@ -27,6 +28,7 @@ export class ReviewsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly cache: AppCacheService,
   ) {}
 
   async list(
@@ -114,6 +116,7 @@ export class ReviewsService {
         );
         return review;
       });
+      await this.cache.invalidate(CacheNamespace.ManagedContent);
       return this.serialize(created, user.id, role);
     } catch (error) {
       if (hasPrismaErrorCode(error, 'P2002')) {
@@ -143,6 +146,7 @@ export class ReviewsService {
       );
       return review;
     });
+    await this.cache.invalidate(CacheNamespace.ManagedContent);
     return this.serialize(updated, user.id, role);
   }
 

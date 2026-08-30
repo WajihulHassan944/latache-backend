@@ -229,6 +229,19 @@ export class TaskersService {
           effectiveQuery.radius = query.radius ?? fallback;
         }
       }
+      if ((effectiveQuery.startTime !== undefined || effectiveQuery.endTime !== undefined) && !effectiveQuery.date) {
+        throw new BadRequestException('date is required when filtering Taskers by availability time');
+      }
+      if (effectiveQuery.endTime !== undefined && effectiveQuery.startTime === undefined) {
+        throw new BadRequestException('startTime is required when endTime is provided');
+      }
+      if (effectiveQuery.startTime !== undefined && effectiveQuery.endTime !== undefined) {
+        const start = parseTimeToMinutes(effectiveQuery.startTime);
+        const end = parseTimeToMinutes(effectiveQuery.endTime);
+        if (start === null || end === null || start >= end) {
+          throw new BadRequestException('endTime must be after startTime');
+        }
+      }
       const currency = await this.platformSettings.currencyContext();
       if (effectiveQuery.minPrice !== undefined) {
         effectiveQuery.minPrice = this.platformSettings.convertPlatformAmountToUsd(

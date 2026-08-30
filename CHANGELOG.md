@@ -1,3 +1,86 @@
+# 3.32.0
+
+- Added complete RBAC-managed SEO configuration, localized route metadata, canonical/robots directives, Open Graph/Twitter metadata, structured data, redirects, robots.txt, XML sitemap generation, dynamic service/tasker sitemap inclusion, and explicit sitemap entries.
+- Added automatically generated homepage APIs for services, popular projects, recommended jobs, and testimonials backed by authoritative marketplace data.
+
+# v3.30.0 — Customer discovery completion and extensible content management
+
+- Added Tasker discovery `date`, `startTime`, and `endTime` filters. The listing now returns only active Taskers with a genuinely open `UserAvailability` slot covering the requested window.
+- Added a generic database-backed Content Management System for homepage sections and future pages, including About, Privacy Policy, Terms of Service, or any future page slug.
+- Content pages support draft/published state, versioning, SEO metadata, page metadata, arbitrary block types, structured JSON payloads, ordering, activation, and English/Arabic/Darija translations.
+- Added public `GET /api/content/:slug` with locale fallback and admin CRUD/publish/unpublish APIs under `/api/admin/content`; published pages cannot be permanently deleted until unpublished.
+- Content management is RBAC-controlled with existing `content.read` / `content.manage` permissions; the built-in Content Administrator role already receives these permissions.
+- Content mutations are audit logged and invalidate the shared platform-content cache.
+- Existing Service/ServiceOption APIs remain the single canonical dynamic catalogue; Admin/Content permissions do not create a second service source of truth. Service minimum/maximum Tasker rates remain enforced in onboarding and narrowing a service range is blocked when existing Tasker rates would become invalid.
+- Added additive migration `20260825120000_content_management_and_tasker_discovery_filters`.
+- Build, lint, Jest, E2E and Prisma validation/generation were not run at the requester’s instruction.
+
+# v3.29.0 - Verified on-site work start/completion flow
+
+- New bookings require a Tasker front-door photo after arrival, followed by a six-digit Customer start OTP before the work timer can start. Existing pre-migration bookings retain the previous completion behavior.
+- The Tasker must attach an immutable completed-work photo when the job is done. Persisting that proof freezes the billable timer immediately so time spent waiting for the final OTP is not charged.
+- The Customer then issues a six-digit completion OTP; the Tasker verifies it to complete the booking and unlock final payment orchestration. The authenticated Customer can use the existing completion endpoint as a fallback after completed-work proof is present.
+- Work OTPs are keyed-hash stored, expire, enforce bounded attempts, and are returned only to the authenticated Customer. Work images are verified against Latache-managed Cloudinary resources and protected from independent deletion after persistence.
+- New verification-required bookings do not enter the legacy automatic completion-review worker. Online Tasker earnings still enter the existing configured clearance/hold flow after genuine payment settlement.
+- Taskers can extend an active task through the shared booking extension endpoint; `extensionMinutes` increments and final billing remains based on the persisted timer with the resulting authorized-duration ceiling.
+- Customer Management now supports phone, booking-location, and joined-date (`from`/`to`) filters. Full international phone values are matched against the separately stored country-code/local-number fields.
+- Customer wallet responses now include real saved Stripe cards/default card and the existing SetupIntent endpoint needed to attach a new card. Stripe bookings continue requiring a real saved Customer card.
+- Added additive migration `20260820194500_booking_work_verification_flow`.
+- Added optional `BOOKING_WORK_OTP_TTL_MINUTES` (default 15) and `BOOKING_WORK_OTP_MAX_ATTEMPTS` (default 5).
+- Build, lint, Jest, E2E and Prisma validation/generation were not run at the requester’s instruction.
+
+# v3.28.3 - Railway PostgreSQL advisory-lock compatibility hotfix
+
+- Replaced PostgreSQL advisory-lock calls that used Prisma `$queryRaw` with `$executeRaw`.
+- Fixes Railway signup 500 errors caused by Prisma attempting to deserialize PostgreSQL `void` returned by `pg_advisory_xact_lock`.
+- Applied consistently to Customer registration, Tasker registration, social-auth identity locking, and service slug locking.
+- No API, schema, migration, or environment-variable changes.
+- Build/tests/lint/Prisma validation were not run per request.
+
+# v3.28.2 - Railway CORS and Swagger same-origin hotfix
+
+- Added built-in browser origins for `https://latache-web.vercel.app`, `https://latache-be-production.up.railway.app`, and `http://localhost:3000`; additional `CORS_ORIGINS` values are merged rather than replacing these deployment-safe defaults.
+- Swagger now declares relative `/` as its first OpenAPI server, so `Try it out` always targets the host serving `/api/docs` and cannot be redirected to a stale localhost `APP_BASE_URL`.
+- Kept the configured absolute `APP_BASE_URL` as a secondary OpenAPI server for exported clients.
+- Explicitly enabled standard CORS methods/preflight handling.
+- No API, Prisma schema, migration, or environment requirement changes.
+- Build/tests/lint/Prisma validation were not run for this hotfix.
+
+# v3.28.1 — Railway SMTP IPv4 and automatic public base URL hotfix
+
+- Prefer IPv4 process-wide with Node `dns.setDefaultResultOrder('ipv4first')` before NestJS starts. The same bootstrap is used by `SERVICE_MODE=worker`, so API and BullMQ worker processes receive the fix.
+- Railway `RAILWAY_PUBLIC_DOMAIN` is now used automatically as `https://<domain>` when `APP_BASE_URL` is not explicitly configured. Local fallback remains `http://localhost:8080`.
+- SMTP bootstrap verification is non-fatal by default. `SMTP_VERIFY_ON_BOOTSTRAP=true` can still verify connectivity, but a transient SMTP/DNS outage no longer terminates the whole API unless `SMTP_VERIFY_ON_BOOTSTRAP_FATAL=true` is explicitly configured.
+- Runtime email delivery continues to fail closed with the existing controlled HTTP 503 if SMTP is unavailable; no successful delivery is fabricated.
+- No API, Prisma schema, migration, or financial/business-flow change.
+- Build, lint, Jest, E2E and Prisma validation/generation were not run at the requester’s instruction.
+
+# v3.28.0 — Complete authentication audit and hardening
+
+- Audited local Customer/Tasker/Admin authentication, email verification, password reset/change, refresh-token rotation, session revocation, multi-role switching/enrollment, Google/Apple authentication/linking and authorization guards.
+- Added database-backed local-password failed-login tracking and temporary account-method lockout (`AUTH_MAX_FAILED_LOGIN_ATTEMPTS`, default 5; `AUTH_LOGIN_LOCK_MINUTES`, default 15) so protection is consistent across multiple API instances.
+- Added authenticated `POST /api/auth/set-password` for social-only identities. Password reset/change clears local-login lock state; password reset/change continues revoking all existing sessions.
+- Enforced the independent Admin JWT signing secret at both token signing and verification; administrative tokens are no longer allowed to fall back to the marketplace JWT secret.
+- Enforced `mustChangePassword` at the Admin guard boundary so a newly created Admin/Super Admin must replace the temporary password before any Admin API is usable.
+- Hardened Google/Apple OIDC verification with signing-key `alg/use` checks, multi-audience `azp` validation, `nbf` validation, issuer/audience/expiry/issued-at checks, and fail-closed JWKS refresh behavior. Existing optional provider nonce verification remains supported.
+- Serialized local/social account creation on the same normalized-email advisory lock and serialized provider linking per User/provider to prevent concurrent duplicate/link races.
+- Social provider unlink now revokes all Latache sessions; authentication-method responses expose whether a local password can be enabled and whether each provider can be safely unlinked.
+- Added operational marketplace-profile enforcement for dedicated Customer/Tasker routes: pending/rejected Tasker identities may authenticate to inspect onboarding/status but cannot consume Tasker operational APIs until the profile is active.
+- Existing identity/role enrollment cannot be used to bypass suspension, deactivation, or an active local-login lock.
+- Additive migration `20260820150000_authentication_hardening` adds local-login lockout state and an index for lock expiry queries.
+- Build, lint, Jest, E2E, Prisma generation/validation and migration execution were not run at the requester’s instruction.
+
+# v3.27.0 — Google and Apple social authentication
+
+- Added `POST /api/auth/social/google` and `POST /api/auth/social/apple` for server-verified social signup/login.
+- Added authenticated provider link/unlink endpoints and `GET /api/auth/social/methods`.
+- Added `SocialAuthIdentities` with unique provider subject and provider-per-user constraints.
+- Preserved the single-User multi-role architecture; social-created identities start with Customer access and use the existing Tasker-role onboarding for service-provider enrollment.
+- Added rotating JWKS verification with issuer/audience/expiry/nonce checks and bounded stale-key fallback.
+- Added `GOOGLE_AUTH_CLIENT_IDS`, `APPLE_AUTH_CLIENT_IDS`, `SOCIAL_AUTH_JWKS_CACHE_SECONDS`, and `SOCIAL_AUTH_CLOCK_SKEW_SECONDS`.
+- Additive migration `20260820143000_google_apple_social_auth`.
+- No build/tests/lint/Prisma validation were run per request.
+
 # v3.26.2
 
 - Fixed multi-role dispute/Admin TypeScript role-field typing regressions reported after v3.26.1.

@@ -1,3 +1,4 @@
+import { setDefaultResultOrder } from 'node:dns';
 import { BadRequestException, Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
@@ -10,6 +11,9 @@ import { AppModule } from './app.module';
 import { RealtimeIoAdapter } from './modules/realtime/realtime-io.adapter';
 import { RedisService } from './infrastructure/redis/redis.service';
 import { buildAllowedOrigins, normalizeHttpOrigin } from './common/utils/cors.util';
+
+// Railway/Gmail SMTP may resolve an unreachable IPv6 address. Prefer IPv4 process-wide.
+setDefaultResultOrder('ipv4first');
 
 interface ValidationErrorNode {
   property: string;
@@ -101,6 +105,8 @@ async function bootstrap(): Promise<void> {
   app.useWebSocketAdapter(realtimeAdapter);
   app.enableCors({
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    optionsSuccessStatus: 204,
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       const normalizedOrigin = normalizeHttpOrigin(origin);
@@ -132,7 +138,8 @@ async function bootstrap(): Promise<void> {
         .setDescription(
           'Production API for Latache customers, taskers and administrators. Dynamic catalogue content supports English (en), Arabic (ar), and Moroccan Darija (ary) through a saved user preference or Accept-Language with English/canonical fallback. UI labels and machine-readable domain codes remain frontend-owned and language-neutral. Shared role-aware APIs preserve provider-backed finance, transactional realtime, and persisted notification semantics.',
         )
-        .setVersion('3.22.0')
+        .setVersion('3.32.0')
+        .addServer('/', 'Current Swagger host')
         .addServer(
           config.get<string>('app.baseUrl', 'http://localhost:8080'),
           'Configured API origin',
@@ -212,6 +219,7 @@ async function bootstrap(): Promise<void> {
           '25 Admin - Dispute Management',
           'Investigation, evidence, resolution drafts, refunds, warnings, and audit-backed dispute decisions',
         )
+        .addTag('30 SEO', 'Public SEO metadata, robots.txt, XML sitemap, redirects, structured data, and RBAC-managed SEO configuration')
         .addTag('health', 'API, PostgreSQL, Redis, BullMQ worker/queue and realtime outbox health')
         .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'bearer')
         .build(),

@@ -29,17 +29,26 @@ export default () => {
   const supportedLocales = asStringList(process.env.SUPPORTED_LOCALES, ['en', 'ar', 'ary']).map(
     (locale) => locale.toLowerCase(),
   );
+  const railwayPublicDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  const appBaseUrl =
+    process.env.APP_BASE_URL?.trim() ||
+    (railwayPublicDomain ? `https://${railwayPublicDomain}` : 'http://localhost:8080');
+
   return {
     app: {
       environment: nodeEnvironment,
       port: asPositiveInteger(process.env.PORT, 8080),
-      baseUrl: process.env.APP_BASE_URL ?? 'http://localhost:8080',
+      baseUrl: appBaseUrl,
       timezone: process.env.APP_TIMEZONE ?? 'Africa/Casablanca',
       requestBodyLimit: process.env.REQUEST_BODY_LIMIT ?? '1mb',
-      corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
-        .split(',')
-        .map((origin) => origin.trim())
-        .filter(Boolean),
+      corsOrigins: Array.from(
+        new Set([
+          'http://localhost:3000',
+          'https://latache-web.vercel.app',
+          'https://latache-be-production.up.railway.app',
+          ...asStringList(process.env.CORS_ORIGINS),
+        ]),
+      ),
       swaggerEnabled: asBoolean(process.env.SWAGGER_ENABLED, nodeEnvironment !== 'production'),
       trustProxy: asBoolean(process.env.TRUST_PROXY, false),
       serviceMode: process.env.SERVICE_MODE ?? 'all',
@@ -48,6 +57,9 @@ export default () => {
         process.env.HTTP_COMPRESSION_THRESHOLD_BYTES,
         1_024,
       ),
+    },
+    seo: {
+      publicBaseUrl: process.env.SEO_PUBLIC_BASE_URL?.trim() || appBaseUrl,
     },
     database: {
       url: process.env.DATABASE_URL,
@@ -98,6 +110,10 @@ export default () => {
       approvalHours: asPositiveInteger(process.env.BOOKING_COMPLETION_APPROVAL_HOURS, 24),
       sweepIntervalMs: asPositiveInteger(process.env.BOOKING_COMPLETION_SWEEP_INTERVAL_MS, 60_000),
       batchSize: asPositiveInteger(process.env.BOOKING_COMPLETION_BATCH_SIZE, 100),
+    },
+    bookingWorkVerification: {
+      otpTtlMinutes: asPositiveInteger(process.env.BOOKING_WORK_OTP_TTL_MINUTES, 15),
+      otpMaxAttempts: asPositiveInteger(process.env.BOOKING_WORK_OTP_MAX_ATTEMPTS, 5),
     },
     observability: {
       slowRequestMs: asPositiveInteger(process.env.SLOW_REQUEST_MS, 1_000),
@@ -162,11 +178,19 @@ export default () => {
       accessTokenExpiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
       refreshTokenExpiresInDays: asPositiveInteger(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS, 30),
       bcryptRounds: asPositiveInteger(process.env.BCRYPT_ROUNDS, 12),
+      maxFailedLoginAttempts: asPositiveInteger(process.env.AUTH_MAX_FAILED_LOGIN_ATTEMPTS, 5),
+      loginLockMinutes: asPositiveInteger(process.env.AUTH_LOGIN_LOCK_MINUTES, 15),
       otpExpiresInMinutes: asPositiveInteger(process.env.OTP_EXPIRES_IN_MINUTES, 5),
       passwordResetOtpExpiresInMinutes: asPositiveInteger(
         process.env.PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES,
         15,
       ),
+    },
+    socialAuth: {
+      googleClientIds: asStringList(process.env.GOOGLE_AUTH_CLIENT_IDS),
+      appleClientIds: asStringList(process.env.APPLE_AUTH_CLIENT_IDS),
+      jwksCacheSeconds: asPositiveInteger(process.env.SOCIAL_AUTH_JWKS_CACHE_SECONDS, 3600),
+      clockSkewSeconds: asPositiveInteger(process.env.SOCIAL_AUTH_CLOCK_SKEW_SECONDS, 60),
     },
     payments: {
       stripeEnabled: asBoolean(process.env.STRIPE_ENABLED, false),
@@ -232,6 +256,7 @@ export default () => {
       from: process.env.SMTP_FROM,
       tlsRejectUnauthorized: asBoolean(process.env.SMTP_TLS_REJECT_UNAUTHORIZED, true),
       verifyOnBootstrap: asBoolean(process.env.SMTP_VERIFY_ON_BOOTSTRAP, false),
+      verifyOnBootstrapFatal: asBoolean(process.env.SMTP_VERIFY_ON_BOOTSTRAP_FATAL, false),
       connectionTimeoutMs: asPositiveInteger(process.env.SMTP_CONNECTION_TIMEOUT_MS, 10_000),
       greetingTimeoutMs: asPositiveInteger(process.env.SMTP_GREETING_TIMEOUT_MS, 10_000),
       socketTimeoutMs: asPositiveInteger(process.env.SMTP_SOCKET_TIMEOUT_MS, 30_000),

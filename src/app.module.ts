@@ -36,6 +36,8 @@ import { ObservabilityModule } from './infrastructure/observability/observabilit
 import { RequestLoggingInterceptor } from './infrastructure/observability/request-logging.interceptor';
 import { PerformanceJobsModule } from './infrastructure/jobs/performance-jobs.module';
 import { ReferralsModule } from './modules/referrals/referrals.module';
+import { ContentManagementModule } from './modules/content-management/content-management.module';
+import { SeoManagementModule } from './modules/seo-management/seo-management.module';
 
 @Module({
   imports: [
@@ -80,6 +82,8 @@ import { ReferralsModule } from './modules/referrals/referrals.module';
     PaymentsModule,
     FavoritesModule,
     ReferralsModule,
+    ContentManagementModule,
+    SeoManagementModule,
     HealthModule,
     PerformanceJobsModule,
   ],

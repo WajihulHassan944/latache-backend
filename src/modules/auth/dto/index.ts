@@ -11,7 +11,10 @@ export * from './register-tasker.dto';
 export * from './resend-verification-email.dto';
 export * from './reset-password.dto';
 export * from './session-param.dto';
+export * from './set-password.dto';
 export * from './update-profile.dto';
 export * from './verify-email.dto';
 export * from './verify-reset-otp.dto';
 export * from './switch-role.dto';
+
+export * from './social-auth.dto';

@@ -103,6 +103,7 @@ export class AuthRegistrationService {
     const password = await hash(dto.password, this.bcryptRounds());
 
     const result = await this.repository.transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`auth-email:${dto.email.trim().toLowerCase()}`}, 0))`;
       await this.assertEmailAvailable(dto.email, transaction);
       const user = await this.repository.createUser(
         {
@@ -179,6 +180,7 @@ export class AuthRegistrationService {
     try {
       const result = await this.repository.transaction(
         async (transaction: Prisma.TransactionClient) => {
+          await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`auth-email:${dto.email.trim().toLowerCase()}`}, 0))`;
           await this.assertEmailAvailable(dto.email, transaction);
           const application = await this.prepareTaskerApplication(dto, transaction);
           const user = await this.repository.createUser(
@@ -297,6 +299,7 @@ export class AuthRegistrationService {
     const result = await this.repository.transaction(async (transaction) => {
       const locked = await this.repository.findUserByIdForUpdate(identity.id, transaction);
       if (!locked || locked.deletedAt) throw new NotFoundException('Account not found');
+      this.assertIdentityUsableForRoleEnrollment(locked);
       this.assertMarketplaceRoleCanBeAdded(locked, UserRole.Customer);
 
       const now = new Date();
@@ -358,6 +361,7 @@ export class AuthRegistrationService {
     const result = await this.repository.transaction(async (transaction) => {
       const locked = await this.repository.findUserByIdForUpdate(identity.id, transaction);
       if (!locked || locked.deletedAt) throw new NotFoundException('Account not found');
+      this.assertIdentityUsableForRoleEnrollment(locked);
       this.assertMarketplaceRoleCanBeAdded(locked, UserRole.Tasker);
 
       const now = new Date();
@@ -503,6 +507,22 @@ export class AuthRegistrationService {
   private async assertExistingIdentityCredentials(user: User, password: string): Promise<void> {
     if (user.deletedAt || !user.password || !(await compare(password, user.password))) {
       throw new UnauthorizedException('An account with this email already exists; authenticate with the existing account to add another role.');
+    }
+    this.assertIdentityUsableForRoleEnrollment(user);
+    if (user.loginLockedUntil && user.loginLockedUntil.getTime() > Date.now()) {
+      throw new ForbiddenException({
+        code: 'LOCAL_LOGIN_TEMPORARILY_LOCKED',
+        message: 'The existing identity is temporarily locked after failed login attempts.',
+      });
+    }
+  }
+
+  private assertIdentityUsableForRoleEnrollment(user: User): void {
+    if (user.accountStatus === AccountStatus.Suspended) {
+      throw new ForbiddenException('This account is suspended');
+    }
+    if (user.accountStatus === AccountStatus.Deactivated) {
+      throw new ForbiddenException('This account is deactivated');
     }
   }
 

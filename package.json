@@ -1,7 +1,7 @@
 {
   "name": "latache-backend-nestjs-prisma",
-  "version": "3.26.2",
-  "description": "Latache API with Super-Admin-owned referral/reward policy and backend-enforced Elite perk entitlements, hardened dispute lifecycle, production referral accounting, private/support chat, transactional realtime, WebRTC signaling, completion approval, secure auth, en/ar/ary localization, Redis/BullMQ, provider-backed finance, Prisma/PostgreSQL, Stripe, and RBAC",
+  "version": "3.32.2",
+  "description": "Latache API with verified on-site work start/completion proof and OTP gating, hardened local/social authentication, single-User multi-role Customer/Tasker identity, Super-Admin-owned referral/reward policy and backend-enforced Elite perks, disputes, chat/realtime/WebRTC, Redis/BullMQ, provider-backed finance, Prisma/PostgreSQL, Stripe, localization, and database-backed RBAC",
   "private": true,
   "license": "UNLICENSED",
   "engines": {

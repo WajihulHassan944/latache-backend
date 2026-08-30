@@ -232,6 +232,32 @@ export class UploadsService {
     };
   }
 
+  async verifyBookingWorkImage(
+    user: User,
+    reference: {
+      publicId: string;
+      secureUrl: string;
+      resourceType?: string;
+      mimeType?: string;
+      originalFileName?: string;
+    },
+  ): Promise<ConversationAttachmentReference> {
+    const globalMaximum = this.config.get<number>('cloudinary.maxFileSizeBytes', 10 * 1024 * 1024);
+    const [verified] = await this.verifyManagedChatAttachments(
+      user,
+      UploadFolder.BookingAttachment,
+      [reference],
+      this.imageMimeTypes,
+      {
+        maxFilesPerMessage: 1,
+        maxFileSizeBytes: globalMaximum,
+        maxTotalSizeBytes: globalMaximum,
+      },
+    );
+    if (!verified) throw new BadRequestException('Work proof image could not be verified');
+    return verified;
+  }
+
   async verifyDisputeAttachments(
     user: User,
     references: Array<{
@@ -443,13 +469,16 @@ export class UploadsService {
         UNION ALL
         SELECT 1 FROM "TaskComplaints"
         WHERE "attachments" @> jsonb_build_array(jsonb_build_object('publicId', ${publicId}))
+        UNION ALL
+        SELECT 1 FROM "BookingWorkProofs"
+        WHERE "publicId" = ${publicId}
       ) AS "referenced"
     `;
     if (result?.referenced) {
       throw new ConflictException({
         code: 'MANAGED_ASSET_IN_USE',
         message:
-          'This asset is referenced by persisted chat/support/dispute history and cannot be deleted independently.',
+          'This asset is referenced by persisted chat/support/dispute/work-proof history and cannot be deleted independently.',
       });
     }
   }

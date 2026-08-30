@@ -97,6 +97,22 @@ export const validateEnvironment = (environment: Environment): Environment => {
   validateInteger(errors, 'BCRYPT_ROUNDS', environment.BCRYPT_ROUNDS, 12, 10, 15);
   validateInteger(
     errors,
+    'AUTH_MAX_FAILED_LOGIN_ATTEMPTS',
+    environment.AUTH_MAX_FAILED_LOGIN_ATTEMPTS,
+    5,
+    3,
+    20,
+  );
+  validateInteger(
+    errors,
+    'AUTH_LOGIN_LOCK_MINUTES',
+    environment.AUTH_LOGIN_LOCK_MINUTES,
+    15,
+    1,
+    1440,
+  );
+  validateInteger(
+    errors,
     'REFRESH_TOKEN_EXPIRES_IN_DAYS',
     environment.REFRESH_TOKEN_EXPIRES_IN_DAYS,
     30,
@@ -630,6 +646,17 @@ export const validateEnvironment = (environment: Environment): Environment => {
     }
   }
 
+  for (const key of ['GOOGLE_AUTH_CLIENT_IDS', 'APPLE_AUTH_CLIENT_IDS'] as const) {
+    if (present(environment[key])) {
+      const ids = (environment[key] as string).split(',').map((value) => value.trim()).filter(Boolean);
+      if (ids.length === 0 || ids.some((value) => value.length < 3 || value.length > 255)) {
+        errors.push(`${key} must contain one or more comma-separated provider client IDs`);
+      }
+    }
+  }
+  validateInteger(errors, 'SOCIAL_AUTH_JWKS_CACHE_SECONDS', environment.SOCIAL_AUTH_JWKS_CACHE_SECONDS, 3600, 60, 86400);
+  validateInteger(errors, 'SOCIAL_AUTH_CLOCK_SKEW_SECONDS', environment.SOCIAL_AUTH_CLOCK_SKEW_SECONDS, 60, 0, 300);
+
   const payoutMode = environment.TASKER_PAYOUT_EXECUTION_MODE ?? 'disabled';
   if (!PAYOUT_EXECUTION_MODES.has(payoutMode)) {
     errors.push('TASKER_PAYOUT_EXECUTION_MODE must be disabled or manual');
@@ -729,6 +756,9 @@ export const validateEnvironment = (environment: Environment): Environment => {
 
   if (present(environment.APP_BASE_URL) && !isHttpUrl(environment.APP_BASE_URL as string)) {
     errors.push('APP_BASE_URL must be a valid http(s) URL');
+  }
+  if (present(environment.SEO_PUBLIC_BASE_URL) && !isHttpUrl(environment.SEO_PUBLIC_BASE_URL as string)) {
+    errors.push('SEO_PUBLIC_BASE_URL must be a valid http(s) URL');
   }
 
   if (present(environment.CORS_ORIGINS)) {

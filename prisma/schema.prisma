@@ -39,6 +39,9 @@ model User {
   inheritsRolePermissions      Boolean   @default(true)
   mustChangePassword           Boolean   @default(false)
   lastLoginAt                  DateTime? @db.Timestamptz(6)
+  loginFailedAttempts          Int       @default(0)
+  loginLockedUntil             DateTime? @db.Timestamptz(6)
+  lastFailedLoginAt            DateTime? @db.Timestamptz(6)
   acceptedTermsAt              DateTime? @db.Timestamptz(6)
   acceptedPrivacyAt            DateTime? @db.Timestamptz(6)
   createdById                  Int?
@@ -83,6 +86,7 @@ model User {
   updatedAt                    DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   refreshTokens               RefreshToken[]
+  socialAuthIdentities         SocialAuthIdentity[]
   customerProfile             CustomerProfile?
   taskerProfile               TaskerProfile?
   userServices                UserService[]
@@ -151,11 +155,34 @@ model User {
   @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
   @@index([roles], type: Gin, map: "users_roles_gin_idx")
   @@index([role, accountStatus], map: "users_role_status_idx")
+  @@index([loginLockedUntil], map: "users_login_locked_until_idx")
   @@index([disciplinaryState, disputeStrikePoints], map: "users_discipline_state_points_idx")
   @@index([createdById], map: "users_created_by_idx")
   @@index([rbacRoleId], map: "users_rbac_role_idx")
   @@index([eliteTierId, accountStatus], map: "users_elite_tier_status_idx")
   @@map("Users")
+}
+
+
+model SocialAuthIdentity {
+  id               String   @id @default(cuid()) @db.VarChar(40)
+  userId           Int
+  provider         String   @db.VarChar(16)
+  providerSubject  String   @db.VarChar(255)
+  providerEmail    String?  @db.VarChar(254)
+  emailVerified    Boolean  @default(false)
+  isPrivateEmail   Boolean  @default(false)
+  providerClientId String?  @db.VarChar(255)
+  lastLoginAt      DateTime @default(now()) @db.Timestamptz(6)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "SocialAuthIdentities_userId_fkey")
+
+  @@unique([provider, providerSubject], map: "SocialAuthIdentities_provider_subject_key")
+  @@unique([provider, userId], map: "SocialAuthIdentities_provider_user_key")
+  @@index([userId, createdAt], map: "social_auth_identity_user_created_idx")
+  @@map("SocialAuthIdentities")
 }
 
 model CustomerProfile {
@@ -413,6 +440,179 @@ model PlatformSetting {
   @@map("PlatformSettings")
 }
 
+
+model SeoSettings {
+  id                    String   @id @default("global") @db.VarChar(40)
+  siteName              String?  @db.VarChar(255)
+  defaultTitle          String?  @db.VarChar(255)
+  defaultDescription    String?  @db.VarChar(1000)
+  defaultCanonicalBaseUrl String? @db.VarChar(500)
+  defaultOgImageUrl     String?  @db.VarChar(1000)
+  defaultOgImageAlt     String?  @db.VarChar(255)
+  twitterCard           String   @default("summary_large_image") @db.VarChar(32)
+  twitterHandle         String?  @db.VarChar(100)
+  defaultRobotsIndex    Boolean  @default(true)
+  defaultRobotsFollow   Boolean  @default(true)
+  organizationSchema    Json     @default("{}") @db.JsonB
+  defaultStructuredData Json     @default("{}") @db.JsonB
+  robotsRules           Json     @default("[\"Disallow: /api/\",\"Allow: /api/seo/\"]") @db.JsonB
+  sitemapEnabled        Boolean  @default(true)
+  includeServices       Boolean  @default(true)
+  includePublicTaskers  Boolean  @default(false)
+  servicePathTemplate   String   @default("/services/{slug}") @db.VarChar(255)
+  taskerPathTemplate    String   @default("/taskers/{id}") @db.VarChar(255)
+  updatedById           Int?
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@map("SeoSettings")
+}
+
+model SeoPage {
+  id                String   @id @default(cuid()) @db.VarChar(40)
+  path              String   @db.VarChar(500)
+  locale            String   @db.VarChar(10)
+  title             String?  @db.VarChar(255)
+  description       String?  @db.VarChar(1000)
+  canonicalUrl      String?  @db.VarChar(1000)
+  robotsIndex       Boolean  @default(true)
+  robotsFollow      Boolean  @default(true)
+  ogTitle           String?  @db.VarChar(255)
+  ogDescription     String?  @db.VarChar(1000)
+  ogImageUrl        String?  @db.VarChar(1000)
+  ogImageAlt        String?  @db.VarChar(255)
+  twitterCard       String?  @db.VarChar(32)
+  twitterTitle      String?  @db.VarChar(255)
+  twitterDescription String? @db.VarChar(1000)
+  twitterImageUrl   String?  @db.VarChar(1000)
+  keywords          String[] @default([]) @db.VarChar(100)
+  structuredData    Json     @default("{}") @db.JsonB
+  alternates        Json     @default("{}") @db.JsonB
+  priority          Decimal? @db.Decimal(3, 2)
+  changeFrequency   String?  @db.VarChar(16)
+  isActive          Boolean  @default(true)
+  updatedById       Int?
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@unique([path, locale], map: "seo_pages_path_locale_unique")
+  @@index([path, isActive], map: "seo_pages_path_active_idx")
+  @@index([locale, isActive], map: "seo_pages_locale_active_idx")
+  @@map("SeoPages")
+}
+
+model SeoRedirect {
+  id            String   @id @default(cuid()) @db.VarChar(40)
+  fromPath      String   @unique(map: "seo_redirects_from_path_key") @db.VarChar(500)
+  toPath        String   @db.VarChar(1000)
+  statusCode    Int      @default(301)
+  preserveQuery Boolean  @default(true)
+  isActive      Boolean  @default(true)
+  reason        String?  @db.VarChar(500)
+  updatedById   Int?
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([isActive, fromPath], map: "seo_redirects_active_from_idx")
+  @@map("SeoRedirects")
+}
+
+model SeoSitemapEntry {
+  id              String   @id @default(cuid()) @db.VarChar(40)
+  path            String   @unique(map: "seo_sitemap_entries_path_key") @db.VarChar(1000)
+  locale          String?  @db.VarChar(10)
+  priority        Decimal? @db.Decimal(3, 2)
+  changeFrequency String?  @db.VarChar(16)
+  lastModifiedAt  DateTime? @db.Timestamptz(6)
+  isActive        Boolean  @default(true)
+  updatedById     Int?
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([isActive, updatedAt], map: "seo_sitemap_entries_active_updated_idx")
+  @@map("SeoSitemapEntries")
+}
+
+model ContentPage {
+  id             String                  @id @default(cuid()) @db.VarChar(40)
+  slug           String                  @unique(map: "content_pages_slug_key") @db.VarChar(120)
+  pageType       String                  @default("standard") @db.VarChar(64)
+  status         String                  @default("draft") @db.VarChar(32)
+  isPublished    Boolean                 @default(false)
+  version        Int                     @default(1)
+  title          String?                 @db.VarChar(255)
+  description    String?                 @db.Text
+  seoTitle       String?                 @db.VarChar(255)
+  seoDescription String?                 @db.VarChar(1000)
+  metadata       Json                    @default("{}") @db.JsonB
+  publishedAt    DateTime?               @db.Timestamptz(6)
+  updatedById    Int?
+  createdAt      DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+
+  translations ContentPageTranslation[]
+  blocks       ContentBlock[]
+
+  @@index([status, isPublished, updatedAt], map: "content_pages_publish_idx")
+  @@index([updatedAt, id], map: "content_pages_updated_idx")
+  @@map("ContentPages")
+}
+
+model ContentPageTranslation {
+  id             String      @id @default(cuid()) @db.VarChar(40)
+  pageId         String      @db.VarChar(40)
+  locale         String      @db.VarChar(10)
+  title          String?     @db.VarChar(255)
+  description    String?     @db.Text
+  seoTitle       String?     @db.VarChar(255)
+  seoDescription String?     @db.VarChar(1000)
+  createdAt      DateTime    @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime    @default(now()) @updatedAt @db.Timestamptz(6)
+
+  page ContentPage @relation(fields: [pageId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ContentPageTranslations_pageId_fkey")
+
+  @@unique([pageId, locale], map: "content_page_translations_page_locale_unique")
+  @@index([locale], map: "content_page_translations_locale_idx")
+  @@map("ContentPageTranslations")
+}
+
+model ContentBlock {
+  id         String   @id @default(cuid()) @db.VarChar(40)
+  pageId     String   @db.VarChar(40)
+  key        String   @db.VarChar(120)
+  type       String   @db.VarChar(64)
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  payload    Json     @default("{}") @db.JsonB
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  page         ContentPage            @relation(fields: [pageId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ContentBlocks_pageId_fkey")
+  translations ContentBlockTranslation[]
+
+  @@unique([pageId, key], map: "content_blocks_page_key_unique")
+  @@index([pageId, isActive, sortOrder], map: "content_blocks_page_active_sort_idx")
+  @@map("ContentBlocks")
+}
+
+model ContentBlockTranslation {
+  id        String   @id @default(cuid()) @db.VarChar(40)
+  blockId   String   @db.VarChar(40)
+  locale    String   @db.VarChar(10)
+  title     String?  @db.VarChar(255)
+  subtitle  String?  @db.VarChar(500)
+  body      String?  @db.Text
+  payload   Json     @default("{}") @db.JsonB
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  block ContentBlock @relation(fields: [blockId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ContentBlockTranslations_blockId_fkey")
+
+  @@unique([blockId, locale], map: "content_block_translations_block_locale_unique")
+  @@index([locale], map: "content_block_translations_locale_idx")
+  @@map("ContentBlockTranslations")
+}
+
 model AdminAuditLog {
   id           String   @id @default(cuid()) @db.VarChar(40)
   actorId      Int?
@@ -581,6 +781,18 @@ model Booking {
   completionApprovedByRole  String?   @db.VarChar(32)
   completionAutoApprovedAt  DateTime? @db.Timestamptz(6)
   taskCompletedAt           DateTime? @db.Timestamptz(6)
+  workVerificationRequired  Boolean   @default(false)
+  frontDoorVerifiedAt       DateTime? @db.Timestamptz(6)
+  startWorkOtpHash          String?   @db.VarChar(64)
+  startWorkOtpExpiresAt     DateTime? @db.Timestamptz(6)
+  startWorkOtpAttempts      Int       @default(0)
+  startWorkVerifiedAt       DateTime? @db.Timestamptz(6)
+  completionProofAt         DateTime? @db.Timestamptz(6)
+  completionOtpHash         String?   @db.VarChar(64)
+  completionOtpExpiresAt    DateTime? @db.Timestamptz(6)
+  completionOtpAttempts     Int       @default(0)
+  completionVerifiedAt      DateTime? @db.Timestamptz(6)
+  completionVerifiedByRole  String?   @db.VarChar(32)
   cancelledAt               DateTime? @db.Timestamptz(6)
   cancelledByRole           String?   @db.VarChar(32)
   cancellationReason        String?   @db.VarChar(1000)
@@ -617,6 +829,7 @@ model Booking {
   serviceOption          ServiceOption?              @relation(fields: [serviceOptionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Bookings_serviceOptionId_fkey")
   availability           UserAvailability            @relation(fields: [availabilityId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_availabilityId_fkey")
   workSession            TaskWorkSession?
+  workProofs             BookingWorkProof[]
   latestLocation         TaskerTaskLocation?
   complaints             TaskComplaint[]
   messages               TaskMessage[]
@@ -771,6 +984,27 @@ model StripeWebhookEvent {
 
   @@index([processedAt], map: "stripe_webhook_events_processed_idx")
   @@map("StripeWebhookEvents")
+}
+
+model BookingWorkProof {
+  id           String   @id @default(cuid()) @db.VarChar(40)
+  bookingId    Int
+  taskerId     Int
+  kind         String   @db.VarChar(32)
+  publicId     String   @unique(map: "BookingWorkProofs_publicId_key") @db.VarChar(500)
+  secureUrl    String   @db.Text
+  resourceType String   @default("image") @db.VarChar(16)
+  bytes        Int
+  mimeType     String   @db.VarChar(120)
+  capturedAt   DateTime @default(now()) @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "BookingWorkProofs_bookingId_fkey")
+
+  @@unique([bookingId, kind], map: "BookingWorkProofs_booking_kind_unique")
+  @@index([bookingId, createdAt], map: "booking_work_proofs_booking_created_idx")
+  @@index([taskerId, createdAt], map: "booking_work_proofs_tasker_created_idx")
+  @@map("BookingWorkProofs")
 }
 
 model TaskWorkSession {

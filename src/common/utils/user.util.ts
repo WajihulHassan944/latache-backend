@@ -12,6 +12,9 @@ const PRIVATE_USER_FIELDS = new Set([
   'passwordResetCodeHash',
   'passwordResetCodeExpires',
   'passwordResetAttempts',
+  'loginFailedAttempts',
+  'loginLockedUntil',
+  'lastFailedLoginAt',
   'identityDocument',
 ]);
 

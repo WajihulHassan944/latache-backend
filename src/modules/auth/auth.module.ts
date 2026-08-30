@@ -21,6 +21,9 @@ import { AuthSessionService } from './services/auth-session.service';
 import { AuthTokenService } from './services/auth-token.service';
 import { AuthCodeService } from './services/auth-code.service';
 import { AuthRoleService } from './services/auth-role.service';
+import { OidcJwtVerifierService } from './services/oidc-jwt-verifier.service';
+import { SocialAuthProviderService } from './services/social-auth-provider.service';
+import { SocialAuthService } from './services/social-auth.service';
 
 @Module({
   imports: [JwtModule.register({}), UsersModule, MailModule, RbacCoreModule, AdminAuditModule],
@@ -35,6 +38,9 @@ import { AuthRoleService } from './services/auth-role.service';
     AuthTokenService,
     AuthCodeService,
     AuthRoleService,
+    OidcJwtVerifierService,
+    SocialAuthProviderService,
+    SocialAuthService,
     AuthRepository,
     AuthSessionsRepository,
     JwtIdentityGuard,

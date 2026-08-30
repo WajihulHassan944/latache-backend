@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AccountStatus } from '../../../common/enums/account-status.enum';
+import { ADMINISTRATIVE_ROLES, UserRole } from '../../../common/enums/user-role.enum';
 import type { AuthenticatedRequest } from '../../../common/types/authenticated-request';
 import type { AccessTokenPayload } from '../../../common/types/jwt-payload';
 import { extractBearerToken } from '../../../common/utils/token.util';
@@ -76,18 +77,27 @@ export class JwtIdentityGuard implements CanActivate {
   }
 
   private async verifyWithConfiguredSecrets(token: string): Promise<AccessTokenPayload> {
-    const secrets = [
-      this.config.get<string>('auth.jwtSecret'),
-      this.config.get<string>('auth.adminJwtSecret'),
-    ].filter((value): value is string => Boolean(value));
-
-    for (const secret of [...new Set(secrets)]) {
-      try {
-        return await this.jwt.verifyAsync<AccessTokenPayload>(token, { secret });
-      } catch {
-        // Try the other configured access-token secret.
-      }
+    const decoded = this.jwt.decode<Partial<AccessTokenPayload>>(token);
+    const role = decoded?.role;
+    if (!role || !Object.values(UserRole).includes(role as UserRole)) {
+      throw new UnauthorizedException('Token is invalid or expired');
     }
-    throw new UnauthorizedException('Token is invalid or expired');
+
+    const administrative = ADMINISTRATIVE_ROLES.includes(role as UserRole);
+    const secret = administrative
+      ? this.config.get<string>('auth.adminJwtSecret')
+      : this.config.get<string>('auth.jwtSecret');
+    if (!secret) throw new UnauthorizedException('Token is invalid or expired');
+
+    try {
+      const payload = await this.jwt.verifyAsync<AccessTokenPayload>(token, { secret });
+      if (payload.role !== role || payload.isAdmin !== administrative) {
+        throw new UnauthorizedException('Token role boundary is invalid');
+      }
+      return payload;
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      throw new UnauthorizedException('Token is invalid or expired');
+    }
   }
 }

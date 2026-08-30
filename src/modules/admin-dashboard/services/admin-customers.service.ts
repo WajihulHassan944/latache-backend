@@ -48,10 +48,46 @@ export class AdminCustomersService {
   async list(query: ListAdminCustomersDto) {
     const { page, limit, skip } = pagination(query.page, query.limit);
     const search = query.search?.trim();
+    const phoneDigits = query.phone?.replace(/\D/g, '') ?? '';
+    const phoneIds = phoneDigits
+      ? await this.prisma.$queryRaw<Array<{ id: number }>>`
+          SELECT "id" FROM "Users"
+          WHERE regexp_replace(COALESCE("phoneCountryCode", '') || COALESCE("phoneNumber", ''), '\D', '', 'g')
+                LIKE ${`%${phoneDigits}%`}
+        `
+      : null;
+    const fromDate = query.from ? new Date(`${query.from}T00:00:00.000Z`) : null;
+    const toExclusive = query.to
+      ? new Date(new Date(`${query.to}T00:00:00.000Z`).getTime() + 24 * 60 * 60 * 1000)
+      : null;
+    const location = query.location?.trim();
     const where: Prisma.UserWhereInput = {
       roles: { has: UserRole.Customer },
       deletedAt: null,
       customerProfile: { isNot: null },
+      ...(phoneIds ? { id: { in: phoneIds.map((row) => row.id) } } : {}),
+      ...(fromDate || toExclusive
+        ? {
+            createdAt: {
+              ...(fromDate ? { gte: fromDate } : {}),
+              ...(toExclusive ? { lt: toExclusive } : {}),
+            },
+          }
+        : {}),
+      ...(location
+        ? {
+            bookingsAsCustomer: {
+              some: {
+                OR: [
+                  { venueAddress: { contains: location, mode: 'insensitive' } },
+                  { locationLabel: { contains: location, mode: 'insensitive' } },
+                  { locationCity: { contains: location, mode: 'insensitive' } },
+                  { locationArea: { contains: location, mode: 'insensitive' } },
+                ],
+              },
+            },
+          }
+        : {}),
       ...(query.status === 'pending_verification'
         ? { accountStatus: AccountStatus.PendingVerification }
         : query.status

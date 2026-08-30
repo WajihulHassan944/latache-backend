@@ -122,6 +122,11 @@ export class PlatformSettingsService {
       cashPlatformPayableAccountingAvailable: true,
       regionSpecificRadiusResolutionAvailable: false,
       eliteRulesManagedBy: '/api/admin/elite-taskers/program',
+      contentManagementAvailable: true,
+      contentManagementPublicRead: '/api/content/:slug',
+      contentManagementAdminRead: '/api/admin/content',
+      contentBlockTypesExtensible: true,
+      supportedContentLocales: ['en', 'ar', 'ary'],
       note: 'Completion approval and referral expiry/reward clearance require the production worker. Referral rules are disabled by default and affect only new attributions; their policy is snapshotted and rewards require a real settled online booking. Jurisdiction tax overrides remain reporting-only until bookings carry a verified jurisdiction.',
     };
     return response;

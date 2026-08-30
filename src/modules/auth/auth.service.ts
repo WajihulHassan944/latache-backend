@@ -13,15 +13,20 @@ import type {
   RegisterTaskerDto,
   ResendVerificationEmailDto,
   ResetPasswordDto,
+  SetPasswordDto,
   UpdateProfileDto,
   VerifyEmailDto,
   VerifyResetOtpDto,
+  SocialAuthDto,
+  LinkSocialAuthDto,
 } from './dto';
 import { AuthLoginService } from './services/auth-login.service';
 import { AuthPasswordService } from './services/auth-password.service';
 import { AuthProfileService } from './services/auth-profile.service';
 import { AuthRegistrationService } from './services/auth-registration.service';
 import { AuthSessionService } from './services/auth-session.service';
+import { SocialAuthService } from './services/social-auth.service';
+import type { SocialAuthProvider } from './social-auth.constants';
 import type { SessionMetadata } from './services/auth-token.service';
 
 /** Thin facade keeping the controller independent from auth sub-service boundaries. */
@@ -33,6 +38,7 @@ export class AuthService {
     private readonly passwords: AuthPasswordService,
     private readonly profiles: AuthProfileService,
     private readonly sessions: AuthSessionService,
+    private readonly social: SocialAuthService,
   ) {}
 
   registerCustomer(dto: RegisterCustomerDto, metadata: SessionMetadata, locale?: string) {
@@ -57,6 +63,22 @@ export class AuthService {
 
   login(dto: LoginDto, metadata: SessionMetadata) {
     return this.loginService.login(dto, metadata);
+  }
+
+  socialAuthenticate(provider: SocialAuthProvider, dto: SocialAuthDto, metadata: SessionMetadata) {
+    return this.social.authenticate(provider, dto, metadata);
+  }
+
+  linkSocial(userId: number, provider: SocialAuthProvider, dto: LinkSocialAuthDto) {
+    return this.social.link(userId, provider, dto);
+  }
+
+  unlinkSocial(userId: number, provider: SocialAuthProvider) {
+    return this.social.unlink(userId, provider);
+  }
+
+  socialMethods(userId: number) {
+    return this.social.methods(userId);
   }
 
   refresh(dto: RefreshTokenDto, metadata: SessionMetadata) {
@@ -90,6 +112,11 @@ export class AuthService {
 
   resetPassword(dto: ResetPasswordDto) {
     return this.passwords.resetPassword(dto);
+  }
+
+  async setPassword(userId: number, dto: SetPasswordDto) {
+    await this.social.verifyLinkedReauthentication(userId, dto.provider, dto.idToken, dto.nonce);
+    return this.passwords.setPassword(userId, dto);
   }
 
   changePassword(userId: number, dto: ChangePasswordDto) {

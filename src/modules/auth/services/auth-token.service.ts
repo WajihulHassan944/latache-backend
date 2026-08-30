@@ -39,6 +39,9 @@ export class AuthTokenService {
     transaction?: Prisma.TransactionClient,
     activeRole?: UserRole,
   ): Promise<AuthTokens> {
+    if (!this.canUseTokens(user)) {
+      throw new UnauthorizedException('Account cannot create an authentication session');
+    }
     const selectedRole = activeRole ?? (user.role as UserRole);
     if (!hasUserRole(user, selectedRole)) {
       throw new UnauthorizedException('Selected role is not enabled for this account');
@@ -184,10 +187,7 @@ export class AuthTokenService {
 
   private accessSecret(role: UserRole): string {
     if (ADMINISTRATIVE_ROLES.includes(role)) {
-      return (
-        this.config.get<string>('auth.adminJwtSecret') ??
-        this.config.getOrThrow<string>('auth.jwtSecret')
-      );
+      return this.config.getOrThrow<string>('auth.adminJwtSecret');
     }
     return this.config.getOrThrow<string>('auth.jwtSecret');
   }

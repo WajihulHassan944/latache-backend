@@ -76,6 +76,56 @@ export class AuthRoleService {
     }
   }
 
+
+  async assertOperational(
+    user: User,
+    role: UserRole,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<void> {
+    if (![UserRole.Customer, UserRole.Tasker].includes(role)) return;
+    if (!this.has(user, role)) {
+      throw new ForbiddenException({
+        code: 'ROLE_NOT_ENABLED',
+        message: 'This role is not enabled for the account.',
+        availableRoles: this.roles(user),
+      });
+    }
+
+    const db = transaction ?? this.prisma;
+    if (role === UserRole.Customer) {
+      const profile = await db.customerProfile.findUnique({ where: { userId: user.id } });
+      if (!profile) {
+        throw new ForbiddenException({
+          code: 'CUSTOMER_PROFILE_MISSING',
+          message: 'Customer access is not configured for this identity.',
+        });
+      }
+      if (profile.status !== MARKETPLACE_PROFILE_STATUS.Active) {
+        throw new ForbiddenException({
+          code: 'CUSTOMER_PROFILE_NOT_ACTIVE',
+          message: `Customer profile is ${profile.status}.`,
+          profileStatus: profile.status,
+        });
+      }
+      return;
+    }
+
+    const profile = await db.taskerProfile.findUnique({ where: { userId: user.id } });
+    if (!profile) {
+      throw new ForbiddenException({
+        code: 'TASKER_PROFILE_MISSING',
+        message: 'Tasker access is not configured for this identity.',
+      });
+    }
+    if (profile.status !== MARKETPLACE_PROFILE_STATUS.Active) {
+      throw new ForbiddenException({
+        code: 'TASKER_PROFILE_NOT_ACTIVE',
+        message: `Tasker profile is ${profile.status}.`,
+        profileStatus: profile.status,
+      });
+    }
+  }
+
   async profileStates(userId: number) {
     const [customer, tasker] = await Promise.all([
       this.prisma.customerProfile.findUnique({ where: { userId } }),

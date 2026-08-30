@@ -229,6 +229,14 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
+    module: 'seo',
+    label: 'SEO',
+    permissions: [
+      { key: 'seo.read', label: 'View SEO', description: 'View SEO metadata, redirects, sitemap and robots configuration.' },
+      { key: 'seo.manage', label: 'Manage SEO', description: 'Manage SEO metadata, redirects, sitemap and robots configuration.' },
+    ],
+  },
+  {
     module: 'settings',
     label: 'Platform Settings',
     permissions: [
@@ -308,6 +316,8 @@ export const SYSTEM_RBAC_ROLES: readonly SystemRbacRoleDefinition[] = [
     permissions: [
       'content.read',
       'content.manage',
+      'seo.read',
+      'seo.manage',
       'services.read',
       'reviews.read',
       'reviews.manage',

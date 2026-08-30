@@ -1,29 +1,29 @@
 {
-  "release": "3.26.2",
-  "focus": "TypeScript compile-error source hotfix for dispute payload typing, evidence byte aggregation and Elite multi-currency metrics",
+  "release": "3.30.0",
+  "focus": "customer tasker discovery date/time filtering, extensible public/admin content management, and dynamic service/service-option catalogue",
   "validationStatus": "not_run_per_user_request",
-  "validationReason": "Requester explicitly instructed not to run tests, build, Jest, lint, Prisma generation/validation or other validation commands and will validate independently.",
-  "sourceRelease": {
-    "release": "3.26.0",
-    "note": "v3.26.0 is the baseline; v3.26.1 contains source-only compile-error fixes and no API/schema behavior change."
-  },
   "migration": {
-    "name": null,
-    "kind": "none_source_hotfix",
+    "name": "20260825120000_content_management_and_tasker_discovery_filters",
+    "kind": "additive",
     "destructiveStatementsAdded": false
   },
-  "implemented": {
-    "participantDisputeIncludeMutableStatusFilter": true,
-    "participantDisputePayloadInferenceRestored": true,
-    "numericLegacyEvidenceByteAggregation": true,
-    "eliteTierIndexNullNormalization": true,
-    "eliteSettledEarningsGroupedByCurrency": true,
-    "eliteSettledEarningsNormalizedToUsd": true,
-    "eliteMetricsSnapshotCurrencyMarker": true
-  },
   "apiChanges": {
-    "newRoutes": [],
-    "behaviorChanges": []
+    "newRoutes": [
+      "GET /api/content/:slug",
+      "GET /api/admin/content",
+      "GET /api/admin/content/:id",
+      "POST /api/admin/content",
+      "PATCH /api/admin/content/:id",
+      "DELETE /api/admin/content/:id",
+      "POST /api/admin/content/:id/publish",
+      "POST /api/admin/content/:id/unpublish",
+      "POST /api/admin/content/:id/blocks",
+      "PATCH /api/admin/content/:id/blocks/:blockId",
+      "DELETE /api/admin/content/:id/blocks/:blockId"
+    ],
+    "changedRoutes": [
+      "GET /api/taskers"
+    ]
   },
   "environmentChanges": {},
   "validation": {
@@ -35,7 +35,6 @@
     "routeVerification": "not_run_at_request",
     "healthE2E": "not_run_at_request"
   },
-  "version": "3.26.2",
-  "validationRun": false,
-  "notes": "Source-only TypeScript hotfix for reported role typing errors; build, tests, lint, Prisma validation/generation and E2E were not run."
+  "version": "3.30.0",
+  "validationNote": "Build, tests, lint, Prisma validation/generation and E2E were not run for v3.30.0 at the user instruction."
 }

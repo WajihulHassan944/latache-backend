@@ -402,6 +402,9 @@ export class TaskerTasksService {
       if (booking.status !== TASKER_BOOKING_STATUS.Arrived) {
         throw new ConflictException('The task can start only after arrival is confirmed');
       }
+      if (booking.workVerificationRequired) {
+        throw new ConflictException('Attach the front-door proof and verify the Customer start OTP through /work/start');
+      }
       const existing = await transaction.taskWorkSession.findUnique({
         where: { bookingId },
       });
@@ -484,7 +487,10 @@ export class TaskerTasksService {
 
   async stopTimer(taskerId: number, bookingId: number): Promise<TaskTimerView> {
     const session = await this.prisma.$transaction(async (transaction) => {
-      await this.lockOwnedBooking(taskerId, bookingId, transaction);
+      const booking = await this.lockOwnedBooking(taskerId, bookingId, transaction);
+      if (booking.workVerificationRequired) {
+        throw new ConflictException('Submit completed-work proof to freeze the timer for this booking');
+      }
       const current = await this.lockSession(bookingId, transaction);
       if (
         ![TASK_TIMER_STATUS.Running, TASK_TIMER_STATUS.Paused].includes(current.status as never)
@@ -533,6 +539,9 @@ export class TaskerTasksService {
   async complete(taskerId: number, bookingId: number): Promise<TaskerTaskView> {
     const existing = await this.findOwnedBooking(taskerId, bookingId);
     if (!existing) throw new NotFoundException('Task not found');
+    if (existing.workVerificationRequired) {
+      throw new ConflictException('Submit completed-work proof and verify the Customer completion OTP through /work/finish');
+    }
     if (
       existing.status === TASKER_BOOKING_STATUS.AwaitingCustomerApproval ||
       existing.status === TASKER_BOOKING_STATUS.Completed

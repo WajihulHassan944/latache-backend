@@ -106,6 +106,34 @@ export class TaskersRepository {
     if (query.isElite !== undefined) {
       eligibleConditions.push(Prisma.sql`u."isElite" = ${query.isElite}`);
     }
+    if (query.date) {
+      if (query.startTime && query.endTime) {
+        eligibleConditions.push(Prisma.sql`EXISTS (
+          SELECT 1 FROM "UserAvailabilities" ua
+          WHERE ua."userId" = u."id"
+            AND ua."date" = ${query.date}::date
+            AND ua."isBooked" = FALSE
+            AND ua."startTime" <= ${query.startTime}
+            AND ua."endTime" >= ${query.endTime}
+        )`);
+      } else if (query.startTime) {
+        eligibleConditions.push(Prisma.sql`EXISTS (
+          SELECT 1 FROM "UserAvailabilities" ua
+          WHERE ua."userId" = u."id"
+            AND ua."date" = ${query.date}::date
+            AND ua."isBooked" = FALSE
+            AND ua."startTime" <= ${query.startTime}
+            AND ua."endTime" > ${query.startTime}
+        )`);
+      } else {
+        eligibleConditions.push(Prisma.sql`EXISTS (
+          SELECT 1 FROM "UserAvailabilities" ua
+          WHERE ua."userId" = u."id"
+            AND ua."date" = ${query.date}::date
+            AND ua."isBooked" = FALSE
+        )`);
+      }
+    }
     const search = query.search?.trim();
     if (search) {
       const normalizedSearch = `%${this.locales.normalizeSearchText(search)}%`;

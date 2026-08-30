@@ -4,11 +4,12 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { compare } from 'bcryptjs';
 import { AccountStatus } from '../../../common/enums/account-status.enum';
 import { ADMINISTRATIVE_ROLES, UserRole } from '../../../common/enums/user-role.enum';
 import { serializeUser, type PublicUser } from '../../../common/utils/user.util';
-import type { Prisma } from '../../../generated/prisma/client';
+import type { Prisma, User } from '../../../generated/prisma/client';
 import { success, type SuccessEnvelope } from '../auth-response';
 import type { LoginDto, RefreshTokenDto } from '../dto';
 import { AuthRepository } from '../repositories/auth.repository';
@@ -21,6 +22,7 @@ export class AuthLoginService {
     private readonly repository: AuthRepository,
     private readonly tokens: AuthTokenService,
     private readonly roles: AuthRoleService,
+    private readonly config: ConfigService,
   ) {}
 
   async login(
@@ -28,9 +30,16 @@ export class AuthLoginService {
     metadata: SessionMetadata,
   ): Promise<SuccessEnvelope<{ user: PublicUser; tokens: AuthTokens }>> {
     const user = await this.repository.findUserByEmail(dto.email);
-    if (!user?.password || !(await compare(dto.password, user.password))) {
+    if (!user?.password) {
       throw new UnauthorizedException('Invalid email or password');
     }
+    this.assertLocalLoginNotLocked(user);
+
+    if (!(await compare(dto.password, user.password))) {
+      await this.recordFailedLogin(user.id);
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
     if (user.deletedAt || user.accountStatus === AccountStatus.Deactivated) {
       throw new ForbiddenException('This account is deactivated');
     }
@@ -49,7 +58,12 @@ export class AuthLoginService {
     await this.roles.assertSelectable(user, selectedRole);
 
     const tokens = await this.tokens.issue(user, metadata, undefined, selectedRole);
-    const updated = await this.repository.updateUser(user.id, { lastLoginAt: new Date() });
+    const updated = await this.repository.updateUser(user.id, {
+      lastLoginAt: new Date(),
+      loginFailedAttempts: 0,
+      loginLockedUntil: null,
+      lastFailedLoginAt: null,
+    });
     return success(
       { user: serializeUser(updated, selectedRole), tokens },
       updated.mustChangePassword
@@ -136,5 +150,42 @@ export class AuthLoginService {
       await this.tokens.refresh(dto.refreshToken, metadata),
       'Token refreshed successfully.',
     );
+  }
+
+  private assertLocalLoginNotLocked(user: User): void {
+    if (!user.loginLockedUntil || user.loginLockedUntil.getTime() <= Date.now()) return;
+    // Keep the response indistinguishable from a normal credential failure so
+    // lockout state cannot be used to confirm that an email is registered.
+    throw new UnauthorizedException('Invalid email or password');
+  }
+
+  private async recordFailedLogin(userId: number): Promise<void> {
+    const maxAttempts = this.config.get<number>('auth.maxFailedLoginAttempts', 5);
+    const lockMinutes = this.config.get<number>('auth.loginLockMinutes', 15);
+    const now = new Date();
+    const failureWindowStart = now.getTime() - lockMinutes * 60_000;
+
+    await this.repository.transaction(async (transaction: Prisma.TransactionClient) => {
+      const user = await this.repository.findUserByIdForUpdate(userId, transaction);
+      if (!user || user.deletedAt) return;
+
+      const recentFailure =
+        user.lastFailedLoginAt && user.lastFailedLoginAt.getTime() >= failureWindowStart;
+      const currentLockActive =
+        user.loginLockedUntil && user.loginLockedUntil.getTime() > now.getTime();
+      const attempts = (recentFailure && !currentLockActive ? user.loginFailedAttempts : 0) + 1;
+      const shouldLock = attempts >= maxAttempts;
+
+      await transaction.user.update({
+        where: { id: user.id },
+        data: {
+          loginFailedAttempts: attempts,
+          lastFailedLoginAt: now,
+          loginLockedUntil: shouldLock
+            ? new Date(now.getTime() + lockMinutes * 60_000)
+            : null,
+        },
+      });
+    });
   }
 }

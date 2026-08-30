@@ -35,7 +35,12 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`SMTP verification failed: ${message}`);
-      throw new Error('SMTP configuration could not be verified');
+      if (this.config.get<boolean>('mail.verifyOnBootstrapFatal', false)) {
+        throw new Error('SMTP configuration could not be verified');
+      }
+      this.logger.warn(
+        'Continuing startup because SMTP_VERIFY_ON_BOOTSTRAP_FATAL is disabled; email sends will fail with a controlled 503 until SMTP connectivity recovers',
+      );
     }
   }
 

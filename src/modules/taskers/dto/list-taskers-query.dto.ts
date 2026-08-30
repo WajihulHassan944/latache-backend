@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsPositive,
+  Matches,
   IsString,
   Max,
   Min,
@@ -32,6 +33,21 @@ export class ListTaskersQueryDto {
   @IsOptional()
   @IsString()
   serviceSlug?: string;
+
+  @ApiPropertyOptional({ example: '2026-08-25', description: 'Return only Taskers with an open availability slot on this date.' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  date?: string;
+
+  @ApiPropertyOptional({ example: '14:00', description: 'Requested availability start time in 24-hour HH:mm format. Requires date.' })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  startTime?: string;
+
+  @ApiPropertyOptional({ example: '16:00', description: 'Requested availability end time in 24-hour HH:mm format. Requires date and startTime.' })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  endTime?: string;
 
   @IsOptional()
   @Type(() => Number)

@@ -13,6 +13,13 @@ export class AdminAuthGuard implements CanActivate {
     if (!ADMINISTRATIVE_ROLES.includes(request.auth.role as UserRole)) {
       throw new ForbiddenException('Administrator access is required');
     }
+    if (request.user.mustChangePassword) {
+      throw new ForbiddenException({
+        code: 'PASSWORD_CHANGE_REQUIRED',
+        message: 'Change the temporary administrator password before accessing Admin APIs.',
+        action: 'PATCH /api/auth/change-password',
+      });
+    }
     return true;
   }
 }

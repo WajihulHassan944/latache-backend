@@ -6,6 +6,7 @@ import { RedisService } from './redis.service';
 export const CacheNamespace = {
   Services: 'services',
   PlatformContent: 'platform-content',
+  ManagedContent: 'managed-content',
   EliteProgram: 'elite-program',
   AdminAnalytics: 'admin-analytics',
 } as const;

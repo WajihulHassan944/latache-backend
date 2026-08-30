@@ -75,6 +75,14 @@ const services = [
   },
 ] as const;
 
+const seedSeo = async (): Promise<void> => {
+  await prisma.seoSettings.upsert({
+    where: { id: 'global' },
+    create: { id: 'global', siteName: 'Latache', defaultTitle: 'Latache', defaultDescription: 'Find trusted local taskers and services with Latache.' },
+    update: {},
+  });
+};
+
 const seedServices = async (): Promise<void> => {
   for (const service of services) {
     const existing = await prisma.service.findFirst({ where: { slug: service.slug } });
@@ -236,6 +244,7 @@ const seedSuperAdmin = async (roleIds: Map<string, string>): Promise<void> => {
 
 async function main(): Promise<void> {
   await seedServices();
+  await seedSeo();
   const roleIds = await seedRbacRoles();
   await seedSuperAdmin(roleIds);
 }

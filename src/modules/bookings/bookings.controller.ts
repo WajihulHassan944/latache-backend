@@ -21,6 +21,7 @@ import { PaymentsService } from '../payments/payments.service';
 import { UpdateTaskerLocationDto, UpdateTimerNotesDto } from '../tasker-dashboard/dto';
 import { TaskerTasksService } from '../tasker-dashboard/services/tasker-tasks.service';
 import { BookingsService } from './bookings.service';
+import { BookingWorkVerificationService } from './booking-work-verification.service';
 import {
   BookingParamDto,
   BookingQuoteDto,
@@ -32,6 +33,7 @@ import {
 } from './dto/booking-actions.dto';
 import { BookTaskerDto } from './dto/book-tasker.dto';
 import { ConfirmCashCollectionDto } from '../tasker-finance/dto/tasker-finance.dto';
+import { WorkOtpDto, WorkProofDto } from './dto/work-verification.dto';
 
 @ApiTags('05 Bookings & Tasks')
 @Controller('bookings')
@@ -59,6 +61,7 @@ export class BookingsController {
     private readonly bookings: BookingsService,
     private readonly taskerTasks: TaskerTasksService,
     private readonly payments: PaymentsService,
+    private readonly workVerification: BookingWorkVerificationService,
   ) {}
 
   @Post()
@@ -123,9 +126,9 @@ export class BookingsController {
   }
 
   @Post(':bookingId/extend')
-  @Roles(UserRole.Customer)
+  @Roles(UserRole.Customer, UserRole.Tasker)
   @ApiOperation({
-    summary: 'Customer explicitly authorizes additional task time',
+    summary: 'Customer or Tasker extends authorized task time',
     description: 'This extends the billing authorization ceiling; it does not charge immediately.',
   })
   extend(
@@ -133,7 +136,7 @@ export class BookingsController {
     @Param() params: BookingParamDto,
     @Body() dto: ExtendBookingDto,
   ) {
-    return this.bookings.extend(user.id, params.bookingId, dto);
+    return this.bookings.extend(user, params.bookingId, dto);
   }
 
   @Patch(':bookingId/billing')
@@ -184,6 +187,73 @@ export class BookingsController {
   @ApiOperation({ summary: 'Tasker confirms arrival' })
   arrival(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     return this.taskerTasks.arrive(user.id, params.bookingId);
+  }
+
+  @Get(':bookingId/work-verification')
+  @ApiOperation({ summary: 'Get verified on-site work proof and OTP state for a booking' })
+  workVerificationState(@CurrentUser() user: User, @Param() params: BookingParamDto) {
+    return this.workVerification.state(user, params.bookingId);
+  }
+
+  @Post(':bookingId/work/proofs/front-door')
+  @Roles(UserRole.Tasker)
+  @ApiOperation({ summary: 'Tasker attaches immutable front-door proof after arrival' })
+  frontDoorProof(
+    @CurrentUser() user: User,
+    @Param() params: BookingParamDto,
+    @Body() dto: WorkProofDto,
+  ) {
+    return this.workVerification.attachFrontDoor(user, params.bookingId, dto);
+  }
+
+  @Post(':bookingId/work/start-code')
+  @Roles(UserRole.Customer)
+  @ApiOperation({ summary: 'Customer generates the six-digit work-start OTP' })
+  startCode(@CurrentUser() user: User, @Param() params: BookingParamDto) {
+    return this.workVerification.issueStartCode(user.id, params.bookingId);
+  }
+
+  @Post(':bookingId/work/start')
+  @Roles(UserRole.Tasker)
+  @ApiOperation({ summary: 'Tasker verifies Customer OTP and starts the billable timer' })
+  startVerifiedWork(
+    @CurrentUser() user: User,
+    @Param() params: BookingParamDto,
+    @Body() dto: WorkOtpDto,
+  ) {
+    return this.workVerification.startWork(user.id, params.bookingId, dto);
+  }
+
+  @Post(':bookingId/work/proofs/completion')
+  @Roles(UserRole.Tasker)
+  @ApiOperation({ summary: 'Tasker attaches immutable completed-work proof and freezes the timer' })
+  completionProof(
+    @CurrentUser() user: User,
+    @Param() params: BookingParamDto,
+    @Body() dto: WorkProofDto,
+  ) {
+    return this.workVerification.attachCompletion(user, params.bookingId, dto);
+  }
+
+  @Post(':bookingId/work/completion-code')
+  @Roles(UserRole.Customer)
+  @ApiOperation({ summary: 'Customer generates the six-digit completion OTP after checking proof' })
+  completionCode(@CurrentUser() user: User, @Param() params: BookingParamDto) {
+    return this.workVerification.issueCompletionCode(user.id, params.bookingId);
+  }
+
+  @Post(':bookingId/work/finish')
+  @Roles(UserRole.Tasker)
+  @ApiOperation({ summary: 'Tasker verifies completion OTP, completes booking, and unlocks final payment' })
+  async finishVerifiedWork(
+    @CurrentUser() user: User,
+    @Param() params: BookingParamDto,
+    @Body() dto: WorkOtpDto,
+  ) {
+    await this.workVerification.finishWork(user.id, params.bookingId, dto);
+    const payment = await this.payments.finalizeCompletedBooking(params.bookingId);
+    const booking = await this.bookings.get(user, params.bookingId);
+    return { booking, payment };
   }
 
   @Get(':bookingId/timer')

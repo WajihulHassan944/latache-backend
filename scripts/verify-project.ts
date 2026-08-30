@@ -52,6 +52,7 @@ const requiredFiles = [
   'src/modules/disputes/disputes.module.ts',
   'src/modules/disputes/dispute-lifecycle.service.ts',
   'prisma/migrations/20260818190000_harden_dispute_lifecycle/migration.sql',
+  'prisma/migrations/20260825133000_complete_seo_management/migration.sql',
   'docs/dispute-lifecycle-hardening.md',
   'src/modules/admin-finance/admin-finance.module.ts',
   'src/modules/admin-finance/controllers/admin-finance.controller.ts',
@@ -83,6 +84,11 @@ const requiredFiles = [
   'src/modules/realtime/webrtc-config.service.ts',
   'src/modules/uploads/conversation-attachment.constants.ts',
   'src/modules/admin-dashboard/controllers/admin-reviews.controller.ts',
+  'src/modules/seo-management/seo-management.module.ts',
+  'src/modules/seo-management/controllers/seo-management.controller.ts',
+  'src/modules/seo-management/services/seo-management.service.ts',
+  'src/modules/seo-management/dto/seo.dto.ts',
+  'docs/seo-management.md',
   'src/modules/favorites/favorites.controller.ts',
   'src/modules/payments/payments.controller.ts',
   'src/modules/payments/stripe-webhooks.controller.ts',
@@ -128,8 +134,8 @@ const packageJson = JSON.parse(read('package.json')) as {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
-if (packageJson.version !== '3.22.0')
-  failures.push(`Expected package version 3.22.0, received ${packageJson.version ?? '<missing>'}`);
+if (packageJson.version !== '3.32.0')
+  failures.push(`Expected package version 3.32.0, received ${packageJson.version ?? '<missing>'}`);
 if (!packageJson.scripts?.build?.includes('npm run clean')) {
   failures.push('Production build must remove stale dist output before compiling');
 }
@@ -250,6 +256,10 @@ for (const marker of [
   'completionAutoApprovedAt',
   'otpHash',
   'passwordResetCodeHash',
+  'model SeoSettings {',
+  'model SeoPage {',
+  'model SeoRedirect {',
+  'model SeoSitemapEntry {',
 ]) {
   if (!schema.includes(marker)) failures.push(`Prisma schema marker missing: ${marker}`);
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { compare, hash } from 'bcryptjs';
 import { AccountStatus } from '../../../common/enums/account-status.enum';
@@ -13,6 +13,7 @@ import type {
   ForgotPasswordDto,
   ResendVerificationEmailDto,
   ResetPasswordDto,
+  SetPasswordDto,
   VerifyEmailDto,
   VerifyResetOtpDto,
 } from '../dto';
@@ -199,6 +200,9 @@ export class AuthPasswordService {
             passwordResetCodeExpires: null,
             passwordResetAttempts: 0,
             mustChangePassword: false,
+            loginFailedAttempts: 0,
+            loginLockedUntil: null,
+            lastFailedLoginAt: null,
           },
         });
         await this.sessions.revokeAll(user.id, transaction);
@@ -218,6 +222,32 @@ export class AuthPasswordService {
     return success(null, 'Password reset successfully. Sign in with the new password.');
   }
 
+  async setPassword(userId: number, dto: SetPasswordDto): Promise<SuccessEnvelope<null>> {
+    await this.prisma.$transaction(async (transaction: Prisma.TransactionClient) => {
+      const user = await this.repository.findUserByIdForUpdate(userId, transaction);
+      if (!user || user.deletedAt) throw new UnauthorizedException('Account not found');
+      if (user.password) {
+        throw new ConflictException({
+          code: 'LOCAL_PASSWORD_ALREADY_ENABLED',
+          message: 'A local password is already enabled. Use change-password instead.',
+        });
+      }
+
+      await this.repository.updateUser(
+        user.id,
+        {
+          password: await hash(dto.password, this.bcryptRounds()),
+          mustChangePassword: false,
+          loginFailedAttempts: 0,
+          loginLockedUntil: null,
+          lastFailedLoginAt: null,
+        },
+        transaction,
+      );
+    });
+    return success(null, 'Local password enabled successfully.');
+  }
+
   async changePassword(userId: number, dto: ChangePasswordDto): Promise<SuccessEnvelope<null>> {
     const user = await this.repository.findUserById(userId);
     if (!user?.password || !(await compare(dto.currentPassword, user.password))) {
@@ -233,6 +263,9 @@ export class AuthPasswordService {
         {
           password: await hash(dto.newPassword, this.bcryptRounds()),
           mustChangePassword: false,
+          loginFailedAttempts: 0,
+          loginLockedUntil: null,
+          lastFailedLoginAt: null,
         },
         transaction,
       );

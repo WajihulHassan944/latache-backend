@@ -21,6 +21,7 @@ import {
   ApiHeader,
   ApiNotFoundResponse,
   ApiOkResponse,
+  ApiResponse,
   ApiOperation,
   ApiServiceUnavailableResponse,
   ApiTags,
@@ -47,8 +48,11 @@ import {
   RegisterTaskerDto,
   ResendVerificationEmailDto,
   ResetPasswordDto,
+  SetPasswordDto,
   SessionParamDto,
   SwitchRoleDto,
+  SocialAuthDto,
+  LinkSocialAuthDto,
   UpdateProfileDto,
   VerifyEmailDto,
   VerifyResetOtpDto,
@@ -57,6 +61,7 @@ import { AdminAuthGuard } from './guards/admin-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtIdentityGuard } from './guards/jwt-identity.guard';
 import { loginRequestExamples, loginResponseExamples } from './swagger/login.examples';
+import { SOCIAL_AUTH_PROVIDER } from './social-auth.constants';
 
 const validationErrorExample = {
   statusCode: 400,
@@ -292,6 +297,91 @@ export class AuthController {
     return this.auth.createAdmin(actor, dto);
   }
 
+  @Post('social/google')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 12, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Sign up or login with Google',
+    description:
+      'Verifies the Google ID token server-side against Google rotating public keys, links the immutable Google subject to one Latache User, creates Customer access for a new identity, and issues the normal role-scoped Latache session. New users requesting Tasker access receive Customer tokens plus the existing POST /auth/roles/tasker onboarding next action.',
+  })
+  @ApiOkResponse({ description: 'Google identity verified and Latache session issued.' })
+  @ApiUnauthorizedResponse({ description: 'Google ID token is invalid, expired, or for another client.' })
+  @ApiConflictResponse({ description: 'Existing email requires authenticated account linking.' })
+  @ApiServiceUnavailableResponse({ description: 'Google social auth client IDs are not configured.' })
+  googleAuth(@Body() dto: SocialAuthDto, @Req() request: Request) {
+    return this.auth.socialAuthenticate(
+      SOCIAL_AUTH_PROVIDER.Google,
+      dto,
+      this.metadata(dto.device, request),
+    );
+  }
+
+  @Post('social/apple')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 12, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Sign up or login with Apple',
+    description:
+      'Verifies the Sign in with Apple identity token server-side, links the immutable Apple subject to one Latache User, supports Apple private-relay email, and issues the normal role-scoped Latache session. Send firstName/lastName on the first Apple authorization when the client receives them.',
+  })
+  @ApiOkResponse({ description: 'Apple identity verified and Latache session issued.' })
+  @ApiUnauthorizedResponse({ description: 'Apple identity token is invalid, expired, or for another client.' })
+  @ApiServiceUnavailableResponse({ description: 'Apple social auth client IDs are not configured.' })
+  appleAuth(@Body() dto: SocialAuthDto, @Req() request: Request) {
+    return this.auth.socialAuthenticate(
+      SOCIAL_AUTH_PROVIDER.Apple,
+      dto,
+      this.metadata(dto.device, request),
+    );
+  }
+
+  @Post('social/google/link')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @ApiBearerAuth('bearer')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Link a Google account after step-up reauthentication of the current Latache identity' })
+  linkGoogle(@CurrentUser() user: User, @Body() dto: LinkSocialAuthDto) {
+    return this.auth.linkSocial(user.id, SOCIAL_AUTH_PROVIDER.Google, dto);
+  }
+
+  @Post('social/apple/link')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @ApiBearerAuth('bearer')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Link an Apple account after step-up reauthentication of the current Latache identity' })
+  linkApple(@CurrentUser() user: User, @Body() dto: LinkSocialAuthDto) {
+    return this.auth.linkSocial(user.id, SOCIAL_AUTH_PROVIDER.Apple, dto);
+  }
+
+  @Delete('social/google/link')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('bearer')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Unlink Google from the current Latache identity' })
+  unlinkGoogle(@CurrentUser() user: User) {
+    return this.auth.unlinkSocial(user.id, SOCIAL_AUTH_PROVIDER.Google);
+  }
+
+  @Delete('social/apple/link')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('bearer')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Unlink Apple from the current Latache identity' })
+  unlinkApple(@CurrentUser() user: User) {
+    return this.auth.unlinkSocial(user.id, SOCIAL_AUTH_PROVIDER.Apple);
+  }
+
+  @Get('social/methods')
+  @ApiBearerAuth('bearer')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'List enabled sign-in methods for the current Latache identity' })
+  socialMethods(@CurrentUser() user: User) {
+    return this.auth.socialMethods(user.id);
+  }
+
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
@@ -318,6 +408,10 @@ export class AuthController {
     description: 'Email unverified, account suspended/deactivated, or portal role mismatch.',
   })
   @ApiUnauthorizedResponse({ description: 'Invalid email or password.' })
+  @ApiResponse({
+    status: HttpStatus.TOO_MANY_REQUESTS,
+    description: 'Request rate limit exceeded.',
+  })
   login(@Body() dto: LoginDto, @Req() request: Request) {
     return this.auth.login(dto, this.metadata(dto.device, request));
   }
@@ -508,7 +602,28 @@ export class AuthController {
     return this.auth.resetPassword(dto);
   }
 
+  @Post('set-password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiBearerAuth('bearer')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Enable a local password on a social-only account',
+    description:
+      'Allows an authenticated Google/Apple-only identity to add a local Latache password after fresh reauthentication with an already-linked provider. Existing local-password accounts must use change-password.',
+  })
+  @ApiOkResponse({
+    schema: {
+      example: { success: true, data: null, message: 'Local password enabled successfully.' },
+    },
+  })
+  @ApiConflictResponse({ description: 'A local password is already enabled.' })
+  setPassword(@CurrentUser() user: User, @Body() dto: SetPasswordDto) {
+    return this.auth.setPassword(user.id, dto);
+  }
+
   @Patch('change-password')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiBearerAuth('bearer')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({

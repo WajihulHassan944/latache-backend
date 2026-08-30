@@ -10,9 +10,11 @@ import { BookingDiscoveryController, BookingsController } from './bookings.contr
 import { ParticipantDisputesController } from './participant-disputes.controller';
 import { BookingsRepository } from './bookings.repository';
 import { BookingsService } from './bookings.service';
+import { BookingWorkVerificationService } from './booking-work-verification.service';
 import { AdminAuditModule } from '../admin-audit/admin-audit.module';
 import { DisputesModule } from '../disputes/disputes.module';
 import { ReferralsModule } from '../referrals/referrals.module';
+import { UploadsModule } from '../uploads/uploads.module';
 
 @Module({
   imports: [
@@ -26,9 +28,10 @@ import { ReferralsModule } from '../referrals/referrals.module';
     AdminAuditModule,
     DisputesModule,
     ReferralsModule,
+    UploadsModule,
   ],
   controllers: [BookingDiscoveryController, BookingsController, ParticipantDisputesController],
-  providers: [BookingsService, BookingsRepository],
+  providers: [BookingsService, BookingsRepository, BookingWorkVerificationService],
   exports: [BookingsService],
 })
 export class BookingsModule {}

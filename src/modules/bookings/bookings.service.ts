@@ -25,6 +25,7 @@ import { TaskerFinanceService } from '../tasker-finance/tasker-finance.service';
 import { AdminAuditService } from '../admin-audit/admin-audit.service';
 import { DisputeLifecycleService } from '../disputes/dispute-lifecycle.service';
 import { ReferralsService } from '../referrals/services/referrals.service';
+import { AppCacheService, CacheNamespace } from '../../infrastructure/redis/app-cache.service';
 import type { AddComplaintEvidenceDto, FileComplaintDto } from './dto/file-complaint.dto';
 import type {
   ListParticipantDisputesQueryDto,
@@ -147,6 +148,7 @@ export class BookingsService {
     private readonly audit: AdminAuditService,
     private readonly disputes: DisputeLifecycleService,
     private readonly referrals: ReferralsService,
+    private readonly cache: AppCacheService,
   ) {
     this.minimumBillableMinutes = config.get<number>('payments.minimumBillableMinutes', 120);
   }
@@ -271,6 +273,7 @@ export class BookingsService {
             paymentSource,
             paymentStatus: PAYMENT_STATUS.Ready,
             paymentCurrency: currency.code,
+            workVerificationRequired: true,
             stripePaymentMethodId,
             tipAmount: money(dto.tipAmount ?? 0).toFixed(2),
             donationAmount: money(dto.donationAmount ?? 0).toFixed(2),
@@ -464,33 +467,65 @@ export class BookingsService {
     return this.serialize(updated, customerId);
   }
 
-  async extend(customerId: number, bookingId: number, dto: ExtendBookingDto) {
+  async extend(user: User, bookingId: number, dto: ExtendBookingDto) {
+    if (![UserRole.Customer, UserRole.Tasker].includes(user.role as UserRole)) {
+      throw new ForbiddenException('Only booking participants can extend task time');
+    }
     const row = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
-      const booking = await transaction.booking.findFirst({ where: { id: bookingId, customerId } });
+      const booking = await transaction.booking.findUnique({ where: { id: bookingId } });
       if (!booking) throw new NotFoundException('Booking not found');
-      if (booking.status !== 'in_progress')
+
+      const isCustomer = user.role === UserRole.Customer && booking.customerId === user.id;
+      const isTasker = user.role === UserRole.Tasker && booking.taskerId === user.id;
+      if (!isCustomer && !isTasker) throw new NotFoundException('Booking not found');
+      if (booking.status !== 'in_progress') {
         throw new ConflictException(
-          'Additional time can be authorized only while the task is in progress',
+          'Additional time can be added only while the task is in progress',
         );
+      }
+
       const updated = await transaction.booking.update({
         where: { id: bookingId },
         data: { extensionMinutes: { increment: dto.minutes } },
       });
+
+      const otherUserId = isCustomer ? booking.taskerId : booking.customerId;
       await this.notifications.create(
-        booking.taskerId,
+        otherUserId,
         {
           category: 'tasks',
           type: 'task_time_extended',
-          title: 'Customer approved additional time',
-          body: `${dto.minutes} additional minutes were approved.`,
+          title: 'Task time extended',
+          body: `${dto.minutes} additional minutes were added by the ${isCustomer ? 'Customer' : 'Tasker'}.`,
           entityType: 'booking',
           entityId: String(bookingId),
+          metadata: {
+            addedByRole: user.role,
+            addedMinutes: dto.minutes,
+            extensionMinutes: updated.extensionMinutes,
+          },
+        },
+        transaction,
+      );
+      await this.audit.record(
+        {
+          actorId: user.id,
+          targetUserId: otherUserId,
+          action: 'booking_duration_extended',
+          entityType: 'booking',
+          entityId: bookingId,
+          metadata: {
+            actorRole: user.role,
+            addedMinutes: dto.minutes,
+            extensionMinutes: updated.extensionMinutes,
+          },
         },
         transaction,
       );
       await this.enqueueBookingUpdate(bookingId, booking.status, 'duration_extended', transaction, {
         extensionMinutes: updated.extensionMinutes,
+        addedByRole: user.role,
       });
       return updated;
     });
@@ -520,6 +555,9 @@ export class BookingsService {
           'Only an in-progress task or submitted completion can be approved',
         );
       }
+      if (booking.workVerificationRequired && !booking.completionProofAt) {
+        throw new ConflictException('The Tasker must attach completed-work proof before the Customer can finish the task');
+      }
 
       const session = await transaction.taskWorkSession.findUnique({
         where: { bookingId },
@@ -543,10 +581,15 @@ export class BookingsService {
         where: { id: bookingId },
         data: {
           status: 'completed',
-          completionSubmittedAt: booking.completionSubmittedAt ?? now,
+          completionSubmittedAt:
+            booking.completionSubmittedAt ?? booking.completionProofAt ?? now,
           completionApprovalDueAt: booking.completionApprovalDueAt,
           completionApprovedAt: now,
           completionApprovedByRole: 'customer',
+          completionVerifiedAt: booking.workVerificationRequired ? now : booking.completionVerifiedAt,
+          completionVerifiedByRole: booking.workVerificationRequired
+            ? 'customer_fallback'
+            : booking.completionVerifiedByRole,
           taskCompletedAt: now,
         },
       });
@@ -579,6 +622,7 @@ export class BookingsService {
       );
       await this.enqueueBookingUpdate(bookingId, 'completed', 'customer_completed', transaction);
     });
+    await this.cache.invalidate(CacheNamespace.ManagedContent);
   }
 
   async autoCompleteDueBookings(): Promise<{
@@ -591,6 +635,7 @@ export class BookingsService {
     const batchSize = this.config.get<number>('bookingCompletion.batchSize', 100);
     const candidates = await this.prisma.booking.findMany({
       where: {
+        workVerificationRequired: false,
         OR: [
           {
             status: 'awaiting_customer_approval',
@@ -645,7 +690,7 @@ export class BookingsService {
     bookingId: number,
     now: Date,
   ): Promise<{ completed: boolean; finalizePayment: boolean; blockedByDispute: boolean }> {
-    return this.prisma.$transaction(async (transaction) => {
+    const result = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
       const booking = await transaction.booking.findUnique({
         where: { id: bookingId },
@@ -658,6 +703,9 @@ export class BookingsService {
         },
       });
       if (!booking) {
+        return { completed: false, finalizePayment: false, blockedByDispute: false };
+      }
+      if (booking.workVerificationRequired) {
         return { completed: false, finalizePayment: false, blockedByDispute: false };
       }
       if (booking.complaints.length > 0 || booking.paymentStatus === PAYMENT_STATUS.OnHoldDispute) {
@@ -746,6 +794,8 @@ export class BookingsService {
       );
       return { completed: true, finalizePayment: true, blockedByDispute: false };
     });
+    if (result.completed) await this.cache.invalidate(CacheNamespace.ManagedContent);
+    return result;
   }
 
   async updateBilling(customerId: number, bookingId: number, dto: UpdateBookingBillingDto) {
@@ -2163,6 +2213,15 @@ export class BookingsService {
         apartmentSuite: booking.apartmentSuite,
         description: booking.description,
         attachments: Array.isArray(booking.attachments) ? booking.attachments : [],
+      },
+      workVerification: {
+        required: booking.workVerificationRequired,
+        frontDoorVerifiedAt: booking.frontDoorVerifiedAt?.toISOString() ?? null,
+        startWorkVerifiedAt: booking.startWorkVerifiedAt?.toISOString() ?? null,
+        completionProofAt: booking.completionProofAt?.toISOString() ?? null,
+        completionVerifiedAt: booking.completionVerifiedAt?.toISOString() ?? null,
+        completionVerifiedByRole: booking.completionVerifiedByRole,
+        stateEndpoint: `/api/bookings/${booking.id}/work-verification`,
       },
       timing: {
         estimatedDurationMinutes: booking.estimatedDurationMinutes,

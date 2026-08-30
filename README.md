@@ -1,6 +1,76 @@
+# v3.30.0
+
+Content management and customer discovery completion update.
+
+## v3.28.2 Railway CORS / Swagger
+
+## v3.29.0 verified on-site work flow
+
+New bookings use this authoritative service flow:
+
+```text
+Tasker starts navigation -> marks arrival
+-> uploads Latache-managed front-door image
+-> POST /api/bookings/:bookingId/work/proofs/front-door
+-> Customer POST /api/bookings/:bookingId/work/start-code
+-> Tasker POST /api/bookings/:bookingId/work/start with the six-digit OTP
+-> timer starts; pause/resume/extension remain persisted
+-> when work is done, Tasker uploads the completed-work image
+-> POST /api/bookings/:bookingId/work/proofs/completion freezes the billable timer
+-> Customer POST /api/bookings/:bookingId/work/completion-code
+-> Tasker POST /api/bookings/:bookingId/work/finish with the OTP
+-> booking completes -> final Stripe/wallet/cash orchestration follows the existing authoritative finance flow
+```
+
+The authenticated Customer may call the existing `POST /api/bookings/:bookingId/complete` as the exceptional fallback after the completed-work proof exists. For verification-required bookings, final payment is blocked until front-door/start verification and either completion OTP verification or Customer fallback completion is recorded. Online Tasker earnings are still pending for the configured clearance period after real settlement; physical cash never becomes platform-held wallet money.
+
+Work images are uploaded first through the existing managed Cloudinary upload API using `booking-attachments`; the proof endpoints persist only provider-verified Latache assets. Persisted work-proof images are immutable and cannot be independently deleted.
+
+Optional settings:
+
+```env
+BOOKING_WORK_OTP_TTL_MINUTES=15
+BOOKING_WORK_OTP_MAX_ATTEMPTS=5
+```
+
+Customer Management list filters additionally accept `phone`, `location`, `from`, and `to`. `GET /api/payments/wallet` now includes the Customer's real saved Stripe cards/default card plus `attachCardEndpoint: /api/payments/setup-intent`.
+
+
+The backend always accepts browser requests from `https://latache-web.vercel.app`, `https://latache-be-production.up.railway.app`, and `http://localhost:3000`. Values supplied through `CORS_ORIGINS` are added to that set. Swagger uses the current browser host as its default OpenAPI server, so production `Try it out` requests stay on the Railway HTTPS domain even when `APP_BASE_URL` is stale or absent.
+
 # Latache Backend — NestJS, Prisma and Nodemailer
 
 Latache backend implemented with NestJS 11, strict TypeScript, Prisma/PostgreSQL, Nodemailer SMTP, Cloudinary uploads, and database-backed RBAC.
+
+### v3.28.1 Railway SMTP/networking hotfix
+
+- Node now prefers IPv4 before NestJS initializes, covering both the API and `SERVICE_MODE=worker`. This avoids intermittent Gmail SMTP `ENETUNREACH` failures caused by an unreachable IPv6 result on hosts without working outbound IPv6.
+- On Railway, `APP_BASE_URL` is optional when a public domain exists: the backend automatically uses `https://${RAILWAY_PUBLIC_DOMAIN}`. An explicit `APP_BASE_URL` still overrides the Railway-derived value.
+- `SMTP_VERIFY_ON_BOOTSTRAP=true` no longer makes a transient SMTP outage fatal by default. Set `SMTP_VERIFY_ON_BOOTSTRAP_FATAL=true` only when deployment should fail if SMTP verification fails. Actual email sends remain fail-closed and return the existing controlled service-unavailable behavior when SMTP is unreachable.
+- No build, lint, Jest, E2E or Prisma validation/generation was run for this release at the requester’s instruction.
+
+
+### v3.28.0 authentication audit and hardening
+
+- Local login now has PostgreSQL-backed failed-attempt tracking and temporary lockout, making the protection consistent across multiple API instances. Defaults: `AUTH_MAX_FAILED_LOGIN_ATTEMPTS=5`, `AUTH_LOGIN_LOCK_MINUTES=15`.
+- Admin/Super Admin access tokens must use `JWT_SECRET_ADMIN`; marketplace access tokens use `JWT_SECRET`. Temporary Admin passwords are enforced by the Admin guard until `PATCH /api/auth/change-password` succeeds.
+- Social-only users can enable a local credential with `POST /api/auth/set-password`. Provider unlinking cannot remove the last usable sign-in method and now revokes existing sessions after a provider is disconnected.
+- Google/Apple OIDC verification checks RS256 signing-key metadata, issuer, audience, multi-audience authorized party (`azp`), expiry, issue time, not-before time, and an expected nonce when supplied. Expired JWKS cache entries are not accepted when provider key refresh fails.
+- Local registration and social identity creation share a normalized-email transaction lock. Provider linking is also serialized per provider/User to avoid concurrent duplicate mappings.
+- Dedicated Customer/Tasker operational APIs require an active role profile. Pending/rejected Tasker identities can still authenticate and inspect onboarding/status, but cannot use operational Tasker resources until approval activates the profile.
+- Additive migration: `20260820150000_authentication_hardening`.
+- No build, lint, Jest, E2E or Prisma validation/generation was run for this release at the requester’s instruction.
+
+### v3.27.0 Google and Apple authentication
+
+- Added server-verified Google and Sign in with Apple signup/login using provider ID tokens, rotating JWKS signature verification, issuer/audience/expiry validation, and optional nonce matching.
+- Provider identities are mapped by immutable provider subject to the existing single Latache User, so social login remains consistent with Customer/Tasker multi-role identities.
+- New social users are email-verified by the provider and start with Customer access. If Tasker access is requested but not yet enabled, the response returns the existing `POST /api/auth/roles/tasker` onboarding as the next action.
+- Existing accounts may safely link/unlink Google or Apple. Unlinking the last usable authentication method is blocked. Authenticated linking supports Apple private-relay cases without guessing identity from email.
+- Google automatic email linking is restricted to authoritative Gmail/Google Workspace identities; other Google emails must be linked from an authenticated Latache account.
+- Configuration: `GOOGLE_AUTH_CLIENT_IDS` and `APPLE_AUTH_CLIENT_IDS` are comma-separated accepted OAuth/OIDC audiences. Optional `SOCIAL_AUTH_JWKS_CACHE_SECONDS` and `SOCIAL_AUTH_CLOCK_SKEW_SECONDS` tune verification caching/skew.
+- Additive migration: `20260820143000_google_apple_social_auth`. No provider access/refresh tokens or client secrets are stored by this login-only integration.
+- Build, lint, Jest, E2E and Prisma validation/generation were not run at the requester’s instruction.
 
 ### v3.26.2 TypeScript source hotfix
 
@@ -281,6 +351,7 @@ DATABASE_URL=postgresql://latache:latache@localhost:5432/latache?schema=public
 JWT_SECRET=<random-secret-at-least-32-characters>
 JWT_SECRET_ADMIN=<different-random-secret-at-least-32-characters>
 CORS_ORIGINS=http://localhost:3000
+SEO_PUBLIC_BASE_URL=http://localhost:3000
 SUPPORTED_LOCALES=en,ar,ary
 DEFAULT_LOCALE=en
 REALTIME_ENABLED=true
@@ -627,3 +698,7 @@ npm run test:e2e -- --runInBand
 The generated Prisma client, `node_modules`, `.env`, `dist`, and coverage output are intentionally excluded from release archives.
 
 - Review creation also uses the shared Notifications service, so review recipients receive the same durable realtime notification pipeline.
+
+## SEO configuration
+
+SEO is managed through the RBAC-controlled `/api/admin/seo/*` APIs. Configure `SEO_PUBLIC_BASE_URL` to the public website origin when it differs from the API origin. The backend exposes `/api/seo/meta`, `/api/seo/robots.txt`, and `/api/seo/sitemap.xml`; the frontend should consume route metadata and apply the resolved canonical, robots, Open Graph, Twitter, alternate-language, and JSON-LD values to rendered pages.

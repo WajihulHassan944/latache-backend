@@ -197,7 +197,7 @@ export class PaymentsService {
 
   async wallet(customerId: number): Promise<WalletView> {
     const wallet = await this.ensureCustomerWallet(customerId);
-    const [refunds, spent] = await Promise.all([
+    const [refunds, spent, savedCards] = await Promise.all([
       this.prisma.paymentTransaction.aggregate({
         where: {
           customerId,
@@ -214,11 +214,17 @@ export class PaymentsService {
         },
         _sum: { amount: true },
       }),
+      this.isStripeEnabled() ? this.listPaymentMethods(customerId) : Promise.resolve([]),
     ]);
+    const defaultCard = savedCards.find((card) => card.isDefault) ?? null;
     return {
       availableBalance: { amount: Number(wallet.availableBalance), currency: wallet.currency },
       refunds: { amount: Number(refunds._sum.amount ?? 0), currency: wallet.currency },
       totalSpent: { amount: Number(spent._sum.amount ?? 0), currency: wallet.currency },
+      hasSavedCard: savedCards.length > 0,
+      defaultCardId: defaultCard?.id ?? null,
+      savedCards,
+      attachCardEndpoint: '/api/payments/setup-intent',
     };
   }
 
@@ -398,6 +404,9 @@ export class PaymentsService {
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.status !== 'completed') {
       throw new ConflictException('Only a completed booking can be charged');
+    }
+    if (booking.workVerificationRequired && !booking.completionVerifiedAt) {
+      throw new ConflictException('Verified work completion is required before final payment can be processed');
     }
     if (
       [PAYMENT_STATUS.Paid, PAYMENT_STATUS.CashConfirmed].includes(booking.paymentStatus as never)

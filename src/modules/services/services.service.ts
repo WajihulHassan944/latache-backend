@@ -164,7 +164,7 @@ export class ServicesService {
     );
     const translations = this.normalizeTranslations(dto.translations);
     const service = await this.prisma.$transaction(async (transaction) => {
-      await transaction.$queryRaw`
+      await transaction.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`latache-service:${dto.slug.toLowerCase()}`}))
       `;
       const existing = await transaction.service.findFirst({
@@ -241,7 +241,7 @@ export class ServicesService {
         SELECT "id" FROM "Services" WHERE "id" = ${serviceId} FOR UPDATE
       `;
       if (dto.slug && dto.slug.toLowerCase() !== service.slug?.toLowerCase()) {
-        await transaction.$queryRaw`
+        await transaction.$executeRaw`
           SELECT pg_advisory_xact_lock(hashtext(${`latache-service:${dto.slug.toLowerCase()}`}))
         `;
         const duplicate = await transaction.service.findFirst({
@@ -509,6 +509,7 @@ export class ServicesService {
     await Promise.all([
       this.cache.invalidate(CacheNamespace.Services),
       this.cache.invalidate(CacheNamespace.AdminAnalytics),
+      this.cache.invalidate(CacheNamespace.ManagedContent),
     ]);
   }
 
