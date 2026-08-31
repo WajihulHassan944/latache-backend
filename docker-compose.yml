@@ -29,7 +29,7 @@ services:
       REDIS_ENABLED: "true"
       REDIS_REQUIRED: "true"
       JOBS_ENABLED: "true"
-      JOB_WORKER_ENABLED: "false"
+      JOB_WORKER_ENABLED: "true"
       JOB_SCHEDULER_ENABLED: "true"
     ports:
       - "127.0.0.1:8080:8080"
