@@ -58,7 +58,7 @@ services:
       REDIS_REQUIRED: "true"
       JOBS_ENABLED: "true"
       JOB_WORKER_ENABLED: "true"
-      JOB_SCHEDULER_ENABLED: "false"
+      JOB_SCHEDULER_ENABLED: "true"
     command:
       [
         "node",
