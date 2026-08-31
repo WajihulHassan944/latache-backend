@@ -61,7 +61,11 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix('api');
 
-  app.use(helmet());
+app.use(
+  helmet({
+    hsts: false,
+  }),
+);
 
   if (config.get<boolean>('app.compressionEnabled', true)) {
     app.use(
