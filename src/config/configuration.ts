@@ -247,6 +247,17 @@ export default () => {
         5 * 60_000,
       ),
     },
+    fcm: {
+      enabled: asBoolean(process.env.FCM_ENABLED, false),
+      projectId: process.env.FCM_PROJECT_ID?.trim(),
+      clientEmail: process.env.FCM_CLIENT_EMAIL?.trim(),
+      privateKey: process.env.FCM_PRIVATE_KEY,
+      pollMs: asPositiveInteger(process.env.FCM_POLL_MS, 1_000),
+      batchSize: asPositiveInteger(process.env.FCM_BATCH_SIZE, 50),
+      lockMs: asPositiveInteger(process.env.FCM_LOCK_MS, 30_000),
+      maxAttempts: asPositiveInteger(process.env.FCM_MAX_ATTEMPTS, 8),
+      retryBaseMs: asPositiveInteger(process.env.FCM_RETRY_BASE_MS, 2_000),
+    },
     mail: {
       host: process.env.SMTP_HOST,
       port: asPositiveInteger(process.env.SMTP_PORT, 587),

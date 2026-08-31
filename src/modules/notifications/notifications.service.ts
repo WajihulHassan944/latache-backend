@@ -8,6 +8,7 @@ import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import type { NotificationListView, NotificationView } from './notifications.types';
 import { LocaleService } from '../localization/locale.service';
 import { NotificationTemplateService } from './notification-template.service';
+import { FcmService } from '../fcm/fcm.service';
 
 export interface CreateNotificationInput {
   category: 'messages' | 'tasks' | 'payments' | 'wallet' | 'system';
@@ -29,6 +30,7 @@ export class NotificationsService {
     private readonly realtime: RealtimeOutboxService,
     private readonly locales: LocaleService,
     private readonly templates: NotificationTemplateService,
+    private readonly fcm: FcmService,
   ) {}
 
   async create(
@@ -69,22 +71,30 @@ export class NotificationsService {
         renderedLocale: this.locales.defaultLocale,
       },
     });
+    const payload = this.eventPayload(notification, locale);
     if (audienceRole) {
       await this.realtime.enqueueUserRole(
         userId,
         audienceRole,
         'notification:created',
-        this.eventPayload(notification, locale),
+        payload,
         client,
       );
     } else {
       await this.realtime.enqueueUser(
         userId,
         'notification:created',
-        this.eventPayload(notification, locale),
+        payload,
         client,
       );
     }
+    await this.fcm.enqueueNotification(
+      userId,
+      notification.id,
+      String(payload.title),
+      String(payload.body),
+      client,
+    );
     return notification;
   }
 

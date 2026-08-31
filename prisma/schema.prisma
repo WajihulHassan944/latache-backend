@@ -127,6 +127,7 @@ model User {
   conversationCallsReceived   ConversationCall[]          @relation("ConversationCallRecipient")
   conversationCallsEnded      ConversationCall[]          @relation("ConversationCallEndedBy")
   notifications               TaskNotification[]
+  fcmDeviceTokens             FcmDeviceToken[]
   reviewsWritten              Review[]                    @relation("ReviewsWritten")
   reviewsReceived             Review[]                    @relation("ReviewsReceived")
   reviewsModerated            Review[]                    @relation("ReviewsModerated")
@@ -1409,6 +1410,7 @@ model TaskNotification {
   createdAt      DateTime  @default(now()) @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "TaskNotifications_userId_fkey")
+  fcmPushDeliveries FcmPushDelivery[]
 
   @@index([userId, audienceRole, readAt, createdAt], map: "task_notifications_user_role_read_created_idx")
   @@index([userId, category, createdAt], map: "task_notifications_user_category_idx")
@@ -1848,4 +1850,50 @@ model ObjectStorageDeletionTask {
   @@index([status, nextAttemptAt, createdAt], map: "storage_deletion_pending_idx")
   @@index([entityType, entityId], map: "storage_deletion_entity_idx")
   @@map("ObjectStorageDeletionTasks")
+}
+
+
+model FcmDeviceToken {
+  id         String   @id @db.VarChar(40)
+  userId     Int
+  tokenHash  String   @unique(map: "fcm_device_tokens_token_hash_key") @db.VarChar(64)
+  token      String   @db.VarChar(4096)
+  platform   String   @db.VarChar(16)
+  deviceId   String?  @db.VarChar(255)
+  enabled    Boolean  @default(true)
+  lastSeenAt DateTime @default(now()) @db.Timestamptz(6)
+  disabledAt DateTime? @db.Timestamptz(6)
+  lastError  String?  @db.VarChar(1000)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "FcmDeviceTokens_userId_fkey")
+  deliveries FcmPushDelivery[]
+
+  @@index([userId, enabled, updatedAt], map: "fcm_device_tokens_user_enabled_idx")
+  @@map("FcmDeviceTokens")
+}
+
+model FcmPushDelivery {
+  id             String   @id @db.VarChar(80)
+  notificationId String   @db.VarChar(40)
+  deviceTokenId  String   @db.VarChar(40)
+  title          String   @db.VarChar(160)
+  body           String   @db.VarChar(500)
+  status         String   @default("pending") @db.VarChar(16)
+  attempts       Int      @default(0)
+  nextAttemptAt  DateTime @default(now()) @db.Timestamptz(6)
+  lockedAt       DateTime? @db.Timestamptz(6)
+  lockToken      String?  @db.VarChar(64)
+  lastError      String?  @db.VarChar(1000)
+  sentAt         DateTime? @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  notification   TaskNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "FcmPushDeliveries_notificationId_fkey")
+  deviceToken    FcmDeviceToken  @relation(fields: [deviceTokenId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "FcmPushDeliveries_deviceTokenId_fkey")
+
+  @@unique([notificationId, deviceTokenId], map: "fcm_push_deliveries_notification_device_unique")
+  @@index([status, nextAttemptAt, lockedAt, createdAt], map: "fcm_push_deliveries_queue_idx")
+  @@map("FcmPushDeliveries")
 }

@@ -11,6 +11,7 @@ import { BookingsService } from '../../modules/bookings/bookings.service';
 import { ReferralRewardsWorker } from '../../modules/referrals/referral-rewards.worker';
 import { DisputeLifecycleService } from '../../modules/disputes/dispute-lifecycle.service';
 import { EliteProgramService } from '../../modules/elite-program/services/elite-program.service';
+import { FcmService } from '../../modules/fcm/fcm.service';
 
 const JOB_NAMES = {
   ReleaseEarnings: 'finance.release-mature',
@@ -21,6 +22,7 @@ const JOB_NAMES = {
   MaintainReferrals: 'referrals.maintain',
   MaintainDisputes: 'disputes.maintain',
   MaintainElite: 'elite.maintain',
+  DispatchFcmPush: 'notifications.dispatch-fcm-push',
 } as const;
 
 export interface QueueHealth {
@@ -57,6 +59,7 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly referrals: ReferralRewardsWorker,
     private readonly disputes: DisputeLifecycleService,
     private readonly elite: EliteProgramService,
+    private readonly fcm: FcmService,
   ) {
     this.enabled = this.config.get<boolean>('jobs.enabled', false);
     this.workerEnabled = this.config.get<boolean>('jobs.workerEnabled', false);
@@ -196,6 +199,11 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { every: this.config.get<number>('elite.workerPollMs', 21_600_000) },
         { name: JOB_NAMES.MaintainElite, data: {} },
       ),
+      queue.upsertJobScheduler(
+        'dispatch-fcm-push-v1',
+        { every: this.config.get<number>('fcm.pollMs', 1_000) },
+        { name: JOB_NAMES.DispatchFcmPush, data: {} },
+      ),
     ]);
   }
 
@@ -255,6 +263,8 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return this.disputes.runMaintenance();
       case JOB_NAMES.MaintainElite:
         return this.elite.runMaintenance(this.config.get<number>('elite.workerBatchSize', 200));
+      case JOB_NAMES.DispatchFcmPush:
+        return this.fcm.runOnce();
       default: {
         throw new Error(`Unsupported maintenance job: ${job.name}`);
       }

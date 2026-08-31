@@ -606,6 +606,24 @@ export const validateEnvironment = (environment: Environment): Environment => {
     errors.push('WEBRTC_TURN_SHARED_SECRET must contain at least 16 characters');
   }
 
+  const fcmEnabled = (environment.FCM_ENABLED ?? 'false').toLowerCase() === 'true';
+  if (fcmEnabled) {
+    for (const key of ['FCM_PROJECT_ID', 'FCM_CLIENT_EMAIL', 'FCM_PRIVATE_KEY'] as const) {
+      if (!present(environment[key])) errors.push(`${key} is required when FCM_ENABLED=true`);
+    }
+    if (present(environment.FCM_CLIENT_EMAIL) && !String(environment.FCM_CLIENT_EMAIL).includes('@')) {
+      errors.push('FCM_CLIENT_EMAIL must be a valid service-account email');
+    }
+    if (present(environment.FCM_PRIVATE_KEY) && !String(environment.FCM_PRIVATE_KEY).includes('BEGIN PRIVATE KEY')) {
+      errors.push('FCM_PRIVATE_KEY must contain a PEM private key');
+    }
+  }
+  validateInteger(errors, 'FCM_POLL_MS', environment.FCM_POLL_MS, 1_000, 100, 60_000);
+  validateInteger(errors, 'FCM_BATCH_SIZE', environment.FCM_BATCH_SIZE, 50, 1, 500);
+  validateInteger(errors, 'FCM_LOCK_MS', environment.FCM_LOCK_MS, 30_000, 1_000, 300_000);
+  validateInteger(errors, 'FCM_MAX_ATTEMPTS', environment.FCM_MAX_ATTEMPTS, 8, 1, 20);
+  validateInteger(errors, 'FCM_RETRY_BASE_MS', environment.FCM_RETRY_BASE_MS, 2_000, 100, 60_000);
+
   const stripeEnabled = (environment.STRIPE_ENABLED ?? 'false').toLowerCase() === 'true';
   const paymentsCurrency = (environment.PAYMENTS_CURRENCY ?? 'USD').toUpperCase();
   if (!CURRENCY_PATTERN.test(paymentsCurrency) || !PLATFORM_CURRENCIES.has(paymentsCurrency)) {

@@ -1,3 +1,7 @@
+# v3.33.0
+
+FCM push notification support is included. See `docs/fcm-push-notifications.md` for server and client setup.
+
 # v3.30.0
 
 Content management and customer discovery completion update.

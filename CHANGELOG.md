@@ -1,3 +1,11 @@
+# 3.33.0
+
+- Added Firebase Cloud Messaging (FCM) push notification delivery for web, Android, and iOS clients.
+- Added authenticated FCM device-token registration/removal APIs with token refresh handling and invalid-token cleanup.
+- Added durable FCM delivery records and a BullMQ-backed dispatcher with retries, locking, and failure tracking.
+- Existing in-app notification creation now atomically queues push deliveries when FCM is enabled.
+- Added FCM environment configuration and production validation without packaging Firebase credentials.
+
 # 3.32.0
 
 - Added complete RBAC-managed SEO configuration, localized route metadata, canonical/robots directives, Open Graph/Twitter metadata, structured data, redirects, robots.txt, XML sitemap generation, dynamic service/tasker sitemap inclusion, and explicit sitemap entries.

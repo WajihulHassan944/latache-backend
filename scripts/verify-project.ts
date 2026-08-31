@@ -100,6 +100,11 @@ const requiredFiles = [
   'src/modules/localization/locale.service.ts',
   'src/common/utils/cors.util.ts',
   'src/modules/notifications/notification-template.service.ts',
+  'src/modules/fcm/fcm.module.ts',
+  'src/modules/fcm/fcm.service.ts',
+  'src/modules/fcm/fcm.dto.ts',
+  'docs/fcm-push-notifications.md',
+  'prisma/migrations/20260831110000_add_fcm_push_notifications/migration.sql',
   'src/modules/mail/email-layout.ts',
   'src/modules/account-deletion/account-deletion.service.ts',
   'src/modules/account-deletion/object-storage-deletion.service.ts',
@@ -134,8 +139,8 @@ const packageJson = JSON.parse(read('package.json')) as {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
-if (packageJson.version !== '3.32.0')
-  failures.push(`Expected package version 3.32.0, received ${packageJson.version ?? '<missing>'}`);
+if (packageJson.version !== '3.33.0')
+  failures.push(`Expected package version 3.33.0, received ${packageJson.version ?? '<missing>'}`);
 if (!packageJson.scripts?.build?.includes('npm run clean')) {
   failures.push('Production build must remove stale dist output before compiling');
 }
@@ -242,6 +247,8 @@ for (const marker of [
   'model EliteBenefitTranslation {',
   'model EliteBadgeTranslation {',
   'model ObjectStorageDeletionTask {',
+  'model FcmDeviceToken {',
+  'model FcmPushDelivery {',
   'preferredLanguage',
   'templateKey',
   'templateParams',
@@ -315,6 +322,8 @@ for (const expected of [
   'GET /api/conversations/:bookingId/calls',
   'GET /api/conversations/:bookingId/calls/:callId',
   'GET /api/notifications',
+  'POST /api/notifications/push-tokens',
+  'DELETE /api/notifications/push-tokens',
   'GET /api/reviews',
   'GET /api/favorites/taskers',
   'POST /api/payments/setup-intent',

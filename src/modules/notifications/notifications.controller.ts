@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -8,6 +8,8 @@ import { ListNotificationsQueryDto, NotificationIdParamDto } from './notificatio
 import { NotificationsService } from './notifications.service';
 import type { NotificationListView, NotificationView } from './notifications.types';
 import { RequestLocale } from '../localization/request-locale.decorator';
+import { FcmService } from '../fcm/fcm.service';
+import { RegisterFcmTokenDto, RemoveFcmTokenDto } from '../fcm/fcm.dto';
 
 @ApiTags('08 Notifications')
 @ApiHeader({
@@ -21,7 +23,10 @@ import { RequestLocale } from '../localization/request-locale.decorator';
 @UseGuards(JwtAuthGuard)
 @Controller('notifications')
 export class NotificationsController {
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly fcm: FcmService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -35,6 +40,24 @@ export class NotificationsController {
     @RequestLocale() locale: string,
   ): Promise<NotificationListView> {
     return this.notifications.list(user.id, query, locale, user.role as UserRole);
+  }
+
+  @Post('push-tokens')
+  @ApiOperation({ summary: 'Register or refresh an FCM push token for the authenticated user' })
+  registerPushToken(
+    @CurrentUser() user: User,
+    @Body() dto: RegisterFcmTokenDto,
+  ): Promise<{ registered: true }> {
+    return this.fcm.registerToken(user.id, dto);
+  }
+
+  @Delete('push-tokens')
+  @ApiOperation({ summary: 'Disable an FCM push token for the authenticated user' })
+  removePushToken(
+    @CurrentUser() user: User,
+    @Body() dto: RemoveFcmTokenDto,
+  ): Promise<{ removed: boolean }> {
+    return this.fcm.removeToken(user.id, dto.token);
   }
 
   @Get('unread-count')

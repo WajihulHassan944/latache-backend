@@ -7,6 +7,8 @@ import { BookingsModule } from '../../modules/bookings/bookings.module';
 import { ReferralsModule } from '../../modules/referrals/referrals.module';
 import { DisputesModule } from '../../modules/disputes/disputes.module';
 import { EliteProgramModule } from '../../modules/elite-program/elite-program.module';
+import { NotificationsModule } from '../../modules/notifications/notifications.module';
+import { FcmModule } from '../../modules/fcm/fcm.module';
 
 @Global()
 @Module({
@@ -18,6 +20,8 @@ import { EliteProgramModule } from '../../modules/elite-program/elite-program.mo
     ReferralsModule,
     DisputesModule,
     EliteProgramModule,
+    NotificationsModule,
+    FcmModule,
   ],
   providers: [PerformanceJobsService],
   exports: [PerformanceJobsService],
