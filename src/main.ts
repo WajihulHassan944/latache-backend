@@ -414,16 +414,27 @@ app.use(
         jsonDocumentUrl: 'api/docs-json',
 
         /*
-         * app.setGlobalPrefix('api') is already configured above.
-         * Swagger is explicitly mounted at /api/docs, so don't
-         * apply the global prefix a second time.
+         * Vercel/serverless deployments need Swagger's generated
+         * static assets to be served correctly. Nest's default
+         * relative asset URLs can otherwise be rewritten by the
+         * serverless routing layer and return JSON/404 responses.
+         *
+         * Use the current request origin so Swagger remains portable
+         * across Vercel, GCP/Nginx, and custom domains.
          */
         useGlobalPrefix: false,
 
         swaggerOptions: {
           persistAuthorization: true,
           displayRequestDuration: true,
+          url: '/api/docs-json',
         },
+
+        customCssUrl: 'https://unpkg.com/swagger-ui-dist@5/swagger-ui.css',
+        customJs: [
+          'https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js',
+          'https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js',
+        ],
 
         customSiteTitle:
           'Latache API Documentation',
