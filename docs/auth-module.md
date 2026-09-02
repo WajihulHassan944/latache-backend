@@ -70,11 +70,11 @@ Every bearer request validates:
 4. Current refresh-token session existence, revocation and expiry.
 5. Email verification for normal protected resources.
 
-`JwtIdentityGuard` intentionally allows an unverified registration token only for `POST /auth/verify-email`. `JwtAuthGuard` adds the verified-email requirement.
+`JwtIdentityGuard` intentionally allows an unverified registration token for routes such as upload-signature requests. `JwtAuthGuard` adds the verified-email requirement.
 
 ## Email verification
 
-- `POST /api/auth/verify-email` requires the registration bearer token and `{ "otp": "123456" }`.
+- `POST /api/auth/verify-email` is public and accepts `{ "email": "sarah@example.com", "otp": "123456", "device": "Chrome on Windows" }`. On success it verifies the account, activates the pending Customer/Tasker role, and returns a normal role-scoped access/refresh token pair (no bearer token is required or consulted).
 - `POST /api/auth/resend-verification-email` accepts email and optional device metadata.
 
 Only the latest OTP is valid. New OTPs are stored as keyed SHA-256 hashes; plaintext codes exist only in the outbound email and request. OTP expiry and failed-attempt counts are stored in PostgreSQL. A new OTP resets the attempt count. The additive migration temporarily accepts an already-issued legacy integer code until it expires, while every new issuance clears that legacy field. The public resend response is intentionally identical for missing, verified, and eligible users to reduce account enumeration.

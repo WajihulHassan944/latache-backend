@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -59,6 +59,7 @@ export class PaymentsController {
   }
 
   @Patch('methods/:id/default')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Saved payment method ID.', example: 'pm_123' })
   @ApiOperation({ summary: 'Set the customer default card' })
   defaultMethod(
     @CurrentUser() user: User,
@@ -68,6 +69,7 @@ export class PaymentsController {
   }
 
   @Delete('methods/:id')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Saved payment method ID.', example: 'pm_123' })
   @ApiOperation({ summary: 'Detach a saved card that is not used by an active booking' })
   deleteMethod(
     @CurrentUser() user: User,
@@ -122,6 +124,7 @@ export class PaymentsController {
   }
 
   @Get('bookings/:bookingId')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({ summary: 'Get final-payment state for one customer booking' })
   bookingPayment(
     @CurrentUser() user: User,
@@ -131,6 +134,7 @@ export class PaymentsController {
   }
 
   @Post('bookings/:bookingId/retry')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({
     summary: 'Retry or continue a failed/requires-action final booking payment',
     description:

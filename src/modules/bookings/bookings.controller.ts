@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -90,12 +90,14 @@ export class BookingsController {
   }
 
   @Get(':bookingId')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({ summary: 'Get one booking as either participant' })
   get(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     return this.bookings.get(user, params.bookingId);
   }
 
   @Post(':bookingId/confirm')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   @ApiOperation({ summary: 'Tasker confirms a pending booking' })
   confirm(@CurrentUser() user: User, @Param() params: BookingParamDto) {
@@ -103,6 +105,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/cancel')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({ summary: 'Cancel a booking using the current participant role' })
   cancel(
     @CurrentUser() user: User,
@@ -115,6 +118,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/reschedule')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Customer)
   @ApiOperation({ summary: 'Customer moves a pending/confirmed booking to another real open slot' })
   reschedule(
@@ -126,6 +130,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/extend')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Customer, UserRole.Tasker)
   @ApiOperation({
     summary: 'Customer or Tasker extends authorized task time',
@@ -140,6 +145,7 @@ export class BookingsController {
   }
 
   @Patch(':bookingId/billing')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Customer)
   @ApiOperation({ summary: 'Update tip/donation before final payment succeeds' })
   updateBilling(
@@ -151,6 +157,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/navigation/start')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   @ApiOperation({ summary: 'Tasker starts travel to the customer location' })
   startNavigation(@CurrentUser() user: User, @Param() params: BookingParamDto) {
@@ -158,6 +165,7 @@ export class BookingsController {
   }
 
   @Get(':bookingId/navigation')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({
     summary: 'Get shared live-location/navigation state',
     description:
@@ -168,6 +176,7 @@ export class BookingsController {
   }
 
   @Put(':bookingId/location')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   @ApiOperation({
     summary: 'Tasker updates current coordinates for an active booking',
@@ -183,6 +192,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/arrival')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   @ApiOperation({ summary: 'Tasker confirms arrival' })
   arrival(@CurrentUser() user: User, @Param() params: BookingParamDto) {
@@ -190,12 +200,14 @@ export class BookingsController {
   }
 
   @Get(':bookingId/work-verification')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({ summary: 'Get verified on-site work proof and OTP state for a booking' })
   workVerificationState(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     return this.workVerification.state(user, params.bookingId);
   }
 
   @Post(':bookingId/work/proofs/front-door')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   @ApiOperation({ summary: 'Tasker attaches immutable front-door proof after arrival' })
   frontDoorProof(
@@ -207,6 +219,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/work/start-code')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Customer)
   @ApiOperation({ summary: 'Customer generates the six-digit work-start OTP' })
   startCode(@CurrentUser() user: User, @Param() params: BookingParamDto) {
@@ -214,6 +227,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/work/start')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   @ApiOperation({ summary: 'Tasker verifies Customer OTP and starts the billable timer' })
   startVerifiedWork(
@@ -225,6 +239,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/work/proofs/completion')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   @ApiOperation({ summary: 'Tasker attaches immutable completed-work proof and freezes the timer' })
   completionProof(
@@ -236,6 +251,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/work/completion-code')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Customer)
   @ApiOperation({ summary: 'Customer generates the six-digit completion OTP after checking proof' })
   completionCode(@CurrentUser() user: User, @Param() params: BookingParamDto) {
@@ -243,6 +259,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/work/finish')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   @ApiOperation({ summary: 'Tasker verifies completion OTP, completes booking, and unlocks final payment' })
   async finishVerifiedWork(
@@ -257,36 +274,42 @@ export class BookingsController {
   }
 
   @Get(':bookingId/timer')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({ summary: 'Get the shared persisted task timer state' })
   timer(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     return this.bookings.timer(user, params.bookingId);
   }
 
   @Post(':bookingId/timer/start')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   startTimer(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     return this.taskerTasks.startTimer(user.id, params.bookingId);
   }
 
   @Post(':bookingId/timer/pause')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   pauseTimer(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     return this.taskerTasks.pauseTimer(user.id, params.bookingId);
   }
 
   @Post(':bookingId/timer/resume')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   resumeTimer(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     return this.taskerTasks.resumeTimer(user.id, params.bookingId);
   }
 
   @Post(':bookingId/timer/stop')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   stopTimer(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     return this.taskerTasks.stopTimer(user.id, params.bookingId);
   }
 
   @Patch(':bookingId/timer/notes')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   notes(
     @CurrentUser() user: User,
@@ -297,6 +320,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/complete')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({
     summary: 'Submit or approve completion of a stopped task',
     description:
@@ -326,6 +350,7 @@ export class BookingsController {
   }
 
   @Post(':bookingId/cash-payment/confirm')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   @ApiHeader({
     name: 'Idempotency-Key',

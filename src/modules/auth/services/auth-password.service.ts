@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, UnauthorizedExcepti
 import { ConfigService } from '@nestjs/config';
 import { compare, hash } from 'bcryptjs';
 import { AccountStatus } from '../../../common/enums/account-status.enum';
+import { UserRole } from '../../../common/enums/user-role.enum';
 import { generateNumericCode } from '../../../common/utils/crypto.util';
 import { serializeUser, type PublicUser } from '../../../common/utils/user.util';
 import { PrismaService } from '../../../database/prisma.service';
@@ -20,6 +21,7 @@ import type {
 import { AuthRepository } from '../repositories/auth.repository';
 import { AuthSessionsRepository } from '../repositories/auth-sessions.repository';
 import { AuthCodeService } from './auth-code.service';
+import { AuthTokenService, type AuthTokens, type SessionMetadata } from './auth-token.service';
 
 const GENERIC_RESET_MESSAGE =
   'If an eligible account exists, password reset instructions have been sent.';
@@ -36,14 +38,18 @@ export class AuthPasswordService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly authCodes: AuthCodeService,
+    private readonly tokens: AuthTokenService,
   ) {}
 
   async verifyEmail(
-    userId: number,
     dto: VerifyEmailDto,
-  ): Promise<SuccessEnvelope<{ user: PublicUser }>> {
+    metadata: SessionMetadata = {},
+  ): Promise<SuccessEnvelope<{ user: PublicUser; tokens?: AuthTokens }>> {
     const result = await this.prisma.$transaction(async (transaction: Prisma.TransactionClient) => {
-      const user = await this.repository.findUserByIdForUpdate(userId, transaction);
+      const existing = await this.repository.findUserByEmail(dto.email, transaction);
+      if (!existing) return { kind: 'invalid' as const };
+
+      const user = await this.repository.findUserByIdForUpdate(existing.id, transaction);
       if (!user || user.deletedAt) return { kind: 'invalid' as const };
       if (user.isVerified) return { kind: 'verified' as const, user };
       if (user.otpAttempts >= MAX_OTP_ATTEMPTS) {
@@ -58,6 +64,13 @@ export class AuthPasswordService {
         return { kind: 'invalid' as const };
       }
 
+      const pendingCustomerVerification =
+        user.accountStatus === AccountStatus.PendingVerification &&
+        user.onboardingStatus === 'pending_customer_verification';
+      const pendingTaskerVerification =
+        user.accountStatus === AccountStatus.PendingVerification &&
+        user.onboardingStatus === 'pending_tasker_verification';
+
       const updated = await transaction.user.update({
         where: { id: user.id },
         data: {
@@ -67,9 +80,64 @@ export class AuthPasswordService {
           otpExpires: null,
           otpAttempts: 0,
           accountStatus: AccountStatus.Active,
+          ...(pendingCustomerVerification
+            ? {
+                role: UserRole.Customer,
+                roles: { set: [UserRole.Customer] },
+                onboardingStatus: null,
+              }
+            : {}),
+          ...(pendingTaskerVerification
+            ? {
+                role: UserRole.Tasker,
+                roles: { set: [UserRole.Tasker] },
+                onboardingStatus: null,
+              }
+            : {}),
         },
       });
-      return { kind: 'success' as const, user: updated };
+
+      if (pendingCustomerVerification) {
+        await transaction.customerProfile.upsert({
+          where: { userId: user.id },
+          create: {
+            userId: user.id,
+            status: AccountStatus.Active,
+            activatedAt: new Date(),
+          },
+          update: {
+            status: AccountStatus.Active,
+            activatedAt: new Date(),
+            suspendedAt: null,
+            deactivatedAt: null,
+          },
+        });
+      }
+
+      if (pendingTaskerVerification) {
+        await transaction.taskerProfile.upsert({
+          where: { userId: user.id },
+          create: {
+            userId: user.id,
+            status: AccountStatus.PendingApproval,
+          },
+          update: {
+            status: AccountStatus.PendingApproval,
+            rejectedAt: null,
+            statusReason: null,
+          },
+        });
+      }
+
+      const activatedRole = pendingCustomerVerification
+        ? UserRole.Customer
+        : pendingTaskerVerification
+          ? UserRole.Tasker
+          : undefined;
+
+      const sessionTokens = await this.tokens.issue(updated, metadata, transaction, activatedRole);
+
+      return { kind: 'success' as const, user: updated, role: activatedRole, tokens: sessionTokens };
     });
 
     if (result.kind === 'invalid') {
@@ -81,7 +149,10 @@ export class AuthPasswordService {
     if (result.kind === 'verified') {
       return success({ user: serializeUser(result.user) }, 'Email is already verified.');
     }
-    return success({ user: serializeUser(result.user) }, 'Email verified successfully.');
+    return success(
+      { user: serializeUser(result.user, result.role), tokens: result.tokens },
+      'Email verified successfully.',
+    );
   }
 
   async resendVerification(
@@ -94,11 +165,58 @@ export class AuthPasswordService {
     }
 
     const otp = generateNumericCode(6);
-    await this.repository.updateUser(user.id, {
-      otp: null,
-      otpHash: this.authCodes.hash('email-verification', otp),
-      otpExpires: this.verificationOtpExpiry(),
-      otpAttempts: 0,
+    await this.prisma.$transaction(async (transaction: Prisma.TransactionClient) => {
+      const locked = await this.repository.findUserByIdForUpdate(user.id, transaction);
+      if (!locked || locked.deletedAt || locked.isVerified) return;
+
+      const isCustomerPendingCandidate =
+        locked.role === UserRole.Customer ||
+        locked.roles.includes(UserRole.Customer);
+      const isTaskerPendingCandidate =
+        !isCustomerPendingCandidate &&
+        (locked.role === UserRole.Tasker || locked.roles.includes(UserRole.Tasker));
+
+      await this.repository.updateUser(
+        locked.id,
+        {
+          otp: null,
+          otpHash: this.authCodes.hash('email-verification', otp),
+          otpExpires: this.verificationOtpExpiry(),
+          otpAttempts: 0,
+          ...(isCustomerPendingCandidate
+            ? {
+                role: '',
+                roles: { set: [] },
+                accountStatus: AccountStatus.PendingVerification,
+                onboardingStatus: 'pending_customer_verification',
+              }
+            : {}),
+          ...(isTaskerPendingCandidate
+            ? {
+                role: '',
+                roles: { set: [] },
+                accountStatus: AccountStatus.PendingVerification,
+                onboardingStatus: 'pending_tasker_verification',
+              }
+            : {}),
+        },
+        transaction,
+      );
+
+      if (isCustomerPendingCandidate) {
+        await transaction.customerProfile.deleteMany({ where: { userId: locked.id } });
+        await transaction.refreshToken.updateMany({
+          where: { userId: locked.id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+      if (isTaskerPendingCandidate) {
+        await transaction.taskerProfile.deleteMany({ where: { userId: locked.id } });
+        await transaction.refreshToken.updateMany({
+          where: { userId: locked.id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
     });
     await this.mail.sendVerificationEmail({
       to: user.email,

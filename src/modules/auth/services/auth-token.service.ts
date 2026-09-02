@@ -68,6 +68,43 @@ export class AuthTokenService {
     };
   }
 
+  async issueVerificationSession(
+    user: User,
+    metadata: SessionMetadata = {},
+    transaction?: Prisma.TransactionClient,
+    pendingRole: UserRole = UserRole.Customer,
+  ): Promise<AuthTokens> {
+    if (
+      user.deletedAt ||
+      user.isVerified ||
+      user.accountStatus !== AccountStatus.PendingVerification ||
+      user.onboardingStatus !== this.pendingVerificationOnboardingStatus(pendingRole)
+    ) {
+      throw new UnauthorizedException('Account cannot create a verification session');
+    }
+
+    const refreshToken = generateOpaqueToken();
+    const session = await this.sessions.create(
+      {
+        userId: user.id,
+        tokenHash: hashOpaqueToken(refreshToken),
+        device: metadata.device ?? null,
+        ipAddress: metadata.ipAddress?.slice(0, 64) ?? null,
+        userAgent: metadata.userAgent?.slice(0, 512) ?? null,
+        activeRole: pendingRole,
+        lastUsedAt: new Date(),
+        expiresAt: this.refreshExpiry(),
+      },
+      transaction,
+    );
+
+    return {
+      accessToken: await this.signAccessToken(user, session.id, pendingRole, true),
+      refreshToken,
+      tokenType: 'Bearer',
+    };
+  }
+
   async refresh(refreshToken: string, metadata: SessionMetadata = {}): Promise<AuthTokens> {
     const tokenHash = hashOpaqueToken(refreshToken);
 
@@ -126,6 +163,7 @@ export class AuthTokenService {
               user,
               replacementSession.id,
               this.resolveRefreshRole(user, replacementSession.activeRole),
+              this.pendingVerificationRole(user) !== null,
             ),
             refreshToken: replacement,
             tokenType: 'Bearer' as const,
@@ -153,8 +191,16 @@ export class AuthTokenService {
     );
   }
 
-  private signAccessToken(user: User, sessionId: number, role: UserRole): Promise<string> {
-    if (!hasUserRole(user, role)) {
+  private signAccessToken(
+    user: User,
+    sessionId: number,
+    role: UserRole,
+    allowPendingVerification = false,
+  ): Promise<string> {
+    if (
+      !hasUserRole(user, role) &&
+      !(allowPendingVerification && this.pendingVerificationRole(user) === role)
+    ) {
       throw new UnauthorizedException('Selected role is no longer enabled for this account');
     }
     const payload: AccessTokenPayload = {
@@ -179,10 +225,31 @@ export class AuthTokenService {
 
   private resolveRefreshRole(user: User, storedRole: string | null): UserRole {
     const candidate = (storedRole || user.role) as UserRole;
+    if (this.pendingVerificationRole(user) === candidate) {
+      return candidate;
+    }
     if (!hasUserRole(user, candidate)) {
       throw new UnauthorizedException('Session role is no longer enabled for this account');
     }
     return candidate;
+  }
+
+  /** The role a not-yet-verified account is pending, if any; null once verified or for any other state. */
+  private pendingVerificationRole(user: User): UserRole | null {
+    if (
+      user.deletedAt ||
+      user.isVerified ||
+      user.accountStatus !== AccountStatus.PendingVerification
+    ) {
+      return null;
+    }
+    if (user.onboardingStatus === 'pending_customer_verification') return UserRole.Customer;
+    if (user.onboardingStatus === 'pending_tasker_verification') return UserRole.Tasker;
+    return null;
+  }
+
+  private pendingVerificationOnboardingStatus(role: UserRole): string {
+    return role === UserRole.Tasker ? 'pending_tasker_verification' : 'pending_customer_verification';
   }
 
   private accessSecret(role: UserRole): string {

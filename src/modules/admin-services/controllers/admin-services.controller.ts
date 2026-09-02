@@ -12,6 +12,7 @@ import {
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -62,6 +63,7 @@ export class AdminServicesController {
 
   @Get(':serviceId')
   @Permissions('services.read')
+  @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
     summary: 'Get one service category with sub-services, Tasker assignments and booking usage',
     description:

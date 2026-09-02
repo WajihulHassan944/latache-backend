@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../generated/prisma/client';
@@ -67,6 +67,7 @@ export class NotificationsController {
   }
 
   @Patch(':id/read')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Notification ID.' })
   @ApiOperation({ summary: 'Mark one owned notification as read' })
   markRead(
     @CurrentUser() user: User,

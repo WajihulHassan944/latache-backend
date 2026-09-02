@@ -86,7 +86,7 @@ export class AdminTaskersController {
 
   @Get(':id')
   @Permissions('taskers.read')
-  @ApiParam({ name: 'id', type: Number, example: 58 })
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Tasker user ID.', example: 58 })
   @ApiOperation({ summary: 'Get private Tasker verification/profile details' })
   @ApiNotFoundResponse({ description: 'Tasker not found.' })
   details(@Param('id', ParseIntPipe) id: number) {
@@ -95,6 +95,7 @@ export class AdminTaskersController {
 
   @Delete(':id')
   @Permissions('taskers.delete')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Tasker user ID.', example: 58 })
   @ApiOperation({
     summary: 'Permanently delete an eligible Tasker and managed assets',
     description:
@@ -114,6 +115,7 @@ export class AdminTaskersController {
 
   @Post(':id/verification')
   @Permissions('taskers.manage')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Tasker user ID.', example: 58 })
   @ApiOperation({
     summary: 'Approve or reject a Tasker application',
     description:
@@ -130,6 +132,7 @@ export class AdminTaskersController {
 
   @Patch(':id/status')
   @Permissions('taskers.manage')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Tasker user ID.', example: 58 })
   @ApiOperation({
     summary: 'Suspend, reactivate or ban/deactivate a Tasker',
     description:

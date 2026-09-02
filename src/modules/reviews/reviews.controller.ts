@@ -9,7 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiConflictResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConflictResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -44,6 +44,7 @@ export class ReviewsController {
   }
 
   @Post('bookings/:bookingId')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({
     summary: 'Review the other participant after a completed booking',
     description:
@@ -59,6 +60,7 @@ export class ReviewsController {
   }
 
   @Patch(':id')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Review ID.' })
   @ApiOperation({ summary: 'Edit an authored review' })
   update(
     @CurrentUser() user: User,
@@ -69,6 +71,7 @@ export class ReviewsController {
   }
 
   @Delete(':id')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Review ID.' })
   @ApiOperation({ summary: 'Delete an authored review' })
   delete(
     @CurrentUser() user: User,

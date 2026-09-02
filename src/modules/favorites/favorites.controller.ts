@@ -1,5 +1,5 @@
 import { Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -24,12 +24,14 @@ export class FavoritesController {
   }
 
   @Post(':taskerId')
+  @ApiParam({ name: 'taskerId', required: true, type: Number, description: 'Tasker user ID to favorite.' })
   @ApiOperation({ summary: 'Add a tasker to favorites' })
   add(@CurrentUser() user: User, @Param() params: FavoriteTaskerParamDto) {
     return this.favorites.add(user.id, params.taskerId);
   }
 
   @Delete(':taskerId')
+  @ApiParam({ name: 'taskerId', required: true, type: Number, description: 'Tasker user ID to remove from favorites.' })
   @ApiOperation({ summary: 'Remove a tasker from favorites' })
   remove(@CurrentUser() user: User, @Param() params: FavoriteTaskerParamDto) {
     return this.favorites.remove(user.id, params.taskerId);

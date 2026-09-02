@@ -96,7 +96,12 @@ export class AdminEliteTaskersController {
 
   @Patch('program/tiers/:tierCode')
   @Permissions('elite.manage')
-  @ApiParam({ name: 'tierCode', enum: ['gold', 'platinum', 'diamond'] })
+  @ApiParam({
+    name: 'tierCode',
+    required: true,
+    enum: ['gold', 'platinum', 'diamond'],
+    description: 'Elite tier code.',
+  })
   @ApiOperation({
     summary: 'Update one Elite tier policy and eligibility requirements',
     description:
@@ -112,7 +117,12 @@ export class AdminEliteTaskersController {
 
   @Put('program/tiers/:tierCode/benefits')
   @Permissions('elite.manage')
-  @ApiParam({ name: 'tierCode', enum: ['gold', 'platinum', 'diamond'] })
+  @ApiParam({
+    name: 'tierCode',
+    required: true,
+    enum: ['gold', 'platinum', 'diamond'],
+    description: 'Elite tier code.',
+  })
   @ApiOperation({
     summary: 'Replace all configured benefits for one Elite tier',
     description:
@@ -138,6 +148,7 @@ export class AdminEliteTaskersController {
 
   @Patch('program/badges/:badgeId')
   @Permissions('elite.manage')
+  @ApiParam({ name: 'badgeId', required: true, type: String, description: 'Elite badge definition ID.' })
   @ApiOperation({ summary: 'Update or reactivate an Elite badge definition' })
   updateBadge(
     @CurrentUser() actor: User,
@@ -149,6 +160,7 @@ export class AdminEliteTaskersController {
 
   @Delete('program/badges/:badgeId')
   @Permissions('elite.manage')
+  @ApiParam({ name: 'badgeId', required: true, type: String, description: 'Elite badge definition ID.' })
   @ApiOperation({
     summary: 'Permanently delete an Elite badge definition',
     description:
@@ -196,6 +208,7 @@ export class AdminEliteTaskersController {
 
   @Post('requests/:requestId/decision')
   @Permissions('elite.manage')
+  @ApiParam({ name: 'requestId', required: true, type: String, description: 'Elite request ID.' })
   @ApiOperation({
     summary: 'Approve or reject any Elite application/upgrade/downgrade request',
     description:
@@ -212,6 +225,7 @@ export class AdminEliteTaskersController {
 
   @Patch(':taskerId/tier')
   @Permissions('elite.manage')
+  @ApiParam({ name: 'taskerId', required: true, type: Number, description: 'Tasker user ID.' })
   @ApiOperation({
     summary: 'Directly change a Tasker Elite tier',
     description:
@@ -227,6 +241,8 @@ export class AdminEliteTaskersController {
 
   @Post(':taskerId/badges/:badgeId')
   @Permissions('elite.manage')
+  @ApiParam({ name: 'taskerId', required: true, type: Number, description: 'Tasker user ID.' })
+  @ApiParam({ name: 'badgeId', required: true, type: String, description: 'Elite badge definition ID.' })
   @ApiOperation({ summary: 'Award or restore an Elite badge to a Tasker' })
   assignBadge(
     @CurrentUser() actor: User,
@@ -238,6 +254,8 @@ export class AdminEliteTaskersController {
 
   @Delete(':taskerId/badges/:badgeId')
   @Permissions('elite.manage')
+  @ApiParam({ name: 'taskerId', required: true, type: Number, description: 'Tasker user ID.' })
+  @ApiParam({ name: 'badgeId', required: true, type: String, description: 'Elite badge definition ID.' })
   @ApiOperation({ summary: 'Revoke a Tasker Elite badge while retaining history' })
   revokeBadge(
     @CurrentUser() actor: User,
@@ -249,7 +267,7 @@ export class AdminEliteTaskersController {
   }
 
   @Get(':taskerId')
-  @ApiParam({ name: 'taskerId', type: Number })
+  @ApiParam({ name: 'taskerId', required: true, type: Number, description: 'Tasker user ID.' })
   @ApiOperation({ summary: 'Get one Tasker Elite program detail view' })
   @ApiNotFoundResponse({ description: 'Tasker not found.' })
   details(@Param('taskerId', ParseIntPipe) taskerId: number): Promise<Record<string, unknown>> {

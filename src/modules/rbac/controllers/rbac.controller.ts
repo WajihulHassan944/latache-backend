@@ -157,7 +157,7 @@ export class RbacController {
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('roles.read')
   @ApiOperation({ summary: 'Get an administrator role' })
-  @ApiParam({ name: 'id', example: 'role_finance_admin' })
+  @ApiParam({ name: 'id', required: true, type: String, description: 'RBAC role ID.', example: 'role_finance_admin' })
   @ApiOkResponse({
     description: 'Role details including permissions and assigned administrator count.',
   })
@@ -203,6 +203,7 @@ export class RbacController {
   @Patch('roles/:id')
   @UseGuards(AdminAuthGuard, RolesGuard)
   @Roles(UserRole.SuperAdmin)
+  @ApiParam({ name: 'id', required: true, type: String, description: 'RBAC role ID.', example: 'role_finance_admin' })
   @ApiOperation({
     summary: 'Update administrator role metadata or active status',
     description:
@@ -224,6 +225,7 @@ export class RbacController {
   @Put('roles/:id/permissions')
   @UseGuards(AdminAuthGuard, RolesGuard)
   @Roles(UserRole.SuperAdmin)
+  @ApiParam({ name: 'id', required: true, type: String, description: 'RBAC role ID.', example: 'role_finance_admin' })
   @ApiOperation({
     summary: 'Replace a role permission set',
     description:
@@ -257,6 +259,7 @@ export class RbacController {
   @Delete('roles/:id')
   @UseGuards(AdminAuthGuard, RolesGuard)
   @Roles(UserRole.SuperAdmin)
+  @ApiParam({ name: 'id', required: true, type: String, description: 'RBAC role ID.', example: 'role_finance_admin' })
   @ApiOperation({
     summary: 'Delete a custom administrator role',
     description:
@@ -287,7 +290,7 @@ export class RbacController {
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('admins.read')
   @ApiOperation({ summary: 'Get an administrator RBAC assignment' })
-  @ApiParam({ name: 'id', type: Number, example: 20 })
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Administrator user ID.', example: 20 })
   @ApiOkResponse({ description: 'Administrator access details.' })
   @ApiNotFoundResponse({ description: 'Administrator not found.' })
   adminDetails(@Param('id', ParseIntPipe) id: number): Promise<SuccessEnvelope<RbacAdminView>> {
@@ -297,6 +300,7 @@ export class RbacController {
   @Patch('admins/:id')
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('admins.update')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Administrator user ID.', example: 20 })
   @ApiOperation({
     summary: 'Update an administrator profile',
     description:
@@ -317,6 +321,7 @@ export class RbacController {
   @Patch('admins/:id/access')
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('admins.update')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Administrator user ID.', example: 20 })
   @ApiOperation({
     summary: 'Assign an administrator role and optional permission subset',
     description:
@@ -356,6 +361,7 @@ export class RbacController {
 
   @Patch('admins/:id/status')
   @UseGuards(AdminAuthGuard)
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Administrator user ID.', example: 20 })
   @ApiOperation({
     summary: 'Update an administrator account status',
     description:
@@ -375,6 +381,7 @@ export class RbacController {
   @Delete('admins/:id')
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('admins.delete')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Administrator user ID.', example: 20 })
   @ApiOperation({
     summary: 'Permanently delete an eligible administrator account',
     description:

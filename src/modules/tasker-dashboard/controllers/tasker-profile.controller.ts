@@ -4,6 +4,7 @@ import {
   ApiConflictResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -64,6 +65,7 @@ export class TaskerProfileController {
   }
 
   @Patch('skills/:id')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Service ID of the activated skill.' })
   @ApiOperation({ summary: 'Update an active skill hourly rate' })
   updateSkill(
     @CurrentUser() user: User,
@@ -74,6 +76,7 @@ export class TaskerProfileController {
   }
 
   @Delete('skills/:id')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Service ID of the activated skill.' })
   @ApiOperation({ summary: 'Permanently remove a Tasker skill assignment' })
   @ApiConflictResponse({ description: 'Active bookings still depend on this skill.' })
   deleteSkill(

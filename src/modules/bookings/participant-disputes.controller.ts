@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -35,12 +35,14 @@ export class ParticipantDisputesController {
   }
 
   @Get('disputes/:disputeId')
+  @ApiParam({ name: 'disputeId', required: true, type: String, description: 'Dispute ID.' })
   @ApiOperation({ summary: 'Get one dispute visible to the authenticated booking participant' })
   detail(@CurrentUser() user: User, @Param() params: ParticipantDisputeParamDto) {
     return this.bookings.getUserDispute(user, params.disputeId);
   }
 
   @Post('bookings/:bookingId/disputes')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiHeader({
     name: 'Idempotency-Key',
     required: false,
@@ -61,6 +63,7 @@ export class ParticipantDisputesController {
   }
 
   @Post('disputes/:disputeId/evidence')
+  @ApiParam({ name: 'disputeId', required: true, type: String, description: 'Dispute ID.' })
   @ApiOperation({
     summary: 'Submit requested evidence to an owned dispute',
     description:
@@ -74,6 +77,7 @@ export class ParticipantDisputesController {
     return this.bookings.addUserDisputeEvidence(user, params.disputeId, dto);
   }
   @Post('disputes/:disputeId/actions')
+  @ApiParam({ name: 'disputeId', required: true, type: String, description: 'Dispute ID.' })
   @ApiOperation({
     summary: 'Withdraw, respond to a settlement, appeal, or comment on an owned dispute',
     description:
@@ -88,6 +92,7 @@ export class ParticipantDisputesController {
   }
 
   @Post('disputes/:disputeId/satisfaction')
+  @ApiParam({ name: 'disputeId', required: true, type: String, description: 'Dispute ID.' })
   @ApiOperation({ summary: 'Submit or update a 1-5 satisfaction rating after dispute closure' })
   satisfaction(
     @CurrentUser() user: User,

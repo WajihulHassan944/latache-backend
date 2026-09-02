@@ -16,6 +16,7 @@ import {
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiProduces,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -71,6 +72,7 @@ export class AdminFinanceController {
 
   @Post('payouts/:id/actions')
   @Permissions('finance.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Payout request ID.' })
   @ApiOperation({
     summary: 'Review and settle a Tasker payout request',
     description:
@@ -102,6 +104,7 @@ export class AdminFinanceController {
 
   @Post('earnings/:id/actions')
   @Permissions('finance.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Earning record ID.' })
   @ApiOperation({
     summary: 'Block, unblock, or explicitly extend one pending earning clearance',
     description:

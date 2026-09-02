@@ -39,7 +39,7 @@ export class AdminDisputesController {
 
   @Get(':id')
   @Permissions('support.read')
-  @ApiParam({ name: 'id', example: 'cm123abc456def' })
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Dispute ID.', example: 'cm123abc456def' })
   @ApiOperation({
     summary: 'Get complete dispute case context',
     description:
@@ -51,6 +51,7 @@ export class AdminDisputesController {
 
   @Post(':id/actions')
   @Permissions('support.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Dispute ID.', example: 'cm123abc456def' })
   @ApiOperation({
     summary:
       'Single mutation endpoint for investigation, escalation, evidence, and resolution actions',

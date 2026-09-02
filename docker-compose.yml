@@ -1,70 +1,52 @@
 services:
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    volumes:
-      - latache-redis:/data
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: latache
+      POSTGRES_USER: latache
+      POSTGRES_PASSWORD: latache
+    ports:
+      - "5432:5432"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "pg_isready -U latache -d latache"]
       interval: 5s
       timeout: 5s
       retries: 20
+    volumes:
+      - latache-postgres:/var/lib/postgresql/data
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "1025:1025"
+      - "8025:8025"
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
+    build: .
     depends_on:
-      redis:
+      postgres:
         condition: service_healthy
-    env_file:
-      - .env
+      mailpit:
+        condition: service_started
     environment:
       NODE_ENV: production
-      SERVICE_MODE: api
       PORT: 8080
-      REDIS_URL: redis://redis:6379
-      REDIS_ENABLED: "true"
-      REDIS_REQUIRED: "true"
-      JOBS_ENABLED: "true"
-      JOB_WORKER_ENABLED: "true"
-      JOB_SCHEDULER_ENABLED: "true"
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://latache:latache@postgres:5432/latache?schema=public}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      JWT_SECRET_ADMIN: ${JWT_SECRET_ADMIN:?JWT_SECRET_ADMIN must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES: ${PASSWORD_RESET_OTP_EXPIRES_IN_MINUTES:-15}
+      SWAGGER_ENABLED: "${SWAGGER_ENABLED:-true}"
+      SMTP_HOST: ${DOCKER_SMTP_HOST:-mailpit}
+      SMTP_PORT: ${DOCKER_SMTP_PORT:-1025}
+      SMTP_SECURE: "${SMTP_SECURE:-false}"
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: "${SMTP_FROM:-Latache <no-reply@latache.local>}"
+      SMTP_VERIFY_ON_BOOTSTRAP: "${SMTP_VERIFY_ON_BOOTSTRAP:-true}"
     ports:
-      - "127.0.0.1:8080:8080"
-    command:
-      [
-        "sh",
-        "-c",
-        "npm run prisma:migrate:deploy && node --enable-source-maps dist/main.js"
-      ]
-
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      NODE_ENV: production
-      SERVICE_MODE: worker
-      REDIS_URL: redis://redis:6379
-      REDIS_ENABLED: "true"
-      REDIS_REQUIRED: "true"
-      JOBS_ENABLED: "true"
-      JOB_WORKER_ENABLED: "true"
-      JOB_SCHEDULER_ENABLED: "true"
-    command:
-      [
-        "node",
-        "--enable-source-maps",
-        "dist/main.js"
-      ]
+      - "8080:8080"
+    command: ["sh", "-c", "npm run prisma:migrate:deploy && node --enable-source-maps dist/main.js"]
 
 volumes:
-  latache-redis:
+  latache-postgres:

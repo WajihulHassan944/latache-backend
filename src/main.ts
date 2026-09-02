@@ -232,6 +232,10 @@ async function bootstrap(): Promise<void> {
         .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'bearer')
         .build(),
     );
+    // Explicitly expose Swagger UI's bundled assets from node_modules.
+    // This is important on Vercel/serverless, where relying on the
+    // framework-generated relative asset middleware can result in the
+    // asset request being handled by the JSON/function route instead.
     app.use(
       '/api/docs',
       expressStatic(join(process.cwd(), 'node_modules', 'swagger-ui-dist'), {

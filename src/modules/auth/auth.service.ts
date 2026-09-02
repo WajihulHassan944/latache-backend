@@ -94,8 +94,8 @@ export class AuthService {
     return this.loginService.switchRole(userId, currentSessionId, role, metadata);
   }
 
-  verifyEmail(userId: number, dto: VerifyEmailDto) {
-    return this.passwords.verifyEmail(userId, dto);
+  verifyEmail(dto: VerifyEmailDto, metadata: SessionMetadata) {
+    return this.passwords.verifyEmail(dto, metadata);
   }
 
   resendVerification(dto: ResendVerificationEmailDto, locale?: string) {

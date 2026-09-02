@@ -5,6 +5,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -38,6 +39,7 @@ export class AdminReferralsController {
 
   @Get(':id')
   @Permissions('finance.read')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Referral ID.' })
   @ApiOperation({
     summary: 'Inspect one referral, qualification booking, rewards, and linked wallet entries',
   })
@@ -48,6 +50,7 @@ export class AdminReferralsController {
 
   @Post(':id/revoke')
   @Permissions('finance.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Referral ID.' })
   @ApiOperation({
     summary: 'Revoke an ineligible referral and reverse only its settled wallet rewards',
     description:

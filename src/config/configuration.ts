@@ -44,6 +44,7 @@ export default () => {
       corsOrigins: Array.from(
         new Set([
           'http://localhost:3000',
+          'http://localhost:3001',
           'https://latache-web.vercel.app',
           'https://latache-be-production.up.railway.app',
           ...asStringList(process.env.CORS_ORIGINS),
@@ -259,6 +260,13 @@ export default () => {
       retryBaseMs: asPositiveInteger(process.env.FCM_RETRY_BASE_MS, 2_000),
     },
     mail: {
+      provider: (
+        process.env.MAIL_PROVIDER ?? (process.env.RESEND_API_KEY ? 'resend' : 'smtp')
+      )
+        .trim()
+        .toLowerCase(),
+      resendApiKey: process.env.RESEND_API_KEY?.trim(),
+      resendFrom: process.env.RESEND_FROM?.trim(),
       host: process.env.SMTP_HOST,
       port: asPositiveInteger(process.env.SMTP_PORT, 587),
       secure: asBoolean(process.env.SMTP_SECURE, false),

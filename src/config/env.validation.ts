@@ -709,19 +709,40 @@ export const validateEnvironment = (environment: Environment): Environment => {
     errors.push('REQUEST_BODY_LIMIT must use a value such as 512kb or 1mb');
   }
 
+  const mailProvider = (environment.MAIL_PROVIDER ?? (present(environment.RESEND_API_KEY) ? 'resend' : 'smtp'))
+    .toString()
+    .trim()
+    .toLowerCase();
+  if (!['smtp', 'resend'].includes(mailProvider)) {
+    errors.push('MAIL_PROVIDER must be either smtp or resend');
+  }
+  if (mailProvider === 'resend' && !present(environment.RESEND_API_KEY)) {
+    errors.push('RESEND_API_KEY is required when MAIL_PROVIDER=resend');
+  }
+  if (mailProvider === 'resend' && !present(environment.RESEND_FROM) && !present(environment.SMTP_FROM)) {
+    errors.push('RESEND_FROM or SMTP_FROM is required when MAIL_PROVIDER=resend');
+  }
+  if (mailProvider === 'smtp' && !present(environment.SMTP_HOST) && nodeEnvironment !== 'test') {
+    errors.push('SMTP_HOST is required when MAIL_PROVIDER=smtp');
+  }
+
   if (nodeEnvironment !== 'test') {
     const required = [
       'DATABASE_URL',
       'JWT_SECRET',
       'JWT_SECRET_ADMIN',
-      'SMTP_HOST',
-      'SMTP_FROM',
       'CLOUDINARY_CLOUD_NAME',
       'CLOUDINARY_API_KEY',
       'CLOUDINARY_API_SECRET',
     ] as const;
     for (const key of required) {
       if (!present(environment[key])) errors.push(`${key} is required`);
+    }
+    if (!present(environment.RESEND_API_KEY) && !present(environment.SMTP_HOST)) {
+      errors.push('Either RESEND_API_KEY (Resend) or SMTP_HOST (SMTP) is required');
+    }
+    if (!present(environment.RESEND_FROM) && !present(environment.SMTP_FROM)) {
+      errors.push('Either RESEND_FROM or SMTP_FROM is required for email delivery');
     }
   }
 

@@ -45,6 +45,35 @@ export interface DeleteUploadSuccessResponse {
   message: string;
 }
 
+export interface UploadSignature {
+  cloudName: string;
+  apiKey: string;
+  uploadUrl: string;
+  resourceType: CloudinaryResourceType;
+  timestamp: number;
+  signature: string;
+  publicId: string;
+  assetFolder: string;
+  tags: string;
+  context: string;
+  allowedFormats: string;
+  overwrite: false;
+  uniqueFilename: false;
+  useFilename: false;
+}
+
+export interface UploadSignatureResponse {
+  success: true;
+  data: UploadSignature;
+  message: string;
+}
+
+export interface UploadBatchSignatureResponse {
+  success: true;
+  data: UploadSignature[];
+  message: string;
+}
+
 export interface ConversationAttachmentReference {
   publicId: string;
   secureUrl: string;
@@ -85,6 +114,9 @@ export interface CloudinaryClient {
     api_secret: string;
     secure: boolean;
   }): unknown;
+  utils: {
+    api_sign_request(paramsToSign: Record<string, string | number>, apiSecret: string): string;
+  };
   api: {
     resource(
       publicId: string,

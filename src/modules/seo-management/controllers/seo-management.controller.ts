@@ -1,5 +1,5 @@
 import { Controller, Delete, Get, Header, Param, Patch, Post, Query, Body, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
@@ -26,13 +26,13 @@ export class AdminSeoController {
   @Get('settings') @Permissions('seo.read') getSettings() { return this.seo.adminSettings(); }
   @Patch('settings') @Permissions('seo.manage') updateSettings(@CurrentUser() actor: User, @Body() dto: SeoSettingsDto) { return this.seo.updateSettings(actor, dto); }
   @Get('pages') @Permissions('seo.read') listPages(@Query() query: SeoPageListQueryDto) { return this.seo.listPages(query); }
-  @Get('pages/:id') @Permissions('seo.read') getPage(@Param('id') id: string) { return this.seo.getPage(id); }
+  @Get('pages/:id') @Permissions('seo.read') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) getPage(@Param('id') id: string) { return this.seo.getPage(id); }
   @Post('pages') @Permissions('seo.manage') upsertPage(@CurrentUser() actor: User, @Body() dto: UpsertSeoPageDto) { return this.seo.upsertPage(actor, dto); }
-  @Delete('pages/:id') @Permissions('seo.manage') deletePage(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deletePage(actor, id); }
+  @Delete('pages/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) deletePage(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deletePage(actor, id); }
   @Get('redirects') @Permissions('seo.read') listRedirects() { return this.seo.listRedirects(); }
   @Post('redirects') @Permissions('seo.manage') upsertRedirect(@CurrentUser() actor: User, @Body() dto: SeoRedirectDto) { return this.seo.upsertRedirect(actor, dto); }
-  @Delete('redirects/:id') @Permissions('seo.manage') deleteRedirect(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deleteRedirect(actor, id); }
+  @Delete('redirects/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO redirect ID.' }) deleteRedirect(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deleteRedirect(actor, id); }
   @Get('sitemap-entries') @Permissions('seo.read') listSitemapEntries() { return this.seo.listSitemapEntries(); }
   @Post('sitemap-entries') @Permissions('seo.manage') upsertSitemapEntry(@CurrentUser() actor: User, @Body() dto: SeoSitemapEntryDto) { return this.seo.upsertSitemapEntry(actor, dto); }
-  @Delete('sitemap-entries/:id') @Permissions('seo.manage') deleteSitemapEntry(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deleteSitemapEntry(actor, id); }
+  @Delete('sitemap-entries/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO sitemap entry ID.' }) deleteSitemapEntry(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deleteSitemapEntry(actor, id); }
 }

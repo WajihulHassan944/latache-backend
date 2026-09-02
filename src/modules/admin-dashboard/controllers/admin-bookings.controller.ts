@@ -66,7 +66,7 @@ export class AdminBookingsController {
 
   @Get(':id')
   @Permissions('bookings.read')
-  @ApiParam({ name: 'id', type: Number, example: 8291 })
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Booking ID.', example: 8291 })
   @ApiOperation({
     summary: 'Get complete admin booking context',
     description:
@@ -78,6 +78,7 @@ export class AdminBookingsController {
 
   @Post(':id/actions')
   @Permissions('bookings.manage')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Booking ID.', example: 8291 })
   @ApiOperation({
     summary: 'Perform a safe administrative booking lifecycle action',
     description:

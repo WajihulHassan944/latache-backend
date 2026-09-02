@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
@@ -28,6 +28,7 @@ export class AdminReviewsController {
 
   @Patch(':reviewId/moderation')
   @Permissions('reviews.manage')
+  @ApiParam({ name: 'reviewId', required: true, type: String, description: 'Review ID.' })
   @ApiOperation({
     summary: 'Hide or restore a review without rewriting author content',
     description:

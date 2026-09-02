@@ -4,6 +4,7 @@ import {
   ApiConflictResponse,
   ApiOperation,
   ApiHeader,
+  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -60,6 +61,7 @@ export class TaskerEliteController {
   }
 
   @Delete('requests/:requestId')
+  @ApiParam({ name: 'requestId', required: true, type: String, description: 'Elite request ID.' })
   @ApiOperation({ summary: 'Cancel the logged-in Tasker own pending Elite request' })
   cancel(
     @CurrentUser() user: User,

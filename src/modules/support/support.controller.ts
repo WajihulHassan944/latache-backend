@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -85,12 +85,14 @@ export class SupportController {
   }
 
   @Get(':id')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @ApiOperation({ summary: 'Get one owned support ticket with linked booking/payment context' })
   detail(@CurrentUser() user: User, @Param() params: SupportTicketParamDto): Promise<unknown> {
     return this.support.detailForUser(user, params.id);
   }
 
   @Get(':id/messages')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @ApiOperation({
     summary: 'Get public support conversation messages for one owned ticket',
     description:
@@ -105,6 +107,7 @@ export class SupportController {
   }
 
   @Post(':id/messages')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @ApiOperation({
     summary: 'Reply to support',
     description:
@@ -119,6 +122,7 @@ export class SupportController {
   }
 
   @Post(':id/read')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @ApiOperation({ summary: 'Mark public agent replies as read through an optional message' })
   markRead(
     @CurrentUser() user: User,
@@ -129,6 +133,7 @@ export class SupportController {
   }
 
   @Post(':id/actions')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @ApiOperation({ summary: 'Close or reopen an owned support case' })
   action(
     @CurrentUser() user: User,
@@ -139,6 +144,7 @@ export class SupportController {
   }
 
   @Post(':id/feedback')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @ApiOperation({
     summary: 'Submit a real post-resolution satisfaction score',
     description:

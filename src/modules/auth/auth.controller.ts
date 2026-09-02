@@ -21,6 +21,7 @@ import {
   ApiHeader,
   ApiNotFoundResponse,
   ApiOkResponse,
+  ApiParam,
   ApiResponse,
   ApiOperation,
   ApiServiceUnavailableResponse,
@@ -59,7 +60,6 @@ import {
 } from './dto';
 import { AdminAuthGuard } from './guards/admin-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { JwtIdentityGuard } from './guards/jwt-identity.guard';
 import { loginRequestExamples, loginResponseExamples } from './swagger/login.examples';
 import { SOCIAL_AUTH_PROVIDER } from './social-auth.constants';
 
@@ -81,10 +81,10 @@ export class AuthController {
   @ApiOperation({
     summary: 'Register a customer',
     description:
-      'Creates a customer from the Latache signup fields, opens a tracked session, sends a six-digit verification OTP, and returns the bearer/refresh token pair needed to complete verification.',
+      'Creates a pending customer signup without enabling the Customer role or CustomerProfile, sends a six-digit verification OTP, and returns a limited verification session used only to complete email verification.',
   })
   @ApiCreatedResponse({
-    description: 'Customer created and verification email accepted by the SMTP provider.',
+    description: 'Pending customer signup created/updated and verification email accepted by the configured email provider.',
     schema: {
       example: {
         success: true,
@@ -98,7 +98,10 @@ export class AuthController {
             phoneNumber: '612345678',
             preferredLanguage: 'ar',
             zipCode: '10001',
-            role: 'customer',
+            role: '',
+            primaryRole: '',
+            roles: [],
+            pendingRole: 'customer',
             accountStatus: 'pending_verification',
             isVerified: false,
           },
@@ -114,7 +117,7 @@ export class AuthController {
     },
   })
   @ApiBadRequestResponse({ schema: { example: validationErrorExample } })
-  @ApiConflictResponse({ description: 'An account with the email already exists.' })
+  @ApiConflictResponse({ description: 'A verified account already exists, or the existing unverified signup cannot be safely replaced.' })
   @ApiServiceUnavailableResponse({ description: 'The verification email could not be delivered.' })
   @ApiHeader({
     name: 'Accept-Language',
@@ -134,12 +137,12 @@ export class AuthController {
   @Post('taskers/register')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({
-    summary: 'Register and submit a tasker application',
+    summary: 'Register a tasker (step 1 of 2)',
     description:
-      'Atomically processes all seven Latache tasker signup steps: account details, exactly three expertise selections, experience story, hourly rate, availability, identity documents, and service area. The account remains pending approval after email verification.',
+      'Creates a pending tasker signup with the same lightweight fields as customer signup (name, email, phone, password, zip), without enabling the Tasker role or TaskerProfile. Sends a six-digit verification OTP and returns a limited verification session used only to complete email verification. Retrying with the same unverified email refreshes the pending signup instead of failing. After verifying with POST /auth/verify-email, submit services, experience, availability, identity documents, and service area via POST /taskers/onboarding to complete the application.',
   })
   @ApiCreatedResponse({
-    description: 'Tasker application submitted and verification email accepted by SMTP.',
+    description: 'Pending tasker signup created/updated and verification email accepted by the configured email provider.',
     schema: {
       example: {
         success: true,
@@ -149,9 +152,14 @@ export class AuthController {
             firstName: 'Omar',
             lastName: 'Bennani',
             email: 'omar.tasker@example.com',
-            role: 'tasker',
+            phoneCountryCode: '+212',
+            phoneNumber: '661234567',
+            zipCode: '10001',
+            role: '',
+            primaryRole: '',
+            roles: [],
+            pendingRole: 'tasker',
             accountStatus: 'pending_verification',
-            onboardingStatus: 'submitted',
             isVerified: false,
           },
           tokens: {
@@ -162,15 +170,12 @@ export class AuthController {
           verificationRequired: true,
         },
         message:
-          'Tasker application submitted. Verify the email while the profile awaits approval.',
+          'Signup received. Verify your email with the six-digit OTP to activate the Tasker account, then submit your professional application via POST /taskers/onboarding.',
       },
     },
   })
-  @ApiBadRequestResponse({
-    description: 'Invalid fields, overlapping availability, or duplicate services.',
-  })
-  @ApiNotFoundResponse({ description: 'One or more selected service IDs do not exist.' })
-  @ApiConflictResponse({ description: 'An account with the email already exists.' })
+  @ApiBadRequestResponse({ schema: { example: validationErrorExample } })
+  @ApiConflictResponse({ description: 'A verified account already exists, or the existing unverified signup cannot be safely replaced.' })
   @ApiServiceUnavailableResponse({ description: 'The verification email could not be delivered.' })
   @ApiHeader({
     name: 'Accept-Language',
@@ -212,14 +217,14 @@ export class AuthController {
   @ApiBearerAuth('bearer')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
-    summary: 'Submit a Tasker profile on the current identity',
+    summary: 'Enable Tasker access on the current identity',
     description:
-      'Adds Tasker capability to an existing verified Customer identity. Shared credentials remain on the same User; the new TaskerProfile enters pending approval and the returned tokens are tasker-scoped.',
+      'Adds Tasker capability to an existing verified Customer identity. Shared credentials remain on the same User; no professional details are required here. Submit services, experience, availability, identity documents, and service area via POST /taskers/onboarding to complete the application; the returned tokens are tasker-scoped.',
   })
   @ApiCreatedResponse({
-    description: 'Tasker role added and application submitted for Admin approval.',
+    description: 'Tasker role added. Complete the application via POST /taskers/onboarding.',
   })
-  @ApiBadRequestResponse({ description: 'Invalid services, availability, rate, documents, or service area.' })
+  @ApiForbiddenResponse({ description: 'Administrative identities cannot add marketplace roles.' })
   @ApiConflictResponse({ description: 'Tasker role already exists.' })
   addTaskerRole(
     @CurrentUser() user: User,
@@ -468,13 +473,11 @@ export class AuthController {
 
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth('bearer')
-  @UseGuards(JwtIdentityGuard)
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
   @ApiOperation({
-    summary: 'Verify the authenticated account email',
+    summary: 'Verify an account email with a six-digit OTP',
     description:
-      'Uses the latest six-digit OTP for the account represented by the bearer token. Customer accounts become active; tasker accounts move to pending approval.',
+      'Public endpoint. Validates the latest six-digit OTP for the given email, then verifies the account and activates the pending Customer or Tasker role. Returns a normal role-scoped access/refresh token pair on success.',
   })
   @ApiOkResponse({
     schema: {
@@ -488,15 +491,19 @@ export class AuthController {
             accountStatus: 'active',
             isVerified: true,
           },
+          tokens: {
+            accessToken: 'jwt-access-token',
+            refreshToken: 'opaque-refresh-token',
+            tokenType: 'Bearer',
+          },
         },
         message: 'Email verified successfully.',
       },
     },
   })
   @ApiBadRequestResponse({ description: 'OTP invalid, expired, or attempt limit reached.' })
-  @ApiUnauthorizedResponse({ description: 'Registration bearer token/session invalid or expired.' })
-  verifyEmail(@CurrentUser() user: User, @Body() dto: VerifyEmailDto) {
-    return this.auth.verifyEmail(user.id, dto);
+  verifyEmail(@Body() dto: VerifyEmailDto, @Req() request: Request) {
+    return this.auth.verifyEmail(dto, this.metadata(dto.device, request));
   }
 
   @Post('resend-verification-email')
@@ -515,7 +522,7 @@ export class AuthController {
       },
     },
   })
-  @ApiServiceUnavailableResponse({ description: 'SMTP delivery failed for an eligible account.' })
+  @ApiServiceUnavailableResponse({ description: 'Email delivery failed for an eligible account.' })
   @ApiHeader({
     name: 'Accept-Language',
     required: false,
@@ -544,7 +551,7 @@ export class AuthController {
       },
     },
   })
-  @ApiServiceUnavailableResponse({ description: 'SMTP delivery failed for an eligible account.' })
+  @ApiServiceUnavailableResponse({ description: 'Email delivery failed for an eligible account.' })
   @ApiHeader({
     name: 'Accept-Language',
     required: false,
@@ -738,6 +745,7 @@ export class AuthController {
   @Delete('sessions/:id')
   @ApiBearerAuth('bearer')
   @UseGuards(JwtAuthGuard)
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Session ID.', example: 12 })
   @ApiOperation({ summary: 'Revoke one active session owned by the account' })
   @ApiOkResponse({
     schema: {

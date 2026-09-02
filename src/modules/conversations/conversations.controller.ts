@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -66,6 +66,7 @@ export class ConversationsController {
   }
 
   @Get(':bookingId/messages')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({ summary: 'List messages for one owned booking conversation' })
   messages(
     @CurrentUser() user: User,
@@ -76,6 +77,7 @@ export class ConversationsController {
   }
 
   @Post(':bookingId/messages')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({
     summary: 'Send text and/or verified Cloudinary attachments',
     description:
@@ -90,6 +92,7 @@ export class ConversationsController {
   }
 
   @Post(':bookingId/read')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({ summary: 'Mark messages from the other booking participant as read' })
   markRead(
     @CurrentUser() user: User,
@@ -100,6 +103,7 @@ export class ConversationsController {
   }
 
   @Get(':bookingId/calls')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({
     summary: 'List persisted voice/video call history for a booking conversation',
     description:
@@ -136,6 +140,8 @@ export class ConversationsController {
   }
 
   @Get(':bookingId/calls/:callId')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @ApiParam({ name: 'callId', required: true, type: String, description: 'Conversation call ID.' })
   @ApiOperation({ summary: 'Get one persisted voice/video call record' })
   call(
     @CurrentUser() user: User,
@@ -145,6 +151,7 @@ export class ConversationsController {
   }
 
   @Get(':bookingId')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({ summary: 'Get one booking conversation summary' })
   summary(
     @CurrentUser() user: User,

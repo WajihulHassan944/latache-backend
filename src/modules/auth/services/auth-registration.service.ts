@@ -12,7 +12,6 @@ import { AccountStatus } from '../../../common/enums/account-status.enum';
 import { AdminRole } from '../../../common/enums/admin-role.enum';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { generateNumericCode } from '../../../common/utils/crypto.util';
-import { dateOnlyToDate, todayDateOnly } from '../../../common/utils/date.util';
 import {
   hasAnyUserRole,
   hasUserRole,
@@ -35,11 +34,6 @@ import type {
 } from '../dto';
 import { AuthRepository } from '../repositories/auth.repository';
 import { LocaleService } from '../../localization/locale.service';
-import {
-  platformAmountToUsd,
-  resolvePlatformCurrencyContext,
-  usdAmountToPlatform,
-} from '../../platform-settings/platform-currency.presets';
 import { AuthCodeService } from './auth-code.service';
 import { AuthTokenService, type AuthTokens, type SessionMetadata } from './auth-token.service';
 
@@ -48,22 +42,6 @@ export interface RegistrationData {
   tokens: AuthTokens;
   verificationRequired: boolean;
   roleAdded?: UserRole;
-}
-
-type TaskerApplicationInput = Pick<
-  RegisterTaskerDto,
-  | 'serviceIds'
-  | 'yearsOfExperience'
-  | 'aboutMe'
-  | 'hourlyRate'
-  | 'availability'
-  | 'identityDocuments'
-  | 'serviceArea'
->;
-
-interface PreparedTaskerApplication {
-  serviceIds: number[];
-  canonicalHourlyRate: number;
 }
 
 @Injectable()
@@ -85,15 +63,6 @@ export class AuthRegistrationService {
     requestedLocale?: string,
   ): Promise<SuccessEnvelope<RegistrationData>> {
     this.assertConsent(dto.acceptedTermsAndPrivacyPolicy);
-    const existing = await this.repository.findUserByEmail(dto.email);
-    if (existing) {
-      await this.assertExistingIdentityCredentials(existing, dto.password);
-      return this.addCustomerRoleToIdentity(
-        existing,
-        dto.acceptedTermsAndPrivacyPolicy,
-        metadata,
-      );
-    }
 
     const preferredLanguage = dto.preferredLanguage
       ? this.locales.requireSupported(dto.preferredLanguage)
@@ -104,7 +73,68 @@ export class AuthRegistrationService {
 
     const result = await this.repository.transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`auth-email:${dto.email.trim().toLowerCase()}`}, 0))`;
-      await this.assertEmailAvailable(dto.email, transaction);
+
+      const existing = await this.repository.findUserByEmail(dto.email, transaction);
+      if (existing) {
+        if (existing.deletedAt) {
+          throw new ConflictException('An account with this email already exists');
+        }
+        if (existing.isVerified) {
+          await this.assertExistingIdentityCredentials(existing, dto.password);
+          return { kind: 'verified' as const, user: existing };
+        }
+        if (
+          existing.accountStatus !== AccountStatus.PendingVerification ||
+          (existing.role && existing.role !== '' && existing.role !== UserRole.Customer) ||
+          (existing.roles.length > 0 && !existing.roles.every((role) => role === UserRole.Customer))
+        ) {
+          throw new ConflictException({
+            code: 'UNVERIFIED_SIGNUP_CANNOT_BE_REPLACED',
+            message:
+            'An unverified signup already exists for this email. Complete that signup or use its verification flow.',
+          });
+        }
+
+        // An unverified local signup is only a pending registration, not an
+        // enabled Customer identity. Replace its signup data and invalidate
+        // the old verification code/session so the owner can retry safely.
+        await this.repository.updateUser(
+          existing.id,
+          {
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            phoneCountryCode: dto.phoneCountryCode,
+            phoneNumber: dto.phoneNumber,
+            password,
+            zipCode: dto.zipCode,
+            role: '',
+            roles: { set: [] },
+            accountStatus: AccountStatus.PendingVerification,
+            isVerified: false,
+            isAdmin: false,
+            authType: 'local',
+            otp: null,
+            otpHash: this.authCodes.hash('email-verification', otp),
+            otpExpires: this.otpExpiry(),
+            otpAttempts: 0,
+            acceptedTermsAt: now,
+            acceptedPrivacyAt: now,
+            preferredLanguage,
+            onboardingStatus: 'pending_customer_verification',
+            submittedAt: null,
+          },
+          transaction,
+        );
+        await transaction.refreshToken.updateMany({
+          where: { userId: existing.id, revokedAt: null },
+          data: { revokedAt: now },
+        });
+        await transaction.customerProfile.deleteMany({ where: { userId: existing.id } });
+        const updated = await this.repository.findUserByIdForUpdate(existing.id, transaction);
+        if (!updated) throw new NotFoundException('Account not found');
+        return { kind: 'pending' as const, user: updated };
+      }
+
       const user = await this.repository.createUser(
         {
           firstName: dto.firstName,
@@ -114,8 +144,8 @@ export class AuthRegistrationService {
           phoneNumber: dto.phoneNumber,
           password,
           zipCode: dto.zipCode,
-          role: UserRole.Customer,
-          roles: [UserRole.Customer],
+          role: '',
+          roles: [],
           accountStatus: AccountStatus.PendingVerification,
           isVerified: false,
           isAdmin: false,
@@ -127,15 +157,23 @@ export class AuthRegistrationService {
           acceptedTermsAt: now,
           acceptedPrivacyAt: now,
           preferredLanguage,
+          onboardingStatus: 'pending_customer_verification',
         },
         transaction,
       );
-      await this.repository.createCustomerProfile({ userId: user.id, status: 'active' }, transaction);
-      return {
-        user,
-        tokens: await this.tokens.issue(user, metadata, transaction, UserRole.Customer),
-      };
+      return { kind: 'pending' as const, user };
     });
+
+    if (result.kind === 'verified') {
+      return this.addCustomerRoleToIdentity(result.user, dto.acceptedTermsAndPrivacyPolicy, metadata);
+    }
+
+    const tokens = await this.tokens.issueVerificationSession(
+      result.user,
+      metadata,
+      undefined,
+      UserRole.Customer,
+    );
 
     await this.mail.sendVerificationEmail({
       to: result.user.email,
@@ -145,13 +183,17 @@ export class AuthRegistrationService {
       locale: preferredLanguage ?? requestedLocale ?? this.locales.defaultLocale,
     });
 
+    const serialized = serializeUser(result.user);
+    serialized.pendingRole = UserRole.Customer;
+    serialized.verificationState = 'pending';
+
     return success(
       {
-        user: serializeUser(result.user, UserRole.Customer),
-        tokens: result.tokens,
+        user: serialized,
+        tokens,
         verificationRequired: true,
       },
-      'Customer account created. Verify the email with the six-digit OTP.',
+      'Signup received. Verify your email with the six-digit OTP to activate the Customer account.',
     );
   }
 
@@ -161,13 +203,6 @@ export class AuthRegistrationService {
     requestedLocale?: string,
   ): Promise<SuccessEnvelope<RegistrationData>> {
     this.assertConsent(dto.acceptedTermsAndPrivacyPolicy);
-    await this.validateTaskerApplication(dto);
-
-    const existing = await this.repository.findUserByEmail(dto.email);
-    if (existing) {
-      await this.assertExistingIdentityCredentials(existing, dto.password);
-      return this.addTaskerRoleToIdentity(existing, dto, metadata);
-    }
 
     const preferredLanguage = dto.preferredLanguage
       ? this.locales.requireSupported(dto.preferredLanguage)
@@ -175,88 +210,131 @@ export class AuthRegistrationService {
     const otp = generateNumericCode(6);
     const now = new Date();
     const password = await hash(dto.password, this.bcryptRounds());
-    const serviceIds = [...new Set(dto.serviceIds)];
 
-    try {
-      const result = await this.repository.transaction(
-        async (transaction: Prisma.TransactionClient) => {
-          await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`auth-email:${dto.email.trim().toLowerCase()}`}, 0))`;
-          await this.assertEmailAvailable(dto.email, transaction);
-          const application = await this.prepareTaskerApplication(dto, transaction);
-          const user = await this.repository.createUser(
-            {
-              firstName: dto.firstName,
-              lastName: dto.lastName,
-              email: dto.email,
-              phoneCountryCode: dto.phoneCountryCode,
-              phoneNumber: dto.phoneNumber,
-              password,
-              zipCode: dto.zipCode,
-              role: UserRole.Tasker,
-              roles: [UserRole.Tasker],
-              accountStatus: AccountStatus.PendingVerification,
-              isVerified: false,
-              isAdmin: false,
-              authType: 'local',
-              otp: null,
-              otpHash: this.authCodes.hash('email-verification', otp),
-              otpExpires: this.otpExpiry(),
-              otpAttempts: 0,
-              acceptedTermsAt: now,
-              acceptedPrivacyAt: now,
-              yearsOfExperience: dto.yearsOfExperience,
-              hourlyRate: application.canonicalHourlyRate,
-              aboutMe: dto.aboutMe,
-              bio: dto.aboutMe,
-              idType: dto.identityDocuments.governmentIdType,
-              docType: dto.identityDocuments.governmentIdType,
-              identityDocument: dto.identityDocuments as unknown as Prisma.InputJsonValue,
-              serviceAreaLabel: dto.serviceArea.label,
-              serviceAreaLat: dto.serviceArea.lat,
-              serviceAreaLng: dto.serviceArea.lng,
-              serviceAreaRadiusKm: dto.serviceArea.radiusKm,
-              serviceAreaCity: dto.serviceArea.city,
-              serviceAreaArea: dto.serviceArea.area,
-              onboardingStatus: 'submitted',
-              submittedAt: now,
-              preferredLanguage,
-            },
-            transaction,
-          );
+    const result = await this.repository.transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`auth-email:${dto.email.trim().toLowerCase()}`}, 0))`;
 
-          await this.repository.createTaskerProfile(
-            { userId: user.id, status: AccountStatus.PendingApproval },
-            transaction,
-          );
-          await this.createTaskerApplicationResources(user.id, dto, application, transaction);
+      const existing = await this.repository.findUserByEmail(dto.email, transaction);
+      if (existing) {
+        if (existing.deletedAt) {
+          throw new ConflictException('An account with this email already exists');
+        }
+        if (existing.isVerified) {
+          await this.assertExistingIdentityCredentials(existing, dto.password);
+          return { kind: 'verified' as const, user: existing };
+        }
+        if (
+          existing.accountStatus !== AccountStatus.PendingVerification ||
+          (existing.role && existing.role !== '' && existing.role !== UserRole.Tasker) ||
+          (existing.roles.length > 0 && !existing.roles.every((role) => role === UserRole.Tasker))
+        ) {
+          throw new ConflictException({
+            code: 'UNVERIFIED_SIGNUP_CANNOT_BE_REPLACED',
+            message:
+            'An unverified signup already exists for this email. Complete that signup or use its verification flow.',
+          });
+        }
 
-          return {
-            user,
-            tokens: await this.tokens.issue(user, metadata, transaction, UserRole.Tasker),
-          };
-        },
-      );
+        // An unverified local signup is only a pending registration, not an
+        // enabled Tasker identity. Replace its signup data and invalidate the
+        // old verification code/session so the owner can retry safely.
+        await this.repository.updateUser(
+          existing.id,
+          {
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            phoneCountryCode: dto.phoneCountryCode,
+            phoneNumber: dto.phoneNumber,
+            password,
+            zipCode: dto.zipCode,
+            role: '',
+            roles: { set: [] },
+            accountStatus: AccountStatus.PendingVerification,
+            isVerified: false,
+            isAdmin: false,
+            authType: 'local',
+            otp: null,
+            otpHash: this.authCodes.hash('email-verification', otp),
+            otpExpires: this.otpExpiry(),
+            otpAttempts: 0,
+            acceptedTermsAt: now,
+            acceptedPrivacyAt: now,
+            preferredLanguage,
+            onboardingStatus: 'pending_tasker_verification',
+            submittedAt: null,
+          },
+          transaction,
+        );
+        await transaction.refreshToken.updateMany({
+          where: { userId: existing.id, revokedAt: null },
+          data: { revokedAt: now },
+        });
+        await transaction.taskerProfile.deleteMany({ where: { userId: existing.id } });
+        const updated = await this.repository.findUserByIdForUpdate(existing.id, transaction);
+        if (!updated) throw new NotFoundException('Account not found');
+        return { kind: 'pending' as const, user: updated };
+      }
 
-      await this.mail.sendVerificationEmail({
-        to: result.user.email,
-        name: dto.firstName,
-        otp,
-        device: metadata.device,
-        locale: preferredLanguage ?? requestedLocale ?? this.locales.defaultLocale,
-      });
-
-      return success(
+      const user = await this.repository.createUser(
         {
-          user: serializeUser(result.user, UserRole.Tasker),
-          tokens: result.tokens,
-          verificationRequired: true,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          email: dto.email,
+          phoneCountryCode: dto.phoneCountryCode,
+          phoneNumber: dto.phoneNumber,
+          password,
+          zipCode: dto.zipCode,
+          role: '',
+          roles: [],
+          accountStatus: AccountStatus.PendingVerification,
+          isVerified: false,
+          isAdmin: false,
+          authType: 'local',
+          otp: null,
+          otpHash: this.authCodes.hash('email-verification', otp),
+          otpExpires: this.otpExpiry(),
+          otpAttempts: 0,
+          acceptedTermsAt: now,
+          acceptedPrivacyAt: now,
+          preferredLanguage,
+          onboardingStatus: 'pending_tasker_verification',
         },
-        'Tasker application submitted. Verify the email while the profile awaits approval.',
+        transaction,
       );
-    } catch (error) {
-      this.rethrowUniqueEmail(error);
-      throw error;
+      return { kind: 'pending' as const, user };
+    });
+
+    if (result.kind === 'verified') {
+      return this.addTaskerRoleToIdentity(result.user, metadata);
     }
+
+    const tokens = await this.tokens.issueVerificationSession(
+      result.user,
+      metadata,
+      undefined,
+      UserRole.Tasker,
+    );
+
+    await this.mail.sendVerificationEmail({
+      to: result.user.email,
+      name: dto.firstName,
+      otp,
+      device: metadata.device,
+      locale: preferredLanguage ?? requestedLocale ?? this.locales.defaultLocale,
+    });
+
+    const serialized = serializeUser(result.user);
+    serialized.pendingRole = UserRole.Tasker;
+    serialized.verificationState = 'pending';
+
+    return success(
+      {
+        user: serialized,
+        tokens,
+        verificationRequired: true,
+      },
+      'Signup received. Verify your email with the six-digit OTP to activate the Tasker account, then submit your professional application via POST /taskers/onboarding.',
+    );
   }
 
   async addCustomerRole(
@@ -276,10 +354,9 @@ export class AuthRegistrationService {
     metadata: SessionMetadata,
   ): Promise<SuccessEnvelope<RegistrationData>> {
     this.assertConsent(dto.acceptedTermsAndPrivacyPolicy);
-    await this.validateTaskerApplication(dto);
     const user = await this.repository.findUserById(userId);
     if (!user || user.deletedAt) throw new NotFoundException('Account not found');
-    return this.addTaskerRoleToIdentity(user, dto, metadata);
+    return this.addTaskerRoleToIdentity(user, metadata);
   }
 
   private async addCustomerRoleToIdentity(
@@ -347,7 +424,6 @@ export class AuthRegistrationService {
 
   private async addTaskerRoleToIdentity(
     identity: User,
-    dto: TaskerApplicationInput,
     metadata: SessionMetadata,
   ): Promise<SuccessEnvelope<RegistrationData>> {
     this.assertMarketplaceRoleCanBeAdded(identity, UserRole.Tasker);
@@ -365,7 +441,6 @@ export class AuthRegistrationService {
       this.assertMarketplaceRoleCanBeAdded(locked, UserRole.Tasker);
 
       const now = new Date();
-      const application = await this.prepareTaskerApplication(dto, transaction);
       await this.repository.createTaskerProfile(
         { userId: locked.id, status: AccountStatus.PendingApproval },
         transaction,
@@ -375,27 +450,11 @@ export class AuthRegistrationService {
         locked.id,
         {
           roles: { set: normalizeRoleMembership(previousRoles, UserRole.Tasker) },
-          yearsOfExperience: dto.yearsOfExperience,
-          hourlyRate: application.canonicalHourlyRate,
-          aboutMe: dto.aboutMe,
-          bio: locked.bio || dto.aboutMe,
-          idType: dto.identityDocuments.governmentIdType,
-          docType: dto.identityDocuments.governmentIdType,
-          identityDocument: dto.identityDocuments as unknown as Prisma.InputJsonValue,
-          serviceAreaLabel: dto.serviceArea.label,
-          serviceAreaLat: dto.serviceArea.lat,
-          serviceAreaLng: dto.serviceArea.lng,
-          serviceAreaRadiusKm: dto.serviceArea.radiusKm,
-          serviceAreaCity: dto.serviceArea.city,
-          serviceAreaArea: dto.serviceArea.area,
-          onboardingStatus: 'submitted',
-          submittedAt: now,
           acceptedTermsAt: locked.acceptedTermsAt ?? now,
           acceptedPrivacyAt: locked.acceptedPrivacyAt ?? now,
         },
         transaction,
       );
-      await this.createTaskerApplicationResources(locked.id, dto, application, transaction);
       await this.audit.record(
         {
           actorId: locked.id,
@@ -420,7 +479,7 @@ export class AuthRegistrationService {
         verificationRequired: false,
         roleAdded: UserRole.Tasker,
       },
-      'Tasker role added to the existing Latache account. The Tasker profile is pending approval.',
+      'Tasker role added to the existing Latache account. Submit your professional application via POST /taskers/onboarding to complete it.',
     );
   }
 
@@ -542,119 +601,6 @@ export class AuthRegistrationService {
     }
   }
 
-  private async validateTaskerApplication(dto: TaskerApplicationInput): Promise<void> {
-    this.validateTaskerAvailability(dto);
-    const serviceIds = [...new Set(dto.serviceIds)];
-    if (serviceIds.length !== dto.serviceIds.length) {
-      throw new BadRequestException('serviceIds must not contain duplicates');
-    }
-    const serviceCount = await this.repository.countServices(serviceIds);
-    if (serviceCount !== serviceIds.length) {
-      throw new NotFoundException('One or more selected services do not exist');
-    }
-  }
-
-  private async prepareTaskerApplication(
-    dto: TaskerApplicationInput,
-    transaction: Prisma.TransactionClient,
-  ): Promise<PreparedTaskerApplication> {
-    const serviceIds = [...new Set(dto.serviceIds)];
-    const [services, currencySetting] = await Promise.all([
-      transaction.service.findMany({
-        where: { id: { in: serviceIds }, isActive: true },
-        select: { id: true, minHourlyRateUsd: true, maxHourlyRateUsd: true },
-      }),
-      transaction.platformSetting.findUnique({ where: { key: 'currency' }, select: { value: true } }),
-    ]);
-    if (services.length !== serviceIds.length) {
-      throw new NotFoundException('One or more selected services are unavailable');
-    }
-
-    const currency = resolvePlatformCurrencyContext(
-      (currencySetting?.value ?? {}) as Record<string, unknown>,
-    );
-    const canonicalHourlyRate = platformAmountToUsd(dto.hourlyRate, currency);
-    const invalid = services.find((service) => {
-      const minimum = Number(service.minHourlyRateUsd);
-      const maximum = Number(service.maxHourlyRateUsd);
-      return canonicalHourlyRate < minimum || canonicalHourlyRate > maximum;
-    });
-    if (invalid) {
-      const minimum = Number(invalid.minHourlyRateUsd);
-      const maximum = Number(invalid.maxHourlyRateUsd);
-      throw new BadRequestException({
-        code: 'TASKER_RATE_OUT_OF_SERVICE_RANGE',
-        message: `Hourly rate must be between ${currency.symbol}${usdAmountToPlatform(minimum, currency)} and ${currency.symbol}${usdAmountToPlatform(maximum, currency)} for every selected service.`,
-        serviceId: String(invalid.id),
-        minimumHourlyRate: usdAmountToPlatform(minimum, currency),
-        maximumHourlyRate: usdAmountToPlatform(maximum, currency),
-        currency: currency.code,
-        symbol: currency.symbol,
-      });
-    }
-    return { serviceIds, canonicalHourlyRate };
-  }
-
-  private async createTaskerApplicationResources(
-    userId: number,
-    dto: TaskerApplicationInput,
-    application: PreparedTaskerApplication,
-    transaction: Prisma.TransactionClient,
-  ): Promise<void> {
-    const serviceIds = application.serviceIds;
-    await transaction.userService.createMany({
-      data: serviceIds.map((serviceId) => ({
-        userId,
-        serviceId,
-        hourlyRate: application.canonicalHourlyRate.toFixed(2),
-      })),
-    });
-    await transaction.userAvailability.createMany({
-      data: dto.availability.map((slot) => ({
-        userId,
-        date: this.dateOnly(slot.date),
-        startTime: slot.startTime,
-        endTime: slot.endTime,
-      })),
-    });
-  }
-
-  private validateTaskerAvailability(dto: Pick<TaskerApplicationInput, 'availability'>): void {
-    const seen = new Set<string>();
-    const today = dateOnlyToDate(todayDateOnly());
-    const byDate = new Map<string, Array<{ startTime: string; endTime: string }>>();
-
-    for (const slot of dto.availability) {
-      const date = this.dateOnly(slot.date);
-      if (date.getTime() < today.getTime()) {
-        throw new BadRequestException(`Availability date ${slot.date} is in the past`);
-      }
-      if (slot.endTime <= slot.startTime) {
-        throw new BadRequestException(`endTime must be later than startTime for ${slot.date}`);
-      }
-      const key = `${slot.date}:${slot.startTime}:${slot.endTime}`;
-      if (seen.has(key)) {
-        throw new BadRequestException('Availability contains duplicate slots');
-      }
-      seen.add(key);
-
-      const slots = byDate.get(slot.date) ?? [];
-      slots.push({ startTime: slot.startTime, endTime: slot.endTime });
-      byDate.set(slot.date, slots);
-    }
-
-    for (const [date, slots] of byDate) {
-      slots.sort((left, right) => left.startTime.localeCompare(right.startTime));
-      for (let index = 1; index < slots.length; index += 1) {
-        const previous = slots[index - 1];
-        const current = slots[index];
-        if (previous && current && current.startTime < previous.endTime) {
-          throw new BadRequestException(`Availability slots overlap on ${date}`);
-        }
-      }
-    }
-  }
-
   private assertConsent(accepted: boolean): void {
     if (!accepted) {
       throw new BadRequestException('Terms and Conditions and Privacy Policy must be accepted');
@@ -668,14 +614,6 @@ export class AuthRegistrationService {
     const existing = await this.repository.findUserByEmail(email, transaction);
     if (existing) {
       throw new ConflictException('An account with this email already exists');
-    }
-  }
-
-  private dateOnly(value: string): Date {
-    try {
-      return dateOnlyToDate(value);
-    } catch {
-      throw new BadRequestException(`Invalid date: ${value}`);
     }
   }
 

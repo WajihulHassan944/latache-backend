@@ -354,7 +354,7 @@ Swagger requests use the API origin declared by `APP_BASE_URL`, which the server
 DATABASE_URL=postgresql://latache:latache@localhost:5432/latache?schema=public
 JWT_SECRET=<random-secret-at-least-32-characters>
 JWT_SECRET_ADMIN=<different-random-secret-at-least-32-characters>
-CORS_ORIGINS=http://localhost:3000
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 SEO_PUBLIC_BASE_URL=http://localhost:3000
 SUPPORTED_LOCALES=en,ar,ary
 DEFAULT_LOCALE=en
@@ -408,6 +408,22 @@ DIRECT_URL=postgresql://USER:PASSWORD@YOUR_DIRECT_HOST/neondb?sslmode=verify-ful
 ```
 
 `prisma.config.ts` prefers `DIRECT_URL` for CLI migrations and otherwise uses `DATABASE_URL`.
+
+## Resend email delivery
+
+Email verification can use Resend instead of Gmail/SMTP. This backend uses Resend's HTTPS API directly, so no new npm package is required.
+
+Set:
+
+```env
+MAIL_PROVIDER=resend
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxx
+RESEND_FROM=Latache <no-reply@your-verified-domain.com>
+```
+
+For production, create a Resend account, add and verify the domain you will send from, then create an API key with permission to send email. Configure the domain's SPF/DKIM records exactly as Resend provides. Using a verified custom domain is important for deliverability; Resend reduces SMTP/Gmail-specific delivery problems but cannot guarantee that a recipient's provider will never place a message in spam.
+
+If `RESEND_FROM` is omitted, the existing `SMTP_FROM` value is used as the sender address. `RESEND_API_KEY` takes precedence over SMTP for all application email. If no Resend key is configured, the existing SMTP transport remains available.
 
 ## Gmail SMTP
 

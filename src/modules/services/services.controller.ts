@@ -15,6 +15,7 @@ import {
   ApiForbiddenResponse,
   ApiHeader,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -59,6 +60,7 @@ export class ServicesController {
   }
 
   @Get(':serviceId/options')
+  @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
     summary: 'List active booking options for a service',
     description:
@@ -72,6 +74,7 @@ export class ServicesController {
   }
 
   @Get(':serviceId')
+  @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
     summary: 'Get one active service category with its active booking options',
     description:
@@ -88,6 +91,7 @@ export class ServicesController {
   @ApiBearerAuth('bearer')
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('services.manage')
+  @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
     summary: 'Create a persistent service sub-service/booking option',
     description:
@@ -105,6 +109,8 @@ export class ServicesController {
   @ApiBearerAuth('bearer')
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('services.manage')
+  @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
+  @ApiParam({ name: 'optionId', required: true, type: Number, description: 'Service option ID.' })
   @ApiOperation({ summary: 'Update a persistent service sub-service/booking option' })
   updateServiceOption(
     @CurrentUser() actor: User,
@@ -118,6 +124,8 @@ export class ServicesController {
   @ApiBearerAuth('bearer')
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('services.manage')
+  @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
+  @ApiParam({ name: 'optionId', required: true, type: Number, description: 'Service option ID.' })
   @ApiOperation({
     summary: 'Permanently delete an unused service option',
     description:
@@ -149,6 +157,7 @@ export class ServicesController {
   @ApiBearerAuth('bearer')
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('services.manage')
+  @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
     summary: 'Update a service category',
     description:
@@ -166,6 +175,7 @@ export class ServicesController {
   @ApiBearerAuth('bearer')
   @UseGuards(AdminAuthGuard, PermissionsGuard)
   @Permissions('services.manage')
+  @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
     summary: 'Permanently delete an unused service category',
     description:

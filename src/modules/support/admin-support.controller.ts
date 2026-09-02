@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -60,6 +60,7 @@ export class AdminSupportController {
   }
 
   @Get(':id')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @Permissions('support.read')
   @ApiOperation({
     summary: 'Get a complete support case',
@@ -71,6 +72,7 @@ export class AdminSupportController {
   }
 
   @Get(':id/messages')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @Permissions('support.read')
   @ApiOperation({
     summary: 'Get live-chat/ticket message history including internal notes',
@@ -85,6 +87,7 @@ export class AdminSupportController {
   }
 
   @Post(':id/messages')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @Permissions('support.manage')
   @ApiOperation({
     summary: 'Reply to the user or add an internal support note',
@@ -100,6 +103,7 @@ export class AdminSupportController {
   }
 
   @Post(':id/read')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @Permissions('support.read')
   @ApiOperation({ summary: 'Mark participant replies as read through an optional message' })
   markRead(
@@ -111,6 +115,7 @@ export class AdminSupportController {
   }
 
   @Post(':id/actions')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Support ticket ID.' })
   @Permissions('support.manage')
   @ApiOperation({
     summary: 'Assign, prioritize, escalate, resolve, close, or reopen a support case',

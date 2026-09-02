@@ -16,6 +16,7 @@ import {
   ApiConflictResponse,
   ApiHeader,
   ApiOperation,
+  ApiParam,
   ApiServiceUnavailableResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -159,6 +160,7 @@ export class TaskerWalletController {
   }
 
   @Patch('payout-methods/:id/default')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Payout method ID.' })
   @ApiOperation({ summary: 'Set one payout method as the tasker default' })
   setDefault(
     @CurrentUser() user: User,
@@ -168,6 +170,7 @@ export class TaskerWalletController {
   }
 
   @Delete('payout-methods/:id')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Payout method ID.' })
   @ApiOperation({
     summary: 'Permanently delete a payout method with no withdrawal history',
     description:
@@ -212,6 +215,7 @@ export class TaskerWalletController {
   }
 
   @Get('withdrawals/:id')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Withdrawal request ID.' })
   @ApiOperation({ summary: 'Get one withdrawal request owned by the tasker' })
   withdrawal(
     @CurrentUser() user: User,
@@ -221,6 +225,7 @@ export class TaskerWalletController {
   }
 
   @Post('withdrawals/:id/cancel')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Withdrawal request ID.' })
   @ApiOperation({
     summary: 'Cancel a pending-review withdrawal',
     description: 'Atomically releases reserved funds back to the available balance.',

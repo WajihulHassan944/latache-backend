@@ -24,6 +24,15 @@ describe('Cloudinary upload route surface', () => {
     );
   });
 
+  it('maps the public registration upload signature route', () => {
+    assertRoute(
+      RegistrationUploadsController,
+      RegistrationUploadsController.prototype.getRegistrationUploadSignature,
+      RequestMethod.POST,
+      'registration/signature',
+    );
+  });
+
   it('maps the authenticated single upload route', () => {
     assertRoute(
       UploadsController,
@@ -33,12 +42,30 @@ describe('Cloudinary upload route surface', () => {
     );
   });
 
+  it('maps the authenticated single upload signature route', () => {
+    assertRoute(
+      UploadsController,
+      UploadsController.prototype.getUploadSignature,
+      RequestMethod.POST,
+      'single/signature',
+    );
+  });
+
   it('maps the authenticated multiple upload route', () => {
     assertRoute(
       UploadsController,
       UploadsController.prototype.uploadMultiple,
       RequestMethod.POST,
       'multiple',
+    );
+  });
+
+  it('maps the authenticated multiple upload signature route', () => {
+    assertRoute(
+      UploadsController,
+      UploadsController.prototype.getUploadSignatures,
+      RequestMethod.POST,
+      'multiple/signature',
     );
   });
 

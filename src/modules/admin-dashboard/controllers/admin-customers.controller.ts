@@ -71,7 +71,7 @@ export class AdminCustomersController {
 
   @Get(':id')
   @Permissions('customers.read')
-  @ApiParam({ name: 'id', type: Number, example: 42 })
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Customer user ID.', example: 42 })
   @ApiOperation({ summary: 'Get one customer profile and operational summary' })
   @ApiNotFoundResponse({ description: 'Customer not found.' })
   details(@Param('id', ParseIntPipe) id: number) {
@@ -80,6 +80,7 @@ export class AdminCustomersController {
 
   @Delete(':id')
   @Permissions('customers.delete')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Customer user ID.', example: 42 })
   @ApiOperation({
     summary: 'Permanently delete an eligible customer and managed assets',
     description:
@@ -99,6 +100,7 @@ export class AdminCustomersController {
 
   @Get(':id/bookings')
   @Permissions('customers.read', 'bookings.read')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Customer user ID.', example: 42 })
   @ApiOperation({ summary: 'Get one customer booking history' })
   bookings(@Param('id', ParseIntPipe) id: number, @Query() query: AdminCustomerBookingsQueryDto) {
     return this.customers.bookings(id, query);
@@ -106,6 +108,7 @@ export class AdminCustomersController {
 
   @Get(':id/payments')
   @Permissions('customers.read', 'finance.read')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Customer user ID.', example: 42 })
   @ApiOperation({ summary: 'Get one customer payment history' })
   payments(@Param('id', ParseIntPipe) id: number, @Query() query: AdminCustomerPaymentsQueryDto) {
     return this.customers.payments(id, query);
@@ -113,6 +116,7 @@ export class AdminCustomersController {
 
   @Patch(':id/status')
   @Permissions('customers.manage')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Customer user ID.', example: 42 })
   @ApiOperation({
     summary: 'Suspend, reactivate or ban/deactivate a customer',
     description:

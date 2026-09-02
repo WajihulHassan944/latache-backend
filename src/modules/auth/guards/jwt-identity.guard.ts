@@ -66,7 +66,17 @@ export class JwtIdentityGuard implements CanActivate {
       throw new ForbiddenException('Account is deactivated');
     }
 
-    await this.roles.assertSelectable(user, payload.role);
+    const pendingRoleVerification =
+      !user.isVerified &&
+      user.accountStatus === AccountStatus.PendingVerification &&
+      ((user.onboardingStatus === 'pending_customer_verification' &&
+        payload.role === UserRole.Customer) ||
+        (user.onboardingStatus === 'pending_tasker_verification' &&
+          payload.role === UserRole.Tasker));
+
+    if (!pendingRoleVerification) {
+      await this.roles.assertSelectable(user, payload.role);
+    }
 
     // Keep legacy service/controller code role-aware without duplicating the
     // User identity: request.user.role is the role selected by this JWT, while

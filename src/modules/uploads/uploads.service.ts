@@ -36,8 +36,11 @@ import type {
   CloudinaryUploadResult,
   ConversationAttachmentReference,
   DeleteUploadSuccessResponse,
+  UploadBatchSignatureResponse,
   UploadBatchSuccessResponse,
   UploadedAsset,
+  UploadSignature,
+  UploadSignatureResponse,
   UploadSuccessResponse,
 } from './uploads.types';
 
@@ -86,6 +89,148 @@ export class UploadsService {
     ]);
   }
 
+  /**
+   * Issues a Cloudinary-signed upload request so the frontend can upload the
+   * file directly from the browser to Cloudinary, never through this API.
+   * Needed because serverless platforms (e.g. Vercel) reject large request
+   * bodies at the gateway before the app's own size limit ever runs, and
+   * signup photos/documents routinely exceed that ceiling.
+   */
+  createRegistrationUploadSignature(dto: {
+    folder: RegistrationUploadFolder;
+    mimeType: string;
+  }): UploadSignatureResponse {
+    const allowedMimeTypes = this.mimeTypesForFolder(dto.folder);
+    if (!allowedMimeTypes.has(dto.mimeType)) {
+      throw new UnsupportedMediaTypeException(this.unsupportedMimeMessageFor(dto.folder));
+    }
+
+    const data = this.signUpload({
+      folder: dto.folder,
+      namespace: 'pending-registration',
+      tags: ['latache', 'registration', dto.folder],
+      mimeType: dto.mimeType,
+      allowedMimeTypes,
+    });
+
+    return {
+      success: true,
+      data,
+      message: 'Upload signature issued. POST the file directly to uploadUrl with these exact fields.',
+    };
+  }
+
+  /** Authenticated counterpart of createRegistrationUploadSignature; same rationale, scoped to the caller's own Cloudinary namespace. */
+  createUploadSignature(
+    user: User,
+    dto: { folder: UploadFolder; mimeType: string },
+  ): UploadSignatureResponse {
+    this.assertFolderAccess(user, dto.folder);
+    const allowedMimeTypes = this.mimeTypesForFolder(dto.folder);
+    if (!allowedMimeTypes.has(dto.mimeType)) {
+      throw new UnsupportedMediaTypeException(this.unsupportedMimeMessageFor(dto.folder));
+    }
+
+    const data = this.signUpload({
+      folder: dto.folder,
+      namespace: this.ownerNamespace(user),
+      tags: ['latache', user.role, `user-${user.id}`, dto.folder],
+      mimeType: dto.mimeType,
+      allowedMimeTypes,
+    });
+
+    return {
+      success: true,
+      data,
+      message: 'Upload signature issued. POST the file directly to uploadUrl with these exact fields.',
+    };
+  }
+
+  /** Batch counterpart of createUploadSignature: one independent signature per declared file, up to the folder's file-count limit. */
+  createUploadSignatures(
+    user: User,
+    dto: { folder: UploadFolder; mimeTypes: string[] },
+  ): UploadBatchSignatureResponse {
+    this.assertFolderAccess(user, dto.folder);
+    if (!dto.mimeTypes?.length) throw new BadRequestException('At least one file is required');
+
+    const maximumFiles = this.maxFilesForBatch(dto.folder);
+    if (dto.mimeTypes.length > maximumFiles) {
+      throw new BadRequestException(`A maximum of ${maximumFiles} files is allowed`);
+    }
+
+    const allowedMimeTypes = this.mimeTypesForFolder(dto.folder);
+    const namespace = this.ownerNamespace(user);
+    const tags = ['latache', user.role, `user-${user.id}`, dto.folder];
+    const data = dto.mimeTypes.map((mimeType) => {
+      if (!allowedMimeTypes.has(mimeType)) {
+        throw new UnsupportedMediaTypeException(this.unsupportedMimeMessageFor(dto.folder));
+      }
+      return this.signUpload({ folder: dto.folder, namespace, tags, mimeType, allowedMimeTypes });
+    });
+
+    return {
+      success: true,
+      data,
+      message: `${data.length} upload signature(s) issued. POST each file directly to its uploadUrl with the matching fields.`,
+    };
+  }
+
+  private signUpload(params: {
+    folder: string;
+    namespace: string;
+    tags: string[];
+    mimeType: string;
+    allowedMimeTypes: ReadonlySet<string>;
+  }): UploadSignature {
+    const { folder, namespace, tags, mimeType, allowedMimeTypes } = params;
+    const assetFolder = `${this.baseFolder()}/${folder}/${namespace}`;
+    const resourceType = this.resourceTypeFor(mimeType);
+    const publicId = `${assetFolder}/${this.publicIdFor(resourceType, mimeType)}`;
+    const timestamp = Math.floor(Date.now() / 1000);
+    const tagsString = tags.join(',');
+    const context = this.serializeContext({
+      owner_namespace: namespace,
+      upload_folder: folder,
+      mime_type: mimeType,
+    });
+    const allowedFormats = this.allowedFormatsFor(allowedMimeTypes);
+
+    const paramsToSign: Record<string, string | number> = {
+      asset_folder: assetFolder,
+      public_id: publicId,
+      timestamp,
+      tags: tagsString,
+      context,
+      allowed_formats: allowedFormats,
+      overwrite: 'false',
+      unique_filename: 'false',
+      use_filename: 'false',
+    };
+
+    const cloudName = this.config.getOrThrow<string>('cloudinary.cloudName');
+    const apiKey = this.config.getOrThrow<string>('cloudinary.apiKey');
+    const apiSecret = this.config.getOrThrow<string>('cloudinary.apiSecret');
+    const signature = this.cloudinary.utils.api_sign_request(paramsToSign, apiSecret);
+
+    return {
+      cloudName,
+      apiKey,
+      uploadUrl: `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
+      resourceType,
+      timestamp,
+      signature,
+      publicId,
+      assetFolder,
+      tags: tagsString,
+      context,
+      allowedFormats,
+      overwrite: false,
+      uniqueFilename: false,
+      useFilename: false,
+    };
+  }
+
   uploadSingle(
     user: User,
     dto: { folder: UploadFolder },
@@ -109,12 +254,7 @@ export class UploadsService {
     this.assertFolderAccess(user, dto.folder);
     if (!files?.length) throw new BadRequestException('At least one file is required');
 
-    const maximumFiles =
-      dto.folder === UploadFolder.ConversationAttachment
-        ? this.config.get<number>('chat.attachmentMaxFiles', CONVERSATION_ATTACHMENT_MAX_FILES)
-        : dto.folder === UploadFolder.SupportAttachment
-          ? SUPPORT_ATTACHMENT_MAX_FILES
-          : 5;
+    const maximumFiles = this.maxFilesForBatch(dto.folder);
     if (files.length > maximumFiles) {
       throw new BadRequestException(`A maximum of ${maximumFiles} files is allowed`);
     }
@@ -561,47 +701,85 @@ export class UploadsService {
   ): BufferedUploadFile {
     if (!file?.buffer?.length) throw new BadRequestException('A file is required');
 
-    const globalMaximum = this.config.get<number>('cloudinary.maxFileSizeBytes', 10 * 1024 * 1024);
-    const maximum =
-      folder === UploadFolder.ConversationAttachment
-        ? Math.min(
-            globalMaximum,
-            this.config.get<number>(
-              'chat.attachmentMaxFileSizeBytes',
-              CONVERSATION_ATTACHMENT_MAX_FILE_SIZE_BYTES,
-            ),
-          )
-        : folder === UploadFolder.SupportAttachment
-          ? Math.min(globalMaximum, SUPPORT_ATTACHMENT_MAX_FILE_SIZE_BYTES)
-          : globalMaximum;
+    const maximum = this.maxFileSizeBytesFor(folder);
     if (file.size > maximum) {
       throw new PayloadTooLargeException(`File exceeds the ${this.megabytes(maximum)} MB limit`);
     }
 
-    const allowsConversationDocuments = folder === UploadFolder.ConversationAttachment;
-    const allowsBasicDocuments =
-      folder === UploadFolder.TaskerIdentityDocument ||
-      folder === UploadFolder.BookingAttachment ||
-      folder === UploadFolder.SupportAttachment ||
-      folder === RegistrationUploadFolder.TaskerIdentityDocument;
-    const allowed = allowsConversationDocuments
-      ? this.conversationMimeTypes
-      : allowsBasicDocuments
-        ? this.documentMimeTypes
-        : this.imageMimeTypes;
+    const allowed = this.mimeTypesForFolder(folder);
     if (!allowed.has(file.mimetype)) {
-      throw new UnsupportedMediaTypeException(
-        allowsConversationDocuments
-          ? 'Chat accepts JPEG, PNG, WEBP, PDF, TXT, CSV, RTF, DOC, DOCX, XLS, XLSX, PPT, and PPTX files'
-          : allowsBasicDocuments
-            ? 'Only JPEG, PNG, WEBP, and PDF files are allowed for this category'
-            : 'Only JPEG, PNG, and WEBP images are allowed for this category',
-      );
+      throw new UnsupportedMediaTypeException(this.unsupportedMimeMessageFor(folder));
     }
 
     this.assertFileNameMatchesMime(file.originalname, file.mimetype);
     this.assertFileSignature(file);
     return file;
+  }
+
+  private maxFileSizeBytesFor(folder: UploadFolder | RegistrationUploadFolder): number {
+    const globalMaximum = this.config.get<number>('cloudinary.maxFileSizeBytes', 10 * 1024 * 1024);
+    if (folder === UploadFolder.ConversationAttachment) {
+      return Math.min(
+        globalMaximum,
+        this.config.get<number>(
+          'chat.attachmentMaxFileSizeBytes',
+          CONVERSATION_ATTACHMENT_MAX_FILE_SIZE_BYTES,
+        ),
+      );
+    }
+    if (folder === UploadFolder.SupportAttachment) {
+      return Math.min(globalMaximum, SUPPORT_ATTACHMENT_MAX_FILE_SIZE_BYTES);
+    }
+    return globalMaximum;
+  }
+
+  private isDocumentFolder(folder: UploadFolder | RegistrationUploadFolder): boolean {
+    return (
+      folder === UploadFolder.TaskerIdentityDocument ||
+      folder === UploadFolder.BookingAttachment ||
+      folder === UploadFolder.SupportAttachment ||
+      folder === RegistrationUploadFolder.TaskerIdentityDocument
+    );
+  }
+
+  private mimeTypesForFolder(folder: UploadFolder | RegistrationUploadFolder): ReadonlySet<string> {
+    if (folder === UploadFolder.ConversationAttachment) return this.conversationMimeTypes;
+    return this.isDocumentFolder(folder) ? this.documentMimeTypes : this.imageMimeTypes;
+  }
+
+  private unsupportedMimeMessageFor(folder: UploadFolder | RegistrationUploadFolder): string {
+    if (folder === UploadFolder.ConversationAttachment) {
+      return 'Chat accepts JPEG, PNG, WEBP, PDF, TXT, CSV, RTF, DOC, DOCX, XLS, XLSX, PPT, and PPTX files';
+    }
+    return this.isDocumentFolder(folder)
+      ? 'Only JPEG, PNG, WEBP, and PDF files are allowed for this category'
+      : 'Only JPEG, PNG, and WEBP images are allowed for this category';
+  }
+
+  private maxFilesForBatch(folder: UploadFolder): number {
+    if (folder === UploadFolder.ConversationAttachment) {
+      return this.config.get<number>('chat.attachmentMaxFiles', CONVERSATION_ATTACHMENT_MAX_FILES);
+    }
+    if (folder === UploadFolder.SupportAttachment) return SUPPORT_ATTACHMENT_MAX_FILES;
+    return 5;
+  }
+
+  private allowedFormatsFor(mimeTypes: ReadonlySet<string>): string {
+    const formats = new Set<string>();
+    for (const mimeType of mimeTypes) {
+      for (const extension of MIME_EXTENSIONS[mimeType] ?? []) {
+        formats.add(extension.replace(/^\./, ''));
+      }
+    }
+    return [...formats].join(',');
+  }
+
+  /** Cloudinary context strings escape `\`, `|`, and `=` inside values. */
+  private serializeContext(context: Record<string, string>): string {
+    const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/=/g, '\\=');
+    return Object.entries(context)
+      .map(([key, value]) => `${key}=${escape(value)}`)
+      .join('|');
   }
 
   private assertFileSignature(file: BufferedUploadFile): void {

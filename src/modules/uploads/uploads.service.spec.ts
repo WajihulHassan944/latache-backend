@@ -1,7 +1,12 @@
-import { ConflictException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  ServiceUnavailableException,
+  UnsupportedMediaTypeException,
+} from '@nestjs/common';
 import { UserRole } from '../../common/enums/user-role.enum';
 import type { User } from '../../generated/prisma/client';
-import { UploadFolder, UploadResourceType } from './dto';
+import { RegistrationUploadFolder, UploadFolder, UploadResourceType } from './dto';
 import { UploadsService } from './uploads.service';
 import type { BufferedUploadFile, CloudinaryClient } from './uploads.types';
 
@@ -32,6 +37,9 @@ const createService = () => {
 
   const cloudinary: CloudinaryClient = {
     config: jest.fn(),
+    utils: {
+      api_sign_request: jest.fn().mockReturnValue('signed-signature'),
+    },
     api: {
       resource: jest.fn().mockResolvedValue({
         public_id: 'latache/customer-profiles/customer/42/test-id',
@@ -46,11 +54,20 @@ const createService = () => {
       destroy: jest.fn().mockResolvedValue({ result: 'ok' }),
     },
   };
+  const configValues: Record<string, unknown> = {
+    'cloudinary.folder': 'latache',
+    'cloudinary.maxFileSizeBytes': 10 * 1024 * 1024,
+    'cloudinary.cloudName': 'demo',
+    'cloudinary.apiKey': 'test-api-key',
+    'cloudinary.apiSecret': 'test-api-secret',
+  };
   const config = {
-    get: jest.fn((key: string, fallback: unknown) => {
-      if (key === 'cloudinary.folder') return 'latache';
-      if (key === 'cloudinary.maxFileSizeBytes') return 10 * 1024 * 1024;
-      return fallback;
+    get: jest.fn((key: string, fallback: unknown) =>
+      key in configValues ? configValues[key] : fallback,
+    ),
+    getOrThrow: jest.fn((key: string) => {
+      if (!(key in configValues)) throw new Error(`Missing config: ${key}`);
+      return configValues[key];
     }),
   };
   const prisma = {
@@ -174,5 +191,130 @@ describe('UploadsService', () => {
         },
       ]),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('issues a signed direct-to-Cloudinary upload for a registration asset', () => {
+    const { service, cloudinary } = createService();
+
+    const response = service.createRegistrationUploadSignature({
+      folder: RegistrationUploadFolder.TaskerIdentityDocument,
+      mimeType: 'image/jpeg',
+    });
+
+    expect(response.data.publicId).toMatch(
+      /^latache\/tasker-identity-documents\/pending-registration\/[0-9a-f-]{36}$/,
+    );
+    expect(response.data.assetFolder).toBe('latache/tasker-identity-documents/pending-registration');
+    expect(response.data.resourceType).toBe('image');
+    expect(response.data.uploadUrl).toBe('https://api.cloudinary.com/v1_1/demo/image/upload');
+    expect(response.data.tags).toBe('latache,registration,tasker-identity-documents');
+    expect(response.data.context).toBe(
+      'owner_namespace=pending-registration|upload_folder=tasker-identity-documents|mime_type=image/jpeg',
+    );
+    expect(response.data.allowedFormats.split(',').sort()).toEqual(
+      ['jpg', 'jpeg', 'png', 'webp', 'pdf'].sort(),
+    );
+    expect(response.data.signature).toBe('signed-signature');
+    expect(cloudinary.utils.api_sign_request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        asset_folder: 'latache/tasker-identity-documents/pending-registration',
+        public_id: response.data.publicId,
+        overwrite: 'false',
+        unique_filename: 'false',
+        use_filename: 'false',
+      }),
+      'test-api-secret',
+    );
+  });
+
+  it('escapes pipe and equals characters in the signed context string', () => {
+    const { service } = createService();
+
+    const response = service.createRegistrationUploadSignature({
+      folder: RegistrationUploadFolder.CustomerProfile,
+      mimeType: 'image/png',
+    });
+
+    expect(response.data.context).toBe(
+      'owner_namespace=pending-registration|upload_folder=customer-profiles|mime_type=image/png',
+    );
+  });
+
+  it('rejects a declared MIME type outside the folder allowlist', () => {
+    const { service } = createService();
+
+    expect(() =>
+      service.createRegistrationUploadSignature({
+        folder: RegistrationUploadFolder.CustomerProfile,
+        mimeType: 'application/pdf',
+      }),
+    ).toThrow(UnsupportedMediaTypeException);
+  });
+
+  it('issues a signed direct-to-Cloudinary upload scoped to the caller namespace', () => {
+    const { service } = createService();
+
+    const response = service.createUploadSignature(customer, {
+      folder: UploadFolder.CustomerProfile,
+      mimeType: 'image/jpeg',
+    });
+
+    expect(response.data.publicId).toMatch(
+      /^latache\/customer-profiles\/customer\/42\/[0-9a-f-]{36}$/,
+    );
+    expect(response.data.assetFolder).toBe('latache/customer-profiles/customer/42');
+    expect(response.data.tags).toBe('latache,customer,user-42,customer-profiles');
+    expect(response.data.context).toBe(
+      'owner_namespace=customer/42|upload_folder=customer-profiles|mime_type=image/jpeg',
+    );
+  });
+
+  it('rejects a single-upload signature for a folder the role cannot access', () => {
+    const { service } = createService();
+
+    expect(() =>
+      service.createUploadSignature(customer, {
+        folder: UploadFolder.TaskerIdentityDocument,
+        mimeType: 'image/jpeg',
+      }),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('issues one independent signature per requested file in a batch', () => {
+    const { service } = createService();
+
+    const response = service.createUploadSignatures(customer, {
+      folder: UploadFolder.ConversationAttachment,
+      mimeTypes: ['image/jpeg', 'application/pdf'],
+    });
+
+    expect(response.data).toHaveLength(2);
+    expect(response.data[0]?.publicId).not.toBe(response.data[1]?.publicId);
+    expect(response.data[1]?.resourceType).toBe('raw');
+    expect(response.data.every((entry) => entry.assetFolder === response.data[0]?.assetFolder)).toBe(
+      true,
+    );
+  });
+
+  it('rejects a batch signature request over the folder file-count limit', () => {
+    const { service } = createService();
+
+    expect(() =>
+      service.createUploadSignatures(customer, {
+        folder: UploadFolder.CustomerProfile,
+        mimeTypes: Array.from({ length: 6 }, () => 'image/jpeg'),
+      }),
+    ).toThrow(/maximum of 5 files/);
+  });
+
+  it('rejects a batch signature request with an unsupported MIME type', () => {
+    const { service } = createService();
+
+    expect(() =>
+      service.createUploadSignatures(customer, {
+        folder: UploadFolder.CustomerProfile,
+        mimeTypes: ['image/jpeg', 'application/pdf'],
+      }),
+    ).toThrow(UnsupportedMediaTypeException);
   });
 });

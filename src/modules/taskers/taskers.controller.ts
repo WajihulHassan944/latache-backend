@@ -9,7 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -50,17 +50,20 @@ export class TaskersController {
   }
 
   @Get(':id/availability')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Tasker user ID.' })
   getTaskerAvailability(@Param() params: TaskerParamDto) {
     return this.taskers.getAvailability(params.id);
   }
 
   @Get(':id/reviews')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Tasker user ID.' })
   @ApiOperation({ summary: 'List public reviews received by an active tasker' })
   getTaskerReviews(@Param() params: TaskerParamDto, @Query() query: PublicTaskerReviewsQueryDto) {
     return this.taskers.getPublicReviews(params.id, query);
   }
 
   @Get(':id')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Tasker user ID.' })
   getTaskerById(
     @Param() params: TaskerParamDto,
     @Query() query: TaskerDetailQueryDto,

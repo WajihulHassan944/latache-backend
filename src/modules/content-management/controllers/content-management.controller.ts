@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
@@ -34,6 +34,7 @@ export class ContentManagementController {
   constructor(private readonly content: ContentManagementService) {}
 
   @Get(':slug')
+  @ApiParam({ name: 'slug', required: true, type: String, description: 'Content page slug.' })
   @ApiOperation({ summary: 'Get one published localized content page' })
   publicPage(@Param('slug') slug: string, @RequestLocale() locale: string) {
     return this.content.publicPage(slug, locale);
@@ -56,6 +57,7 @@ export class AdminContentManagementController {
 
   @Get(':id')
   @Permissions('content.read')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Content page ID.' })
   @ApiOperation({ summary: 'Get one managed content page with all blocks and translations' })
   get(@Param('id') id: string) {
     return this.content.adminGet(id);
@@ -70,6 +72,7 @@ export class AdminContentManagementController {
 
   @Patch(':id')
   @Permissions('content.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Content page ID.' })
   @ApiOperation({ summary: 'Update a managed content page' })
   update(@CurrentUser() actor: User, @Param('id') id: string, @Body() dto: UpdateContentPageDto) {
     return this.content.update(actor, id, dto);
@@ -77,6 +80,7 @@ export class AdminContentManagementController {
 
   @Delete(':id')
   @Permissions('content.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Content page ID.' })
   @ApiOperation({ summary: 'Permanently delete an unpublished content page' })
   delete(@CurrentUser() actor: User, @Param('id') id: string) {
     return this.content.deletePage(actor, id);
@@ -84,6 +88,7 @@ export class AdminContentManagementController {
 
   @Post(':id/publish')
   @Permissions('content.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Content page ID.' })
   @ApiOperation({ summary: 'Publish a content page' })
   publish(@CurrentUser() actor: User, @Param('id') id: string) {
     return this.content.publish(actor, id);
@@ -91,6 +96,7 @@ export class AdminContentManagementController {
 
   @Post(':id/unpublish')
   @Permissions('content.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Content page ID.' })
   @ApiOperation({ summary: 'Unpublish a content page' })
   unpublish(@CurrentUser() actor: User, @Param('id') id: string) {
     return this.content.unpublish(actor, id);
@@ -98,6 +104,7 @@ export class AdminContentManagementController {
 
   @Post(':id/blocks')
   @Permissions('content.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Content page ID.' })
   @ApiOperation({ summary: 'Add a content block to a page' })
   createBlock(@CurrentUser() actor: User, @Param('id') id: string, @Body() dto: CreateContentBlockDto) {
     return this.content.createBlock(actor, id, dto);
@@ -105,6 +112,8 @@ export class AdminContentManagementController {
 
   @Patch(':id/blocks/:blockId')
   @Permissions('content.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Content page ID.' })
+  @ApiParam({ name: 'blockId', required: true, type: String, description: 'Content block ID.' })
   @ApiOperation({ summary: 'Update a content block' })
   updateBlock(@CurrentUser() actor: User, @Param('id') id: string, @Param('blockId') blockId: string, @Body() dto: UpdateContentBlockDto) {
     return this.content.updateBlock(actor, id, blockId, dto);
@@ -112,6 +121,8 @@ export class AdminContentManagementController {
 
   @Delete(':id/blocks/:blockId')
   @Permissions('content.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Content page ID.' })
+  @ApiParam({ name: 'blockId', required: true, type: String, description: 'Content block ID.' })
   @ApiOperation({ summary: 'Delete a content block' })
   deleteBlock(@CurrentUser() actor: User, @Param('id') id: string, @Param('blockId') blockId: string) {
     return this.content.deleteBlock(actor, id, blockId);

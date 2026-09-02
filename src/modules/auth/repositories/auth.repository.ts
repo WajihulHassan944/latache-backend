@@ -41,10 +41,6 @@ export class AuthRepository {
     return rows.length === 0 ? null : transaction.user.findUnique({ where: { id } });
   }
 
-  countServices(serviceIds: number[], transaction?: Prisma.TransactionClient): Promise<number> {
-    return (transaction ?? this.prisma).service.count({ where: { id: { in: serviceIds } } });
-  }
-
   findCustomerProfile(userId: number, transaction?: Prisma.TransactionClient) {
     return (transaction ?? this.prisma).customerProfile.findUnique({ where: { userId } });
   }

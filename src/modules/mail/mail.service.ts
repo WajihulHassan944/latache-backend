@@ -28,6 +28,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    if (this.isResendEnabled()) return;
     if (!this.config.get<boolean>('mail.verifyOnBootstrap', false)) return;
     try {
       await this.transporter.verify();
@@ -136,6 +137,11 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     text: string;
   }): Promise<void> {
     try {
+      if (this.isResendEnabled()) {
+        await this.sendWithResend(params);
+        return;
+      }
+
       const delivery = await this.transporter.sendMail({
         from: this.config.getOrThrow<string>('mail.from'),
         ...params,
@@ -152,6 +158,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(
         JSON.stringify({
           event: 'smtp_delivery_accepted',
+          provider: 'smtp',
           recipientDomain: requestedRecipient.split('@')[1] ?? 'unknown',
           messageId: delivery.messageId || 'unknown',
           responseCode,
@@ -159,9 +166,57 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
       );
     } catch (error) {
       const message = this.safeErrorMessage(error);
-      this.logger.error(`SMTP delivery failed: ${message}`);
+      this.logger.error(`Email delivery failed: ${message}`);
       throw new ServiceUnavailableException('Email delivery is temporarily unavailable');
     }
+  }
+
+  private isResendEnabled(): boolean {
+    return (
+      this.config.get<string>('mail.provider', 'smtp') === 'resend' &&
+      Boolean(this.config.get<string>('mail.resendApiKey'))
+    );
+  }
+
+  private async sendWithResend(params: {
+    to: string;
+    subject: string;
+    html: string;
+    text: string;
+  }): Promise<void> {
+    const apiKey = this.config.getOrThrow<string>('mail.resendApiKey');
+    const from = this.config.get<string>('mail.resendFrom') ?? this.config.getOrThrow<string>('mail.from');
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'Latache-Backend/3.33.0',
+      },
+      body: JSON.stringify({
+        from,
+        to: [params.to],
+        subject: params.subject,
+        html: params.html,
+        text: params.text,
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`RESEND_EMAIL_FAILED_${response.status}:${detail.slice(0, 500)}`);
+    }
+
+    const payload = (await response.json()) as { id?: string };
+    const requestedRecipient = this.normalizeRecipient(params.to);
+    this.logger.log(
+      JSON.stringify({
+        event: 'email_delivery_accepted',
+        provider: 'resend',
+        recipientDomain: requestedRecipient.split('@')[1] ?? 'unknown',
+        messageId: payload.id ?? 'unknown',
+      }),
+    );
   }
 
   private normalizeRecipient(recipient: string | MailRecipientAddress): string {
