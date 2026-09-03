@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { RequestLocale } from '../localization/request-locale.decorator';
 import { PlatformSettingsService } from './platform-settings.service';
 
@@ -9,6 +10,7 @@ export class PlatformContentController {
   constructor(private readonly settings: PlatformSettingsService) {}
 
   @Get()
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiHeader({
     name: 'Accept-Language',
     required: false,

@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
@@ -20,12 +21,12 @@ import { ContentManagementService } from '../services/content-management.service
 export class PublicHomepageContentController {
   constructor(private readonly content: ContentManagementService) {}
 
-  @Get('services') services(@RequestLocale() locale: string) { return this.content.homepageServices(locale); }
-  @Get('popular-projects') popularProjects(@RequestLocale() locale: string) { return this.content.homepagePopularProjects(locale); }
-  @Get('recommended-jobs') recommendedJobs(@RequestLocale() locale: string) { return this.content.homepageRecommendedJobs(locale); }
-  @Get('testimonials') testimonials(@RequestLocale() locale: string) { return this.content.homepageTestimonials(locale); }
-  @Get('how-it-works') howItWorks(@RequestLocale() locale: string) { return this.content.homepageManagedBlock('how_it_works', locale); }
-  @Get('social') social(@RequestLocale() locale: string) { return this.content.homepageManagedBlock('social_links', locale); }
+  @Get('services') @Throttle({ default: { limit: 60, ttl: 60_000 } }) services(@RequestLocale() locale: string) { return this.content.homepageServices(locale); }
+  @Get('popular-projects') @Throttle({ default: { limit: 60, ttl: 60_000 } }) popularProjects(@RequestLocale() locale: string) { return this.content.homepagePopularProjects(locale); }
+  @Get('recommended-jobs') @Throttle({ default: { limit: 60, ttl: 60_000 } }) recommendedJobs(@RequestLocale() locale: string) { return this.content.homepageRecommendedJobs(locale); }
+  @Get('testimonials') @Throttle({ default: { limit: 60, ttl: 60_000 } }) testimonials(@RequestLocale() locale: string) { return this.content.homepageTestimonials(locale); }
+  @Get('how-it-works') @Throttle({ default: { limit: 60, ttl: 60_000 } }) howItWorks(@RequestLocale() locale: string) { return this.content.homepageManagedBlock('how_it_works', locale); }
+  @Get('social') @Throttle({ default: { limit: 60, ttl: 60_000 } }) social(@RequestLocale() locale: string) { return this.content.homepageManagedBlock('social_links', locale); }
 }
 
 @ApiTags('29 Content Management')
@@ -34,6 +35,7 @@ export class ContentManagementController {
   constructor(private readonly content: ContentManagementService) {}
 
   @Get(':slug')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiParam({ name: 'slug', required: true, type: String, description: 'Content page slug.' })
   @ApiOperation({ summary: 'Get one published localized content page' })
   publicPage(@Param('slug') slug: string, @RequestLocale() locale: string) {

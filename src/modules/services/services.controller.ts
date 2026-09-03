@@ -18,6 +18,7 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -47,6 +48,7 @@ export class ServicesController {
   constructor(private readonly services: ServicesService) {}
 
   @Get()
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOperation({
     summary: 'List active service categories for customer/tasker flows',
     description:
@@ -60,6 +62,7 @@ export class ServicesController {
   }
 
   @Get(':serviceId/options')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
     summary: 'List active booking options for a service',
@@ -74,6 +77,7 @@ export class ServicesController {
   }
 
   @Get(':serviceId')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
     summary: 'Get one active service category with its active booking options',

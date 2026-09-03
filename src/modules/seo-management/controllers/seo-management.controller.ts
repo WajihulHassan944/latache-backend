@@ -1,5 +1,6 @@
 import { Controller, Delete, Get, Header, Param, Patch, Post, Query, Body, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
@@ -12,9 +13,9 @@ import { SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntr
 @Controller('seo')
 export class SeoPublicController {
   constructor(private readonly seo: SeoManagementService) {}
-  @Get('meta') @ApiOperation({ summary: 'Resolve localized SEO metadata for a public route' }) meta(@Query() query: SeoResolveQueryDto) { return this.seo.publicMeta(query); }
-  @Get('sitemap.xml') @Header('Content-Type', 'application/xml; charset=utf-8') @ApiOperation({ summary: 'Generate the authoritative XML sitemap' }) sitemap() { return this.seo.sitemap(); }
-  @Get('robots.txt') @Header('Content-Type', 'text/plain; charset=utf-8') @ApiOperation({ summary: 'Generate robots.txt from managed SEO rules' }) robots() { return this.seo.robots(); }
+  @Get('meta') @Throttle({ default: { limit: 60, ttl: 60_000 } }) @ApiOperation({ summary: 'Resolve localized SEO metadata for a public route' }) meta(@Query() query: SeoResolveQueryDto) { return this.seo.publicMeta(query); }
+  @Get('sitemap.xml') @Throttle({ default: { limit: 20, ttl: 60_000 } }) @Header('Content-Type', 'application/xml; charset=utf-8') @ApiOperation({ summary: 'Generate the authoritative XML sitemap' }) sitemap() { return this.seo.sitemap(); }
+  @Get('robots.txt') @Throttle({ default: { limit: 20, ttl: 60_000 } }) @Header('Content-Type', 'text/plain; charset=utf-8') @ApiOperation({ summary: 'Generate robots.txt from managed SEO rules' }) robots() { return this.seo.robots(); }
 }
 
 @ApiTags('30 Admin - SEO')
