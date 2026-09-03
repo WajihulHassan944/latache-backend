@@ -1423,7 +1423,7 @@
                     "type": "text/plain"
                   },
                   "key": "folder",
-                  "value": "support-attachments",
+                  "value": "customer-profiles",
                   "type": "text"
                 },
                 {
@@ -1540,7 +1540,7 @@
                     "type": "text/plain"
                   },
                   "key": "folder",
-                  "value": "tasker-profiles",
+                  "value": "service-images",
                   "type": "text"
                 },
                 {
@@ -2552,7 +2552,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"taskerId\": 809.3985872649992,\n  \"serviceSlug\": \"string\",\n  \"date\": \"string\",\n  \"time\": \"string\",\n  \"serviceOptionId\": 8405.866192297293,\n  \"tipAmount\": 6004.457010886233,\n  \"donationAmount\": 71309.04275750241\n}",
+              "raw": "{\n  \"taskerId\": 1628.0477382080574,\n  \"serviceSlug\": \"string\",\n  \"date\": \"string\",\n  \"time\": \"string\",\n  \"serviceOptionId\": 4698.46568711818,\n  \"tipAmount\": 44007.377895456324,\n  \"donationAmount\": 45068.43065309323\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -2589,7 +2589,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"taskerId\": 3733.2535643712167,\n  \"serviceSlug\": \"s\",\n  \"location\": {\n    \"label\": \"string\",\n    \"lat\": -20.211348316352314,\n    \"lng\": 30.888099450569484,\n    \"city\": \"string\",\n    \"area\": \"string\"\n  },\n  \"date\": \"string\",\n  \"time\": \"string\",\n  \"bookingDetails\": {\n    \"venueAddress\": \"string\",\n    \"description\": \"string\",\n    \"apartmentSuite\": \"string\",\n    \"attachments\": [\n      {\n        \"name\": \"string\",\n        \"size\": 3604.9874254213487,\n        \"type\": \"string\"\n      },\n      {\n        \"name\": \"string\",\n        \"size\": 1287.1090468690927,\n        \"type\": \"string\"\n      }\n    ]\n  },\n  \"paymentSource\": \"stripe\",\n  \"serviceOptionId\": 3897.812429055298,\n  \"stripePaymentMethodId\": \"string\",\n  \"tipAmount\": 28262.195383035647,\n  \"donationAmount\": 43009.26139805472,\n  \"donationDropoffRequested\": false\n}",
+              "raw": "{\n  \"taskerId\": 7800.803134801095,\n  \"serviceSlug\": \"string\",\n  \"location\": {\n    \"label\": \"string\",\n    \"lat\": -51.12594519688084,\n    \"lng\": 132.19949896271982,\n    \"city\": \"string\",\n    \"area\": \"string\"\n  },\n  \"date\": \"string\",\n  \"time\": \"string\",\n  \"bookingDetails\": {\n    \"venueAddress\": \"string\",\n    \"description\": \"string\",\n    \"apartmentSuite\": \"string\",\n    \"attachments\": [\n      {\n        \"name\": \"government-id-front.jpg\",\n        \"size\": 482913,\n        \"type\": \"image/jpeg\"\n      },\n      {\n        \"name\": \"government-id-front.jpg\",\n        \"size\": 482913,\n        \"type\": \"image/jpeg\"\n      }\n    ]\n  },\n  \"paymentSource\": \"stripe\",\n  \"serviceOptionId\": 4146.249348672722,\n  \"stripePaymentMethodId\": \"string\",\n  \"tipAmount\": 70849.79675769141,\n  \"donationAmount\": 99663.8861947399,\n  \"donationDropoffRequested\": false\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -2726,7 +2726,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -2771,7 +2771,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -2822,7 +2822,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -2882,7 +2882,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -2943,7 +2943,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3003,7 +3003,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3064,7 +3064,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3116,7 +3116,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3162,7 +3162,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3226,7 +3226,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3277,7 +3277,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3324,7 +3324,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3385,7 +3385,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3431,7 +3431,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3493,7 +3493,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3554,7 +3554,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3600,7 +3600,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3660,7 +3660,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3712,7 +3712,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3764,7 +3764,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3816,7 +3816,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3868,7 +3868,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3920,7 +3920,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -3985,7 +3985,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -4038,7 +4038,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -4108,7 +4108,7 @@
                     "type": "text/plain"
                   },
                   "key": "bookingId",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -4138,7 +4138,7 @@
                   "value": "30"
                 }
               ],
-              "raw": "{{baseUrl}}/api/disputes?bookingId=8779.558717926848&status=all&page=1&limit=30"
+              "raw": "{{baseUrl}}/api/disputes?bookingId=8508.393635384893&status=all&page=1&limit=30"
             },
             "method": "GET",
             "body": {},
@@ -4219,7 +4219,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -4373,7 +4373,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"action\": \"accept_proposal\",\n  \"resolutionId\": \"cm123resolution\",\n  \"message\": \"I do not agree with the proposed settlement because…\"\n}",
+              "raw": "{\n  \"action\": \"appeal\",\n  \"resolutionId\": \"cm123resolution\",\n  \"message\": \"I do not agree with the proposed settlement because…\"\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -4880,7 +4880,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -4933,7 +4933,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -5176,7 +5176,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -5228,7 +5228,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -5292,7 +5292,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -5362,7 +5362,7 @@
                     "type": "text/plain"
                   },
                   "key": "type",
-                  "value": "voice"
+                  "value": "video"
                 },
                 {
                   "disabled": false,
@@ -5371,7 +5371,7 @@
                     "type": "text/plain"
                   },
                   "key": "status",
-                  "value": "rejected"
+                  "value": "accepted"
                 },
                 {
                   "disabled": false,
@@ -5395,7 +5395,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -5404,7 +5404,7 @@
                   }
                 }
               ],
-              "raw": "{{baseUrl}}/api/conversations/:bookingId/calls?type=voice&status=rejected&page=1&limit=30"
+              "raw": "{{baseUrl}}/api/conversations/:bookingId/calls?type=video&status=accepted&page=1&limit=30"
             },
             "header": [
               {
@@ -5447,7 +5447,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -5457,7 +5457,7 @@
                 },
                 {
                   "type": "any",
-                  "value": "string",
+                  "value": "stri",
                   "key": "callId",
                   "disabled": false,
                   "description": {
@@ -5507,7 +5507,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -5917,7 +5917,7 @@
                     "type": "text/plain"
                   },
                   "key": "rating",
-                  "value": "3.8952719506951006"
+                  "value": "3.1472337872426612"
                 },
                 {
                   "disabled": false,
@@ -5938,7 +5938,7 @@
                   "value": "20"
                 }
               ],
-              "raw": "{{baseUrl}}/api/reviews?view=received&rating=3.8952719506951006&page=1&limit=20"
+              "raw": "{{baseUrl}}/api/reviews?view=received&rating=3.1472337872426612&page=1&limit=20"
             },
             "header": [
               {
@@ -5981,7 +5981,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "bookingId",
                   "disabled": false,
                   "description": {
@@ -6489,7 +6489,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -6554,7 +6554,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -6920,7 +6920,7 @@
                     "type": "text/plain"
                   },
                   "key": "status",
-                  "value": "partially_reversed"
+                  "value": "reversed"
                 },
                 {
                   "disabled": false,
@@ -6941,7 +6941,7 @@
                   "value": "30"
                 }
               ],
-              "raw": "{{baseUrl}}/api/tasker-dashboard/wallet/earnings?status=partially_reversed&page=1&limit=30"
+              "raw": "{{baseUrl}}/api/tasker-dashboard/wallet/earnings?status=reversed&page=1&limit=30"
             },
             "method": "GET",
             "body": {},
@@ -6983,7 +6983,7 @@
                     "type": "text/plain"
                   },
                   "key": "status",
-                  "value": "partially_reversed"
+                  "value": "reversed"
                 },
                 {
                   "disabled": false,
@@ -7004,7 +7004,7 @@
                   "value": "30"
                 }
               ],
-              "raw": "{{baseUrl}}/api/tasker-dashboard/wallet/platform-payables?status=partially_reversed&page=1&limit=30"
+              "raw": "{{baseUrl}}/api/tasker-dashboard/wallet/platform-payables?status=reversed&page=1&limit=30"
             },
             "method": "GET",
             "body": {},
@@ -7319,7 +7319,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "string",
+                  "value": "stri",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -7372,7 +7372,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "string",
+                  "value": "stri",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -7516,7 +7516,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "string",
+                  "value": "stri",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -7570,7 +7570,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "string",
+                  "value": "stri",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -7631,7 +7631,7 @@
                     "type": "text/plain"
                   },
                   "key": "page",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -7640,7 +7640,7 @@
                     "type": "text/plain"
                   },
                   "key": "limit",
-                  "value": "66.00521184147173"
+                  "value": "22.81621614659245"
                 },
                 {
                   "disabled": false,
@@ -7661,7 +7661,7 @@
                   "value": "string"
                 }
               ],
-              "raw": "{{baseUrl}}/api/services?page=8779.558717926848&limit=66.00521184147173&search=string&category=string"
+              "raw": "{{baseUrl}}/api/services?page=8508.393635384893&limit=22.81621614659245&search=string&category=string"
             },
             "header": [
               {
@@ -7757,7 +7757,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "serviceId",
                   "disabled": false,
                   "description": {
@@ -7805,7 +7805,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "serviceId",
                   "disabled": false,
                   "description": {
@@ -7875,7 +7875,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "serviceId",
                   "disabled": false,
                   "description": {
@@ -7922,7 +7922,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "serviceId",
                   "disabled": false,
                   "description": {
@@ -7952,7 +7952,7 @@
             "method": "PATCH",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Home Cleaning\",\n  \"description\": \"Professional home cleaning services.\",\n  \"slug\": \"home-cleaning\",\n  \"icon\": \"https://res.cloudinary.com/demo/image/upload/service.webp\",\n  \"minimumHourlyRate\": 1279.161542244369,\n  \"maximumHourlyRate\": 535082.9896038026,\n  \"isActive\": true,\n  \"sortOrder\": 2371.4019170720535,\n  \"translations\": [\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    },\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    }\n  ]\n}",
+              "raw": "{\n  \"name\": \"Home Cleaning\",\n  \"description\": \"Professional home cleaning services.\",\n  \"slug\": \"home-cleaning\",\n  \"icon\": \"https://res.cloudinary.com/demo/image/upload/service.webp\",\n  \"minimumHourlyRate\": 941105.5661594064,\n  \"maximumHourlyRate\": 912807.726031412,\n  \"isActive\": false,\n  \"sortOrder\": 8153.787567829163,\n  \"translations\": [\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    },\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -7992,7 +7992,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "serviceId",
                   "disabled": false,
                   "description": {
@@ -8050,7 +8050,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "serviceId",
                   "disabled": false,
                   "description": {
@@ -8060,7 +8060,7 @@
                 },
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "optionId",
                   "disabled": false,
                   "description": {
@@ -8132,7 +8132,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "serviceId",
                   "disabled": false,
                   "description": {
@@ -8142,7 +8142,7 @@
                 },
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "optionId",
                   "disabled": false,
                   "description": {
@@ -8190,8 +8190,9 @@
       "description": "Tasker discovery, availability and onboarding",
       "item": [
         {
-          "name": "Taskers Controller submit Onboarding",
+          "name": "Submit the Tasker professional onboarding application (step 2 of 2)",
           "request": {
+            "description": "Requires a verified Tasker identity created via POST /auth/taskers/register (or POST /auth/roles/tasker) followed by POST /auth/verify-email. Replaces any previously submitted services and availability with the ones sent here, and sets the application to pending_review for admin approval. Upload the identity document first via POST /uploads/single or POST /uploads/single/signature (folder=tasker-identity-documents), then pass its returned file metadata in identity.document.",
             "url": {
               "path": [
                 "api",
@@ -8213,12 +8214,16 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
               }
             ],
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"services\": [\n    {\n      \"slug\": \"string\",\n      \"hourlyRate\": 391293.3308350086\n    }\n  ],\n  \"yearsOfExperience\": 23.818632103273064,\n  \"bio\": \"strin\",\n  \"availability\": [\n    {\n      \"date\": \"string\",\n      \"startTime\": \"string\",\n      \"endTime\": \"string\"\n    }\n  ],\n  \"identity\": {\n    \"idType\": \"government-id\",\n    \"document\": {\n      \"name\": \"string\",\n      \"size\": 2679.9572841866693,\n      \"type\": \"string\"\n    }\n  },\n  \"serviceArea\": {\n    \"label\": \"string\",\n    \"lat\": 41.08886037361103,\n    \"lng\": -142.31264924878997,\n    \"radiusKm\": 331.51724956341855,\n    \"city\": \"string\",\n    \"area\": \"string\"\n  }\n}",
+              "raw": "{\n  \"services\": [\n    {\n      \"slug\": \"cleaning\",\n      \"hourlyRate\": 15\n    },\n    {\n      \"slug\": \"gardening\",\n      \"hourlyRate\": 20\n    }\n  ],\n  \"yearsOfExperience\": 5,\n  \"bio\": \"Experienced house cleaner with 5 years of experience serving Casablanca and nearby areas.\",\n  \"availability\": [\n    {\n      \"date\": \"2026-09-10\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"17:00\"\n    },\n    {\n      \"date\": \"2026-09-11\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"17:00\"\n    }\n  ],\n  \"identity\": {\n    \"idType\": \"government-id\",\n    \"document\": {\n      \"name\": \"government-id-front.jpg\",\n      \"size\": 482913,\n      \"type\": \"image/jpeg\"\n    }\n  },\n  \"serviceArea\": {\n    \"label\": \"Downtown Casablanca\",\n    \"lat\": 33.5731,\n    \"lng\": -7.5898,\n    \"radiusKm\": 15,\n    \"city\": \"Casablanca\",\n    \"area\": \"Maarif\"\n  }\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -8243,8 +8248,9 @@
           }
         },
         {
-          "name": "Taskers Controller get Taskers",
+          "name": "Search/list active Taskers, optionally filtered by nearby location",
           "request": {
+            "description": "Send lat and lng together to restrict results to Taskers whose configured service area covers that point: only Taskers whose distance from lat/lng is within both radius (default 20 km) and their own configured service radius are returned. When lat/lng are provided, every result also includes distanceKm from that point, and sort=nearest orders by distance ascending. Combine with serviceSlug, date/startTime/endTime availability, minPrice/maxPrice, isElite, search, and sort for a full discovery search.",
             "url": {
               "path": [
                 "api",
@@ -8262,6 +8268,15 @@
                   },
                   "key": "search",
                   "value": "تنظيف"
+                },
+                {
+                  "disabled": false,
+                  "description": {
+                    "content": "Restrict results to Taskers offering this service category slug, from GET /api/services.",
+                    "type": "text/plain"
+                  },
+                  "key": "serviceSlug",
+                  "value": "cleaning"
                 },
                 {
                   "disabled": false,
@@ -8293,74 +8308,65 @@
                 {
                   "disabled": false,
                   "description": {
-                    "content": "",
-                    "type": "text/plain"
-                  },
-                  "key": "serviceSlug",
-                  "value": "string"
-                },
-                {
-                  "disabled": false,
-                  "description": {
-                    "content": "",
+                    "content": "Requester latitude for nearby-Tasker search. Must be provided together with lng. Only Taskers with a configured service area whose distance from this point is within both radius and their own service radius are returned.",
                     "type": "text/plain"
                   },
                   "key": "lat",
-                  "value": "-5.204253499525848"
+                  "value": "33.5731"
                 },
                 {
                   "disabled": false,
                   "description": {
-                    "content": "",
+                    "content": "Requester longitude for nearby-Tasker search. Must be provided together with lat.",
                     "type": "text/plain"
                   },
                   "key": "lng",
-                  "value": "-1.4684287181150353"
+                  "value": "-7.5898"
                 },
                 {
                   "disabled": false,
                   "description": {
-                    "content": "",
+                    "content": "Search radius in kilometers around lat/lng. Only used together with lat/lng; defaults to the platform default radius (20 km unless reconfigured by an admin) and is clamped to the platform min/max radius policy.",
                     "type": "text/plain"
                   },
                   "key": "radius",
-                  "value": "405.9490869395665"
+                  "value": "15"
                 },
                 {
                   "disabled": false,
                   "description": {
-                    "content": "",
+                    "content": "Restrict results to Elite-tier Taskers only.",
                     "type": "text/plain"
                   },
                   "key": "isElite",
-                  "value": "false"
+                  "value": "true"
                 },
                 {
                   "disabled": false,
                   "description": {
-                    "content": "",
+                    "content": "Minimum hourly rate, inclusive.",
                     "type": "text/plain"
                   },
                   "key": "minPrice",
-                  "value": "1677.5064213909973"
+                  "value": "10"
                 },
                 {
                   "disabled": false,
                   "description": {
-                    "content": "",
+                    "content": "Maximum hourly rate, inclusive.",
                     "type": "text/plain"
                   },
                   "key": "maxPrice",
-                  "value": "1677.5064213909973"
+                  "value": "50"
                 },
                 {
                   "disabled": false,
                   "description": {
-                    "content": " (This can only be one of price_asc,price_desc,rating_desc,completed_desc)",
+                    "content": "Result ordering. Defaults to a blended Elite-rank/rating/recency order when omitted. nearest requires lat and lng and orders by distance ascending. (This can only be one of price_asc,price_desc,rating_desc,completed_desc,nearest)",
                     "type": "text/plain"
                   },
                   "key": "sort",
-                  "value": "completed_desc"
+                  "value": "rating_desc"
                 },
                 {
                   "disabled": false,
@@ -8369,7 +8375,7 @@
                     "type": "text/plain"
                   },
                   "key": "page",
-                  "value": "8779.558717926848"
+                  "value": "1"
                 },
                 {
                   "disabled": false,
@@ -8378,10 +8384,10 @@
                     "type": "text/plain"
                   },
                   "key": "limit",
-                  "value": "66.00521184147173"
+                  "value": "9"
                 }
               ],
-              "raw": "{{baseUrl}}/api/taskers?search=تنظيف&date=2026-08-25&startTime=14:00&endTime=16:00&serviceSlug=string&lat=-5.204253499525848&lng=-1.4684287181150353&radius=405.9490869395665&isElite=false&minPrice=1677.5064213909973&maxPrice=1677.5064213909973&sort=completed_desc&page=8779.558717926848&limit=66.00521184147173"
+              "raw": "{{baseUrl}}/api/taskers?search=تنظيف&serviceSlug=cleaning&date=2026-08-25&startTime=14:00&endTime=16:00&lat=33.5731&lng=-7.5898&radius=15&isElite=true&minPrice=10&maxPrice=50&sort=rating_desc&page=1&limit=9"
             },
             "header": [
               {
@@ -8389,6 +8395,10 @@
                 "description": "Supports en, ar, and ary (Moroccan Darija), with English fallback.",
                 "key": "Accept-Language",
                 "value": "ary"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
               }
             ],
             "method": "GET",
@@ -8415,7 +8425,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -8463,7 +8473,7 @@
                     "type": "text/plain"
                   },
                   "key": "rating",
-                  "value": "3"
+                  "value": "2"
                 },
                 {
                   "disabled": false,
@@ -8487,7 +8497,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -8496,7 +8506,7 @@
                   }
                 }
               ],
-              "raw": "{{baseUrl}}/api/taskers/:id/reviews?rating=3&page=1&limit=20"
+              "raw": "{{baseUrl}}/api/taskers/:id/reviews?rating=2&page=1&limit=20"
             },
             "header": [
               {
@@ -8544,7 +8554,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -8698,7 +8708,7 @@
                     "type": "text/plain"
                   },
                   "key": "status",
-                  "value": "in_progress"
+                  "value": "escalated"
                 },
                 {
                   "disabled": false,
@@ -8719,7 +8729,7 @@
                   "value": "30"
                 }
               ],
-              "raw": "{{baseUrl}}/api/support/tickets?channel=live_chat&status=in_progress&page=1&limit=30"
+              "raw": "{{baseUrl}}/api/support/tickets?channel=live_chat&status=escalated&page=1&limit=30"
             },
             "header": [
               {
@@ -8794,7 +8804,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -8876,7 +8886,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -8929,7 +8939,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -8994,7 +9004,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -9059,7 +9069,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -9083,7 +9093,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"action\": \"reopen\"\n}",
+              "raw": "{\n  \"action\": \"close\"\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -9125,7 +9135,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -9682,7 +9692,7 @@
                     "type": "text/plain"
                   },
                   "key": "status",
-                  "value": "suspended"
+                  "value": "pending_verification"
                 },
                 {
                   "disabled": false,
@@ -9694,7 +9704,7 @@
                   "value": "newest"
                 }
               ],
-              "raw": "{{baseUrl}}/api/admin/customers?page=1&limit=20&search=sarah&phone=+923001234567&location=Casablanca&from=2026-08-01&to=2026-08-20&status=suspended&sort=newest"
+              "raw": "{{baseUrl}}/api/admin/customers?page=1&limit=20&search=sarah&phone=+923001234567&location=Casablanca&from=2026-08-01&to=2026-08-20&status=pending_verification&sort=newest"
             },
             "method": "GET",
             "body": {},
@@ -10178,7 +10188,7 @@
             "method": "PATCH",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"action\": \"reactivate\",\n  \"reason\": \"Repeated policy violations\"\n}",
+              "raw": "{\n  \"action\": \"ban\",\n  \"reason\": \"Repeated policy violations\"\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -10255,7 +10265,7 @@
                     "type": "text/plain"
                   },
                   "key": "status",
-                  "value": "pending_approval"
+                  "value": "deactivated"
                 },
                 {
                   "disabled": false,
@@ -10264,7 +10274,7 @@
                     "type": "text/plain"
                   },
                   "key": "onboardingStatus",
-                  "value": "pending_review"
+                  "value": "rejected"
                 },
                 {
                   "disabled": false,
@@ -10285,7 +10295,7 @@
                   "value": "newest"
                 }
               ],
-              "raw": "{{baseUrl}}/api/admin/taskers?page=1&limit=20&search=omar&status=pending_approval&onboardingStatus=pending_review&isElite=false&sort=newest"
+              "raw": "{{baseUrl}}/api/admin/taskers?page=1&limit=20&search=omar&status=deactivated&onboardingStatus=rejected&isElite=false&sort=newest"
             },
             "method": "GET",
             "body": {},
@@ -10354,7 +10364,7 @@
                     "type": "text/plain"
                   },
                   "key": "status",
-                  "value": "pending_approval"
+                  "value": "deactivated"
                 },
                 {
                   "disabled": false,
@@ -10363,7 +10373,7 @@
                     "type": "text/plain"
                   },
                   "key": "onboardingStatus",
-                  "value": "pending_review"
+                  "value": "rejected"
                 },
                 {
                   "disabled": false,
@@ -10372,7 +10382,7 @@
                     "type": "text/plain"
                   },
                   "key": "isElite",
-                  "value": "false"
+                  "value": "true"
                 },
                 {
                   "disabled": false,
@@ -10384,7 +10394,7 @@
                   "value": "newest"
                 }
               ],
-              "raw": "{{baseUrl}}/api/admin/taskers/pending-verification?page=1&limit=20&search=omar&status=pending_approval&onboardingStatus=pending_review&isElite=false&sort=newest"
+              "raw": "{{baseUrl}}/api/admin/taskers/pending-verification?page=1&limit=20&search=omar&status=deactivated&onboardingStatus=rejected&isElite=true&sort=newest"
             },
             "method": "GET",
             "body": {},
@@ -10673,7 +10683,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"action\": \"approve\",\n  \"reasonCode\": \"underage_applicant\",\n  \"reason\": \"Identity document is unreadable; applicant may resubmit a clearer copy.\"\n}",
+              "raw": "{\n  \"action\": \"reject\",\n  \"reasonCode\": \"incomplete_documentation\",\n  \"reason\": \"Identity document is unreadable; applicant may resubmit a clearer copy.\"\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -10735,7 +10745,7 @@
             "method": "PATCH",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"action\": \"reactivate\",\n  \"reason\": \"Repeated policy violations\"\n}",
+              "raw": "{\n  \"action\": \"ban\",\n  \"reason\": \"Repeated policy violations\"\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -11038,7 +11048,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "gold",
+                  "value": "platinum",
                   "key": "tierCode",
                   "disabled": false,
                   "description": {
@@ -11106,7 +11116,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "gold",
+                  "value": "platinum",
                   "key": "tierCode",
                   "disabled": false,
                   "description": {
@@ -11130,7 +11140,7 @@
             "method": "PUT",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"benefits\": [\n    {\n      \"code\": \"tier_commission_policy\",\n      \"name\": \"Reduced Platform Fee\",\n      \"description\": \"string\",\n      \"displayValue\": \"10%\",\n      \"metadata\": {\n        \"key_0\": 1621,\n        \"key_1\": \"string\"\n      },\n      \"isActive\": true,\n      \"sortOrder\": 0,\n      \"translations\": [\n        {\n          \"locale\": \"ary\",\n          \"name\": \"تنظيف المنزل\",\n          \"description\": \"خدمات تنظيف منزلية احترافية.\",\n          \"displayValue\": \"10%\"\n        },\n        {\n          \"locale\": \"ary\",\n          \"name\": \"تنظيف المنزل\",\n          \"description\": \"خدمات تنظيف منزلية احترافية.\",\n          \"displayValue\": \"10%\"\n        }\n      ]\n    },\n    {\n      \"code\": \"tier_commission_policy\",\n      \"name\": \"Reduced Platform Fee\",\n      \"description\": \"string\",\n      \"displayValue\": \"10%\",\n      \"metadata\": {\n        \"key_0\": 9249.616355148048,\n        \"key_1\": 7067.351446171934\n      },\n      \"isActive\": true,\n      \"sortOrder\": 0,\n      \"translations\": [\n        {\n          \"locale\": \"ary\",\n          \"name\": \"تنظيف المنزل\",\n          \"description\": \"خدمات تنظيف منزلية احترافية.\",\n          \"displayValue\": \"10%\"\n        },\n        {\n          \"locale\": \"ary\",\n          \"name\": \"تنظيف المنزل\",\n          \"description\": \"خدمات تنظيف منزلية احترافية.\",\n          \"displayValue\": \"10%\"\n        }\n      ]\n    }\n  ]\n}",
+              "raw": "{\n  \"benefits\": [\n    {\n      \"code\": \"tier_commission_policy\",\n      \"name\": \"Reduced Platform Fee\",\n      \"description\": \"string\",\n      \"displayValue\": \"10%\",\n      \"metadata\": {\n        \"key_0\": \"string\"\n      },\n      \"isActive\": true,\n      \"sortOrder\": 0,\n      \"translations\": [\n        {\n          \"locale\": \"ary\",\n          \"name\": \"تنظيف المنزل\",\n          \"description\": \"خدمات تنظيف منزلية احترافية.\",\n          \"displayValue\": \"10%\"\n        },\n        {\n          \"locale\": \"ary\",\n          \"name\": \"تنظيف المنزل\",\n          \"description\": \"خدمات تنظيف منزلية احترافية.\",\n          \"displayValue\": \"10%\"\n        }\n      ]\n    },\n    {\n      \"code\": \"tier_commission_policy\",\n      \"name\": \"Reduced Platform Fee\",\n      \"description\": \"string\",\n      \"displayValue\": \"10%\",\n      \"metadata\": {\n        \"key_0\": 348.5098597867231\n      },\n      \"isActive\": true,\n      \"sortOrder\": 0,\n      \"translations\": [\n        {\n          \"locale\": \"ary\",\n          \"name\": \"تنظيف المنزل\",\n          \"description\": \"خدمات تنظيف منزلية احترافية.\",\n          \"displayValue\": \"10%\"\n        },\n        {\n          \"locale\": \"ary\",\n          \"name\": \"تنظيف المنزل\",\n          \"description\": \"خدمات تنظيف منزلية احترافية.\",\n          \"displayValue\": \"10%\"\n        }\n      ]\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -11183,7 +11193,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"reliability_pro\",\n  \"name\": \"Reliability Pro\",\n  \"tier\": \"platinum\",\n  \"description\": \"Recognizes strong reliability.\",\n  \"assetUrl\": \"https://res.cloudinary.com/.../badge.png\",\n  \"criteria\": {\n    \"key_0\": 2207,\n    \"key_1\": 5125\n  },\n  \"isActive\": true,\n  \"translations\": [\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    },\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    }\n  ]\n}",
+              "raw": "{\n  \"code\": \"reliability_pro\",\n  \"name\": \"Reliability Pro\",\n  \"tier\": \"diamond\",\n  \"description\": \"Recognizes strong reliability.\",\n  \"assetUrl\": \"https://res.cloudinary.com/.../badge.png\",\n  \"criteria\": {\n    \"key_0\": true\n  },\n  \"isActive\": true,\n  \"translations\": [\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    },\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -11249,7 +11259,7 @@
             "method": "PATCH",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"reliability_pro\",\n  \"name\": \"Reliability Pro\",\n  \"tier\": \"gold\",\n  \"description\": \"Recognizes strong reliability.\",\n  \"assetUrl\": \"https://res.cloudinary.com/.../badge.png\",\n  \"criteria\": {\n    \"key_0\": \"string\",\n    \"key_1\": \"string\",\n    \"key_2\": \"string\"\n  },\n  \"isActive\": true,\n  \"translations\": [\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    },\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    }\n  ]\n}",
+              "raw": "{\n  \"code\": \"reliability_pro\",\n  \"name\": \"Reliability Pro\",\n  \"tier\": \"gold\",\n  \"description\": \"Recognizes strong reliability.\",\n  \"assetUrl\": \"https://res.cloudinary.com/.../badge.png\",\n  \"criteria\": {\n    \"key_0\": \"string\",\n    \"key_1\": false\n  },\n  \"isActive\": true,\n  \"translations\": [\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    },\n    {\n      \"locale\": \"ary\",\n      \"name\": \"تنظيف المنزل\",\n      \"description\": \"خدمات تنظيف منزلية احترافية.\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -11568,7 +11578,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "7192.815647091926",
+                  "value": "83.15580798057276",
                   "key": "taskerId",
                   "disabled": false,
                   "description": {
@@ -11592,7 +11602,7 @@
             "method": "PATCH",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tier\": \"platinum\",\n  \"reason\": \"Manual correction after compliance review.\"\n}",
+              "raw": "{\n  \"tier\": \"standard\",\n  \"reason\": \"Manual correction after compliance review.\"\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -11634,7 +11644,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "7192.815647091926",
+                  "value": "83.15580798057276",
                   "key": "taskerId",
                   "disabled": false,
                   "description": {
@@ -11697,7 +11707,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "7192.815647091926",
+                  "value": "83.15580798057276",
                   "key": "taskerId",
                   "disabled": false,
                   "description": {
@@ -11771,7 +11781,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "7192.815647091926",
+                  "value": "83.15580798057276",
                   "key": "taskerId",
                   "disabled": false,
                   "description": {
@@ -11869,7 +11879,7 @@
                     "type": "text/plain"
                   },
                   "key": "serviceId",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -11878,7 +11888,7 @@
                     "type": "text/plain"
                   },
                   "key": "customerId",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -11887,7 +11897,7 @@
                     "type": "text/plain"
                   },
                   "key": "taskerId",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -11935,7 +11945,7 @@
                   "value": "json"
                 }
               ],
-              "raw": "{{baseUrl}}/api/admin/bookings?page=1&limit=20&view=all&search=B-8291, plumbing, Alice or Robert&serviceId=8779.558717926848&customerId=8779.558717926848&taskerId=8779.558717926848&paymentStatus=all&from=2026-08-01&to=2026-08-31&sort=newest&format=json"
+              "raw": "{{baseUrl}}/api/admin/bookings?page=1&limit=20&view=all&search=B-8291, plumbing, Alice or Robert&serviceId=8508.393635384893&customerId=8508.393635384893&taskerId=8508.393635384893&paymentStatus=all&from=2026-08-01&to=2026-08-31&sort=newest&format=json"
             },
             "header": [
               {
@@ -12141,7 +12151,7 @@
                     "type": "text/plain"
                   },
                   "key": "assignedAdminId",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -12171,7 +12181,7 @@
                   "value": "newest"
                 }
               ],
-              "raw": "{{baseUrl}}/api/admin/disputes?page=1&limit=20&view=open&search=DSP-ABC123, B-4811, incomplete work, Mike&priority=all&assignedAdminId=8779.558717926848&from=2026-08-01&to=2026-08-31&sort=newest"
+              "raw": "{{baseUrl}}/api/admin/disputes?page=1&limit=20&view=open&search=DSP-ABC123, B-4811, incomplete work, Mike&priority=all&assignedAdminId=8508.393635384893&from=2026-08-01&to=2026-08-31&sort=newest"
             },
             "header": [
               {
@@ -12691,7 +12701,7 @@
                     "type": "text/plain"
                   },
                   "key": "status",
-                  "value": "in_progress"
+                  "value": "escalated"
                 },
                 {
                   "disabled": false,
@@ -12700,7 +12710,7 @@
                     "type": "text/plain"
                   },
                   "key": "priority",
-                  "value": "normal"
+                  "value": "low"
                 },
                 {
                   "disabled": false,
@@ -12709,7 +12719,7 @@
                     "type": "text/plain"
                   },
                   "key": "category",
-                  "value": "verification"
+                  "value": "payment"
                 },
                 {
                   "disabled": false,
@@ -12775,7 +12785,7 @@
                   "value": "json"
                 }
               ],
-              "raw": "{{baseUrl}}/api/admin/support?view=support_tickets&status=in_progress&priority=normal&category=verification&assignedAdminId=14&search=refund&from=2026-08-01&to=2026-08-31&page=1&limit=30&format=json"
+              "raw": "{{baseUrl}}/api/admin/support?view=support_tickets&status=escalated&priority=low&category=payment&assignedAdminId=14&search=refund&from=2026-08-01&to=2026-08-31&page=1&limit=30&format=json"
             },
             "header": [
               {
@@ -12818,7 +12828,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -12900,7 +12910,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -12953,7 +12963,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -13018,7 +13028,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -13084,7 +13094,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "8779.558717926848",
+                  "value": "8508.393635384893",
                   "key": "id",
                   "disabled": false,
                   "description": {
@@ -13235,7 +13245,7 @@
               "variable": [
                 {
                   "type": "any",
-                  "value": "7192.815647091926",
+                  "value": "83.15580798057276",
                   "key": "serviceId",
                   "disabled": false,
                   "description": {
@@ -13314,7 +13324,7 @@
                     "type": "text/plain"
                   },
                   "key": "page",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -13323,10 +13333,10 @@
                     "type": "text/plain"
                   },
                   "key": "limit",
-                  "value": "66.00521184147173"
+                  "value": "22.81621614659245"
                 }
               ],
-              "raw": "{{baseUrl}}/api/admin/content?status=all&search=string&page=8779.558717926848&limit=66.00521184147173"
+              "raw": "{{baseUrl}}/api/admin/content?status=all&search=string&page=8508.393635384893&limit=22.81621614659245"
             },
             "header": [
               {
@@ -13379,7 +13389,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"slug\": \"string\",\n  \"metadata\": {\n    \"key_0\": false\n  },\n  \"pageType\": \"string\",\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"seoTitle\": \"string\",\n  \"seoDescription\": \"string\",\n  \"translations\": [\n    {\n      \"locale\": \"xxg-i25-9wx12-x70cqsn\",\n      \"title\": \"string\",\n      \"description\": \"s\",\n      \"seoTitle\": \"string\",\n      \"seoDescription\": \"string\"\n    },\n    {\n      \"locale\": \"lp-c8zq9y-1czyegv-k8o9y-h51aq-kwul6-8ergcq-mev2zn-uv-hux-iei\",\n      \"title\": \"string\",\n      \"description\": \"string\",\n      \"seoTitle\": \"string\",\n      \"seoDescription\": \"string\"\n    }\n  ],\n  \"blocks\": [\n    {\n      \"key\": \"me\",\n      \"type\": \"string\",\n      \"payload\": {\n        \"key_0\": true\n      },\n      \"sortOrder\": 94502.76758209382,\n      \"isActive\": true,\n      \"translations\": [\n        {\n          \"locale\": \"uyn-ou30gp1-s0vl9-t6ipdx-ncbrw-8qx-fewn-58jtm-p3f\",\n          \"payload\": {\n            \"key_0\": true\n          },\n          \"title\": \"string\",\n          \"subtitle\": \"string\",\n          \"body\": \"string\"\n        },\n        {\n          \"locale\": \"kiv-lqku3q-2tdkuec6-er82q-hgl-rwn3h-cr-uep-9urotkz-llau8-u79\",\n          \"payload\": {\n            \"key_0\": 9513\n          },\n          \"title\": \"string\",\n          \"subtitle\": \"string\",\n          \"body\": \"string\"\n        }\n      ]\n    },\n    {\n      \"key\": \"LHa\",\n      \"type\": \"string\",\n      \"payload\": {\n        \"key_0\": \"string\"\n      },\n      \"sortOrder\": 33345.349130768365,\n      \"isActive\": false,\n      \"translations\": [\n        {\n          \"locale\": \"zf-g2e-yin-j80d3jwj-8wqe-lzes-cc4jubf3-qkb12-1wqm-23-e1\",\n          \"payload\": {\n            \"key_0\": 6008.053019490587\n          },\n          \"title\": \"string\",\n          \"subtitle\": \"string\",\n          \"body\": \"string\"\n        },\n        {\n          \"locale\": \"scz-90t7n-aso9wy-dja9az1-8iu-hfhnre-1m5bn44y-ivff\",\n          \"payload\": {\n            \"key_0\": \"string\"\n          },\n          \"title\": \"string\",\n          \"subtitle\": \"string\",\n          \"body\": \"string\"\n        }\n      ]\n    }\n  ]\n}",
+              "raw": "{\n  \"slug\": \"string\",\n  \"metadata\": {\n    \"key_0\": true,\n    \"key_1\": \"string\"\n  },\n  \"pageType\": \"string\",\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"seoTitle\": \"string\",\n  \"seoDescription\": \"string\",\n  \"translations\": [\n    {\n      \"locale\": \"fky-5yfc-c0avn-3a18x-2zvezg-3o0111a3\",\n      \"title\": \"string\",\n      \"description\": \"string\",\n      \"seoTitle\": \"string\",\n      \"seoDescription\": \"string\"\n    },\n    {\n      \"locale\": \"mw-84v-op0-b7lbnd\",\n      \"title\": \"string\",\n      \"description\": \"string\",\n      \"seoTitle\": \"string\",\n      \"seoDescription\": \"string\"\n    }\n  ],\n  \"blocks\": [\n    {\n      \"key\": \"0n\",\n      \"type\": \"string\",\n      \"payload\": {\n        \"key_0\": 2032.8735990032799\n      },\n      \"sortOrder\": 38495.71491800916,\n      \"isActive\": true,\n      \"translations\": [\n        {\n          \"locale\": \"zp-yhfarc-7z-49g-8fdvdv-btr98dnd\",\n          \"payload\": {\n            \"key_0\": \"string\",\n            \"key_1\": 2261,\n            \"key_2\": false\n          },\n          \"title\": \"string\",\n          \"subtitle\": \"string\",\n          \"body\": \"string\"\n        },\n        {\n          \"locale\": \"ni-wed1v-asfr3b-ed9c-i0-eq51-5pm\",\n          \"payload\": {\n            \"key_0\": \"string\",\n            \"key_1\": 7477,\n            \"key_2\": 2\n          },\n          \"title\": \"string\",\n          \"subtitle\": \"string\",\n          \"body\": \"string\"\n        }\n      ]\n    },\n    {\n      \"key\": \"yGufPSM-wOi\",\n      \"type\": \"string\",\n      \"payload\": {\n        \"key_0\": \"string\",\n        \"key_1\": 6081\n      },\n      \"sortOrder\": 95536.46647821298,\n      \"isActive\": true,\n      \"translations\": [\n        {\n          \"locale\": \"unu-jazfz-4vpq-r8rg1lig-3v82ja-dh-11nh1-6jq13jt-n34l-l6kbf-4o51\",\n          \"payload\": {\n            \"key_0\": 9729.040960917488,\n            \"key_1\": \"string\",\n            \"key_2\": true\n          },\n          \"title\": \"string\",\n          \"subtitle\": \"string\",\n          \"body\": \"string\"\n        },\n        {\n          \"locale\": \"pme-a5dw1-bjxan3-jfwci7-2ji6sjx9\",\n          \"payload\": {\n            \"key_0\": 6685.959245280499,\n            \"key_1\": true\n          },\n          \"title\": \"string\",\n          \"subtitle\": \"string\",\n          \"body\": \"string\"\n        }\n      ]\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -13494,7 +13504,7 @@
             "method": "PATCH",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"metadata\": {\n    \"key_0\": true,\n    \"key_1\": \"string\",\n    \"key_2\": false\n  },\n  \"slug\": \"string\",\n  \"pageType\": \"string\",\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"seoTitle\": \"string\",\n  \"seoDescription\": \"string\",\n  \"translations\": [\n    {\n      \"locale\": \"pd-qzlolqd-us65d-wyu7rlb\",\n      \"title\": \"string\",\n      \"description\": \"string\",\n      \"seoTitle\": \"string\",\n      \"seoDescription\": \"string\"\n    },\n    {\n      \"locale\": \"ez-aru7yz-wtc6ls-7fylwa1d-lk-xa-i363\",\n      \"title\": \"string\",\n      \"description\": \"string\",\n      \"seoTitle\": \"string\",\n      \"seoDescription\": \"string\"\n    }\n  ]\n}",
+              "raw": "{\n  \"metadata\": {\n    \"key_0\": \"string\",\n    \"key_1\": \"string\"\n  },\n  \"slug\": \"string\",\n  \"pageType\": \"string\",\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"seoTitle\": \"string\",\n  \"seoDescription\": \"string\",\n  \"translations\": [\n    {\n      \"locale\": \"qz-702zlf5x-fyt0k6-3xa9c-uuze1-ujytc\",\n      \"title\": \"string\",\n      \"description\": \"string\",\n      \"seoTitle\": \"string\",\n      \"seoDescription\": \"string\"\n    },\n    {\n      \"locale\": \"dpr-nt-lggpr-d492j\",\n      \"title\": \"string\",\n      \"description\": \"string\",\n      \"seoTitle\": \"string\",\n      \"seoDescription\": \"string\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -13708,7 +13718,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"key\": \"CA4q\",\n  \"type\": \"string\",\n  \"payload\": {\n    \"key_0\": false\n  },\n  \"sortOrder\": 36279.711996634775,\n  \"isActive\": true,\n  \"translations\": [\n    {\n      \"locale\": \"ybg-fgh-3qb0mmu0-kkj0ys-fd41tp-dcsq-75zeof\",\n      \"payload\": {\n        \"key_0\": 8283\n      },\n      \"title\": \"string\",\n      \"subtitle\": \"string\",\n      \"body\": \"string\"\n    },\n    {\n      \"locale\": \"ua-bke96y-qtk\",\n      \"payload\": {\n        \"key_0\": \"string\"\n      },\n      \"title\": \"string\",\n      \"subtitle\": \"string\",\n      \"body\": \"string\"\n    }\n  ]\n}",
+              "raw": "{\n  \"key\": \"wH\",\n  \"type\": \"string\",\n  \"payload\": {\n    \"key_0\": \"string\",\n    \"key_1\": 9828.158207557613\n  },\n  \"sortOrder\": 76755.40942144106,\n  \"isActive\": true,\n  \"translations\": [\n    {\n      \"locale\": \"hm-51c843f2-62tcq5-xj-qnlfro-jk-s80y3g-9gcxz-fn\",\n      \"payload\": {\n        \"key_0\": 4877.9646401934015,\n        \"key_1\": 456.4696720553485\n      },\n      \"title\": \"string\",\n      \"subtitle\": \"string\",\n      \"body\": \"string\"\n    },\n    {\n      \"locale\": \"xiq-y5sai-pj4r-jrxl9ih-yj98knv-uwxg-bx8ygex-2kom-0k9\",\n      \"payload\": {\n        \"key_0\": 8081.6880388681775,\n        \"key_1\": 7075.6024241022915\n      },\n      \"title\": \"string\",\n      \"subtitle\": \"string\",\n      \"body\": \"string\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -13784,7 +13794,7 @@
             "method": "PATCH",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"payload\": {\n    \"key_0\": 5537.806803637293\n  },\n  \"type\": \"string\",\n  \"sortOrder\": 50247.516732922806,\n  \"isActive\": false,\n  \"translations\": [\n    {\n      \"locale\": \"zb-rvyyjiwo-8m7km-1d-4a-vc-hh5ezc\",\n      \"payload\": {\n        \"key_0\": 3844.9164170592408\n      },\n      \"title\": \"string\",\n      \"subtitle\": \"string\",\n      \"body\": \"string\"\n    },\n    {\n      \"locale\": \"yw-9av6spx6-bbbi-252-3x-ow5ao86i-o32yog77-fh4vgsx-5qhqf4h-v2ap70-gp\",\n      \"payload\": {\n        \"key_0\": 88,\n        \"key_1\": 2790.838728896785\n      },\n      \"title\": \"string\",\n      \"subtitle\": \"string\",\n      \"body\": \"string\"\n    }\n  ]\n}",
+              "raw": "{\n  \"payload\": {\n    \"key_0\": 5381.600359296696,\n    \"key_1\": 2875.950161647607\n  },\n  \"type\": \"string\",\n  \"sortOrder\": 6589.523136411124,\n  \"isActive\": true,\n  \"translations\": [\n    {\n      \"locale\": \"zfe-do4-y9w-7g8em7l\",\n      \"payload\": {\n        \"key_0\": 9858\n      },\n      \"title\": \"string\",\n      \"subtitle\": \"string\",\n      \"body\": \"string\"\n    },\n    {\n      \"locale\": \"da\",\n      \"payload\": {\n        \"key_0\": true,\n        \"key_1\": 1087,\n        \"key_2\": false\n      },\n      \"title\": \"string\",\n      \"subtitle\": \"string\",\n      \"body\": \"string\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -13901,7 +13911,7 @@
                     "type": "text/plain"
                   },
                   "key": "reviewerId",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -13910,7 +13920,7 @@
                     "type": "text/plain"
                   },
                   "key": "revieweeId",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -13919,7 +13929,7 @@
                     "type": "text/plain"
                   },
                   "key": "rating",
-                  "value": "3.8952719506951006"
+                  "value": "3.1472337872426612"
                 },
                 {
                   "disabled": false,
@@ -13937,7 +13947,7 @@
                     "type": "text/plain"
                   },
                   "key": "page",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -13946,10 +13956,10 @@
                     "type": "text/plain"
                   },
                   "key": "limit",
-                  "value": "66.00521184147173"
+                  "value": "22.81621614659245"
                 }
               ],
-              "raw": "{{baseUrl}}/api/admin/reviews?status=all&reviewerId=8779.558717926848&revieweeId=8779.558717926848&rating=3.8952719506951006&search=string&page=8779.558717926848&limit=66.00521184147173"
+              "raw": "{{baseUrl}}/api/admin/reviews?status=all&reviewerId=8508.393635384893&revieweeId=8508.393635384893&rating=3.1472337872426612&search=string&page=8508.393635384893&limit=22.81621614659245"
             },
             "method": "GET",
             "body": {},
@@ -14314,7 +14324,7 @@
             "method": "PATCH",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"siteName\": \"string\",\n  \"defaultTitle\": \"string\",\n  \"defaultDescription\": \"string\",\n  \"defaultCanonicalBaseUrl\": \"string\",\n  \"defaultOgImageUrl\": \"string\",\n  \"defaultOgImageAlt\": \"string\",\n  \"twitterCard\": \"summary\",\n  \"twitterHandle\": \"string\",\n  \"defaultRobotsIndex\": false,\n  \"defaultRobotsFollow\": false,\n  \"organizationSchema\": {\n    \"key_0\": true,\n    \"key_1\": true\n  },\n  \"defaultStructuredData\": {\n    \"key_0\": 3139.7020744773263,\n    \"key_1\": \"string\"\n  },\n  \"robotsRules\": [\n    \"string\",\n    \"string\"\n  ],\n  \"sitemapEnabled\": true,\n  \"includeServices\": true,\n  \"includePublicTaskers\": true,\n  \"servicePathTemplate\": \"string\",\n  \"taskerPathTemplate\": \"string\"\n}",
+              "raw": "{\n  \"siteName\": \"string\",\n  \"defaultTitle\": \"string\",\n  \"defaultDescription\": \"string\",\n  \"defaultCanonicalBaseUrl\": \"string\",\n  \"defaultOgImageUrl\": \"string\",\n  \"defaultOgImageAlt\": \"string\",\n  \"twitterCard\": \"player\",\n  \"twitterHandle\": \"string\",\n  \"defaultRobotsIndex\": false,\n  \"defaultRobotsFollow\": false,\n  \"organizationSchema\": {\n    \"key_0\": 9536.59187393925,\n    \"key_1\": true\n  },\n  \"defaultStructuredData\": {\n    \"key_0\": 9302.832862321766,\n    \"key_1\": \"string\",\n    \"key_2\": \"string\"\n  },\n  \"robotsRules\": [\n    \"string\",\n    \"string\"\n  ],\n  \"sitemapEnabled\": false,\n  \"includeServices\": false,\n  \"includePublicTaskers\": true,\n  \"servicePathTemplate\": \"string\",\n  \"taskerPathTemplate\": \"string\"\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -14377,7 +14387,7 @@
                     "type": "text/plain"
                   },
                   "key": "page",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -14386,10 +14396,10 @@
                     "type": "text/plain"
                   },
                   "key": "limit",
-                  "value": "66.00521184147173"
+                  "value": "22.81621614659245"
                 }
               ],
-              "raw": "{{baseUrl}}/api/admin/seo/pages?search=string&locale=string&page=8779.558717926848&limit=66.00521184147173"
+              "raw": "{{baseUrl}}/api/admin/seo/pages?search=string&locale=string&page=8508.393635384893&limit=22.81621614659245"
             },
             "method": "GET",
             "body": {},
@@ -14433,7 +14443,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"path\": \"string\",\n  \"locale\": \"string\",\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"canonicalUrl\": \"string\",\n  \"robotsIndex\": true,\n  \"robotsFollow\": true,\n  \"ogTitle\": \"string\",\n  \"ogDescription\": \"string\",\n  \"ogImageUrl\": \"string\",\n  \"ogImageAlt\": \"string\",\n  \"twitterCard\": \"summary_large_image\",\n  \"twitterTitle\": \"string\",\n  \"twitterDescription\": \"string\",\n  \"twitterImageUrl\": \"string\",\n  \"keywords\": [\n    \"string\",\n    \"string\"\n  ],\n  \"structuredData\": {\n    \"key_0\": 2750\n  },\n  \"alternates\": {\n    \"key_0\": 959.4530411098523\n  },\n  \"priority\": 0.8410652760903345,\n  \"changeFrequency\": \"monthly\",\n  \"isActive\": false\n}",
+              "raw": "{\n  \"path\": \"string\",\n  \"locale\": \"string\",\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"canonicalUrl\": \"string\",\n  \"robotsIndex\": false,\n  \"robotsFollow\": true,\n  \"ogTitle\": \"string\",\n  \"ogDescription\": \"string\",\n  \"ogImageUrl\": \"string\",\n  \"ogImageAlt\": \"string\",\n  \"twitterCard\": \"summary\",\n  \"twitterTitle\": \"string\",\n  \"twitterDescription\": \"string\",\n  \"twitterImageUrl\": \"string\",\n  \"keywords\": [\n    \"string\",\n    \"string\"\n  ],\n  \"structuredData\": {\n    \"key_0\": 4489,\n    \"key_1\": 7223.2347299251405\n  },\n  \"alternates\": {\n    \"key_0\": true\n  },\n  \"priority\": 0.3739289603342586,\n  \"changeFrequency\": \"never\",\n  \"isActive\": true\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -14606,7 +14616,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fromPath\": \"string\",\n  \"toPath\": \"string\",\n  \"statusCode\": 308,\n  \"preserveQuery\": false,\n  \"isActive\": false,\n  \"reason\": \"string\"\n}",
+              "raw": "{\n  \"fromPath\": \"string\",\n  \"toPath\": \"string\",\n  \"statusCode\": 301,\n  \"preserveQuery\": false,\n  \"isActive\": false,\n  \"reason\": \"string\"\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -14733,7 +14743,7 @@
             "method": "POST",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"path\": \"string\",\n  \"locale\": \"string\",\n  \"priority\": 0.05306242999501043,\n  \"changeFrequency\": \"never\",\n  \"lastModifiedAt\": \"string\",\n  \"isActive\": false\n}",
+              "raw": "{\n  \"path\": \"string\",\n  \"locale\": \"string\",\n  \"priority\": 0.6048326113905809,\n  \"changeFrequency\": \"weekly\",\n  \"lastModifiedAt\": \"string\",\n  \"isActive\": true\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -15157,7 +15167,7 @@
                     "type": "text/plain"
                   },
                   "key": "status",
-                  "value": "revoked"
+                  "value": "claimed"
                 },
                 {
                   "disabled": false,
@@ -15166,7 +15176,7 @@
                     "type": "text/plain"
                   },
                   "key": "referrerId",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -15175,7 +15185,7 @@
                     "type": "text/plain"
                   },
                   "key": "referredUserId",
-                  "value": "8779.558717926848"
+                  "value": "8508.393635384893"
                 },
                 {
                   "disabled": false,
@@ -15196,7 +15206,7 @@
                   "value": "30"
                 }
               ],
-              "raw": "{{baseUrl}}/api/admin/referrals?program=tasker&status=revoked&referrerId=8779.558717926848&referredUserId=8779.558717926848&page=1&limit=30"
+              "raw": "{{baseUrl}}/api/admin/referrals?program=tasker&status=claimed&referrerId=8508.393635384893&referredUserId=8508.393635384893&page=1&limit=30"
             },
             "method": "GET",
             "body": {},
@@ -15366,8 +15376,8 @@
     }
   ],
   "info": {
-    "_postman_id": "latache-v3-34-vercel",
-    "name": "Latache API v3.34.0 - Vercel",
+    "_postman_id": "latache-v3-35-vercel",
+    "name": "Latache API v3.35.0 - Vercel",
     "description": "Generated from the current deployed Latache OpenAPI specification. Base URL: https://latache-backend.vercel.app",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },

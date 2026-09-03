@@ -7,7 +7,7 @@ Latache's OpenAPI document is canonical. In local development it is available at
 
 ## Recommended import
 
-`postman/Latache-API-v3.34.0-Vercel.postman_collection.json` is the current collection, generated from the live OpenAPI document (`/api/docs-json`) served by the deployed backend. Import it together with `postman/Latache-Vercel.postman_environment.json`.
+`postman/Latache-API-v3.35.0-Vercel.postman_collection.json` is the current collection, generated from the live OpenAPI document (`/api/docs-json`) served by the deployed backend. Import it together with `postman/Latache-Vercel.postman_environment.json`.
 
 The collection uses `{{baseUrl}}/api/...`; therefore `baseUrl` is the origin only. The bundled environment points it at:
 
