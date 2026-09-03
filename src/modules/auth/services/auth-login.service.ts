@@ -5,24 +5,28 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { compare } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
 import { AccountStatus } from '../../../common/enums/account-status.enum';
 import { ADMINISTRATIVE_ROLES, UserRole } from '../../../common/enums/user-role.enum';
 import { serializeUser, type PublicUser } from '../../../common/utils/user.util';
-import type { Prisma, User } from '../../../generated/prisma/client';
+import type { Prisma } from '../../../generated/prisma/client';
 import { success, type SuccessEnvelope } from '../auth-response';
 import type { LoginDto, RefreshTokenDto } from '../dto';
 import { AuthRepository } from '../repositories/auth.repository';
+import { AuthLockoutService } from './auth-lockout.service';
 import { AuthRoleService } from './auth-role.service';
 import { AuthTokenService, type AuthTokens, type SessionMetadata } from './auth-token.service';
 
 @Injectable()
 export class AuthLoginService {
+  private dummyPasswordHash?: Promise<string>;
+
   constructor(
     private readonly repository: AuthRepository,
     private readonly tokens: AuthTokenService,
     private readonly roles: AuthRoleService,
     private readonly config: ConfigService,
+    private readonly lockout: AuthLockoutService,
   ) {}
 
   async login(
@@ -30,13 +34,19 @@ export class AuthLoginService {
     metadata: SessionMetadata,
   ): Promise<SuccessEnvelope<{ user: PublicUser; tokens: AuthTokens }>> {
     const user = await this.repository.findUserByEmail(dto.email);
-    if (!user?.password) {
+    // Always run one bcrypt compare - against the real hash, or a dummy one of
+    // the same cost when the account/password doesn't exist - so response
+    // timing cannot be used to tell whether an email is registered.
+    const passwordMatches = await compare(
+      dto.password,
+      user?.password ?? (await this.getDummyPasswordHash()),
+    );
+
+    if (!user?.password || this.lockout.isLocked(user)) {
       throw new UnauthorizedException('Invalid email or password');
     }
-    this.assertLocalLoginNotLocked(user);
-
-    if (!(await compare(dto.password, user.password))) {
-      await this.recordFailedLogin(user.id);
+    if (!passwordMatches) {
+      await this.lockout.recordFailedAttempt(user.id);
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -152,40 +162,12 @@ export class AuthLoginService {
     );
   }
 
-  private assertLocalLoginNotLocked(user: User): void {
-    if (!user.loginLockedUntil || user.loginLockedUntil.getTime() <= Date.now()) return;
-    // Keep the response indistinguishable from a normal credential failure so
-    // lockout state cannot be used to confirm that an email is registered.
-    throw new UnauthorizedException('Invalid email or password');
-  }
-
-  private async recordFailedLogin(userId: number): Promise<void> {
-    const maxAttempts = this.config.get<number>('auth.maxFailedLoginAttempts', 5);
-    const lockMinutes = this.config.get<number>('auth.loginLockMinutes', 15);
-    const now = new Date();
-    const failureWindowStart = now.getTime() - lockMinutes * 60_000;
-
-    await this.repository.transaction(async (transaction: Prisma.TransactionClient) => {
-      const user = await this.repository.findUserByIdForUpdate(userId, transaction);
-      if (!user || user.deletedAt) return;
-
-      const recentFailure =
-        user.lastFailedLoginAt && user.lastFailedLoginAt.getTime() >= failureWindowStart;
-      const currentLockActive =
-        user.loginLockedUntil && user.loginLockedUntil.getTime() > now.getTime();
-      const attempts = (recentFailure && !currentLockActive ? user.loginFailedAttempts : 0) + 1;
-      const shouldLock = attempts >= maxAttempts;
-
-      await transaction.user.update({
-        where: { id: user.id },
-        data: {
-          loginFailedAttempts: attempts,
-          lastFailedLoginAt: now,
-          loginLockedUntil: shouldLock
-            ? new Date(now.getTime() + lockMinutes * 60_000)
-            : null,
-        },
-      });
-    });
+  /** Memoized per-instance so repeated failed logins don't re-hash on every request. */
+  private getDummyPasswordHash(): Promise<string> {
+    if (!this.dummyPasswordHash) {
+      const rounds = this.config.get<number>('auth.bcryptRounds', 12);
+      this.dummyPasswordHash = hash('latache-timing-safety-dummy-password', rounds);
+    }
+    return this.dummyPasswordHash;
   }
 }

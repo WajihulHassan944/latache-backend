@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { IsOptional, IsString, IsUrl, Length, Matches, MaxLength } from 'class-validator';
 import { trim } from './common-auth.dto';
 
 export class UpdateProfileDto {
@@ -42,6 +42,7 @@ export class UpdateProfileDto {
   @Transform(trim)
   @IsString()
   @MaxLength(2048)
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   profilePicture?: string;
 
   @ApiPropertyOptional({ example: 'Available on weekends.' })

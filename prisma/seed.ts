@@ -73,6 +73,12 @@ const services = [
     slug: 'cleaning',
     icon: 'Sparkles',
   },
+  {
+    name: 'Handyman',
+    description: 'General fixes and multi-skill home tasks',
+    slug: 'handyman',
+    icon: 'FileText',
+  },
 ] as const;
 
 const seedSeo = async (): Promise<void> => {

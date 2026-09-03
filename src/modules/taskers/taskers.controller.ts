@@ -119,6 +119,47 @@ export class TaskersController {
 
   @Get()
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Search/list active Taskers, optionally filtered by nearby location',
+    description:
+      'Send lat and lng together to restrict results to Taskers whose configured service area covers that point: only Taskers whose distance from lat/lng is within both radius (default 20 km) and their own configured service radius are returned. When lat/lng are provided, every result also includes distanceKm from that point, and sort=nearest orders by distance ascending. Combine with serviceSlug, date/startTime/endTime availability, minPrice/maxPrice, isElite, search, and sort for a full discovery search.',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'lat was provided without lng (or vice versa), sort=nearest was used without lat/lng, minPrice is greater than maxPrice, or a field fails validation.',
+  })
+  @ApiOkResponse({
+    description: 'Paginated Tasker results.',
+    schema: {
+      example: {
+        items: [
+          {
+            id: '42',
+            name: 'Sarah Ahmed',
+            avatar: 'https://res.cloudinary.com/demo/image/upload/v1/avatar.webp',
+            rating: 4.8,
+            reviewsCount: 37,
+            pricePerHour: 15,
+            bio: 'Experienced house cleaner serving Casablanca.',
+            completedTasks: 52,
+            yearsOfExperience: 5,
+            vehicles: [],
+            serviceSlug: 'cleaning',
+            workImages: [],
+            isElite: true,
+            eliteTier: { code: 'gold', rank: 2 },
+            eliteProfileBadgeVisible: true,
+            distanceKm: 2.3,
+            location: { lat: 33.5731, lng: -7.5898, city: 'Casablanca', area: 'Maarif', serviceRadiusKm: 15 },
+          },
+        ],
+        page: 1,
+        limit: 9,
+        totalItems: 1,
+        totalPages: 1,
+      },
+    },
+  })
   getTaskers(@Query() query: ListTaskersQueryDto, @RequestLocale() locale: string) {
     return this.taskers.list(query, locale);
   }

@@ -271,6 +271,9 @@ export class TaskersService {
       if (error instanceof Error && error.message === 'INVALID_PRICE_RANGE') {
         throw new BadRequestException('minPrice must be less than or equal to maxPrice');
       }
+      if (error instanceof Error && error.message === 'NEAREST_SORT_REQUIRES_LOCATION') {
+        throw new BadRequestException('sort=nearest requires both lat and lng');
+      }
       throw error;
     }
   }

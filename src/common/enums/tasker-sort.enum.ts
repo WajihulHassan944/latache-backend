@@ -3,4 +3,5 @@ export enum TaskerSort {
   PriceDescending = 'price_desc',
   RatingDescending = 'rating_desc',
   CompletedDescending = 'completed_desc',
+  Nearest = 'nearest',
 }

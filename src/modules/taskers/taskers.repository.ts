@@ -34,6 +34,7 @@ interface TaskerListRow {
   submittedAt: Date | null;
   hourlyRate: Numeric;
   serviceSlug: string | null;
+  distanceKm: Numeric | null;
   eliteRank: number;
   eliteSearchRank: number;
   eliteTierCode: string | null;
@@ -79,6 +80,9 @@ export class TaskersRepository {
       query.minPrice > query.maxPrice
     ) {
       throw new Error('INVALID_PRICE_RANGE');
+    }
+    if (query.sort === TaskerSort.Nearest && (query.lat === undefined || query.lng === undefined)) {
+      throw new Error('NEAREST_SORT_REQUIRES_LOCATION');
     }
 
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 9);
@@ -186,6 +190,11 @@ export class TaskersRepository {
           ORDER BY us."userId", us."hourlyRate" ASC, us."id" ASC
         `;
 
+    const distanceExpr =
+      query.lat !== undefined && query.lng !== undefined
+        ? this.distanceSql(query.lat, query.lng)
+        : Prisma.sql`NULL::float8`;
+
     const cte = Prisma.sql`
       WITH representative AS (${representative}),
       eligible AS (
@@ -195,6 +204,7 @@ export class TaskersRepository {
           u."isElite", u."serviceAreaLat", u."serviceAreaLng", u."serviceAreaRadiusKm",
           u."serviceAreaCity", u."serviceAreaArea", u."submittedAt",
           representative."hourlyRate", representative."serviceSlug",
+          ${distanceExpr} AS "distanceKm",
           COALESCE(et."rank", 0)::int AS "eliteRank",
           CASE WHEN EXISTS (
             SELECT 1 FROM "EliteBenefits" eb
@@ -217,6 +227,7 @@ export class TaskersRepository {
       [TaskerSort.PriceDescending]: '"hourlyRate" DESC, "eliteSearchRank" DESC, "rating" DESC, "id" ASC',
       [TaskerSort.RatingDescending]: '"rating" DESC, "eliteSearchRank" DESC, "completedTasks" DESC, "id" ASC',
       [TaskerSort.CompletedDescending]: '"completedTasks" DESC, "eliteSearchRank" DESC, "rating" DESC, "id" ASC',
+      [TaskerSort.Nearest]: '"distanceKm" ASC NULLS LAST, "eliteSearchRank" DESC, "rating" DESC, "id" ASC',
       default: '"eliteSearchRank" DESC, "rating" DESC, "completedTasks" DESC, "submittedAt" DESC NULLS LAST, "id" DESC',
     };
     const selectedOrder = query.sort ? orderBy[query.sort] : orderBy.default;
@@ -252,6 +263,7 @@ export class TaskersRepository {
         isElite: row.isElite,
         eliteTier: row.eliteTierCode ? { code: row.eliteTierCode, rank: row.eliteRank } : null,
         eliteProfileBadgeVisible: Boolean(row.eliteProfileBadgeVisible),
+        distanceKm: row.distanceKm === null ? null : Math.round(Number(row.distanceKm) * 10) / 10,
         location: formatLocation({
           lat: numberOrNull(row.serviceAreaLat),
           lng: numberOrNull(row.serviceAreaLng),

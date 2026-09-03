@@ -20,6 +20,7 @@ import { AuthRegistrationService } from './services/auth-registration.service';
 import { AuthSessionService } from './services/auth-session.service';
 import { AuthTokenService } from './services/auth-token.service';
 import { AuthCodeService } from './services/auth-code.service';
+import { AuthLockoutService } from './services/auth-lockout.service';
 import { AuthRoleService } from './services/auth-role.service';
 import { OidcJwtVerifierService } from './services/oidc-jwt-verifier.service';
 import { SocialAuthProviderService } from './services/social-auth-provider.service';
@@ -37,6 +38,7 @@ import { SocialAuthService } from './services/social-auth.service';
     AuthSessionService,
     AuthTokenService,
     AuthCodeService,
+    AuthLockoutService,
     AuthRoleService,
     OidcJwtVerifierService,
     SocialAuthProviderService,

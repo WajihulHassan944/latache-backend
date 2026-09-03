@@ -35,6 +35,7 @@ import type {
 import { AuthRepository } from '../repositories/auth.repository';
 import { LocaleService } from '../../localization/locale.service';
 import { AuthCodeService } from './auth-code.service';
+import { AuthLockoutService } from './auth-lockout.service';
 import { AuthTokenService, type AuthTokens, type SessionMetadata } from './auth-token.service';
 
 export interface RegistrationData {
@@ -55,6 +56,7 @@ export class AuthRegistrationService {
     private readonly audit: AdminAuditService,
     private readonly locales: LocaleService,
     private readonly authCodes: AuthCodeService,
+    private readonly lockout: AuthLockoutService,
   ) {}
 
   async registerCustomer(
@@ -564,16 +566,22 @@ export class AuthRegistrationService {
   }
 
   private async assertExistingIdentityCredentials(user: User, password: string): Promise<void> {
-    if (user.deletedAt || !user.password || !(await compare(password, user.password))) {
-      throw new UnauthorizedException('An account with this email already exists; authenticate with the existing account to add another role.');
+    const credentialError = () =>
+      new UnauthorizedException(
+        'An account with this email already exists; authenticate with the existing account to add another role.',
+      );
+    // Share the same lockout check and failed-attempt bookkeeping as
+    // POST /auth/login: without this, an attacker can grind passwords against
+    // a known verified email through the registration endpoint instead,
+    // never triggering the login lockout that protects the same credential.
+    if (user.deletedAt || !user.password || this.lockout.isLocked(user)) {
+      throw credentialError();
+    }
+    if (!(await compare(password, user.password))) {
+      await this.lockout.recordFailedAttempt(user.id);
+      throw credentialError();
     }
     this.assertIdentityUsableForRoleEnrollment(user);
-    if (user.loginLockedUntil && user.loginLockedUntil.getTime() > Date.now()) {
-      throw new ForbiddenException({
-        code: 'LOCAL_LOGIN_TEMPORARILY_LOCKED',
-        message: 'The existing identity is temporarily locked after failed login attempts.',
-      });
-    }
   }
 
   private assertIdentityUsableForRoleEnrollment(user: User): void {
