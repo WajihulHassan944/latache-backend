@@ -7,15 +7,15 @@ Latache's OpenAPI document is canonical. In local development it is available at
 
 ## Recommended import
 
-`postman/Latache-v3.21.1.postman_collection.json` remains the **last validated historical snapshot** included with the source release. It does not contain the new v3.22.0 participant dispute action/satisfaction operations. Import it only as a baseline, together with `postman/Latache-Local.postman_environment.json`.
+`postman/Latache-API-v3.34.0-Vercel.postman_collection.json` is the current collection, generated from the live OpenAPI document (`/api/docs-json`) served by the deployed backend. Import it together with `postman/Latache-Vercel.postman_environment.json`.
 
-For v3.22.0, start the updated backend after running Prisma generation/migrations and generate/import the current collection from `/api/docs-json`. The v3.22.0 route/OpenAPI count was intentionally not regenerated during this handoff because validation commands were not run at the requester's instruction. The Stripe webhook remains unsuitable for unsigned Postman calls because its signature is verified against the exact raw body.
-
-The collection uses `{{baseUrl}}/api/...`; therefore `baseUrl` is the origin only:
+The collection uses `{{baseUrl}}/api/...`; therefore `baseUrl` is the origin only. The bundled environment points it at:
 
 ```text
-http://localhost:8080
+https://latache-backend.vercel.app
 ```
+
+To point the same collection at a local backend instead, duplicate the environment in Postman and change `baseUrl` to `http://localhost:8080`. The Stripe webhook remains unsuitable for unsigned Postman calls because its signature is verified against the exact raw body.
 
 ## Regenerate from the running API
 
@@ -23,6 +23,6 @@ Postman can also generate a collection from `http://localhost:8080/api/docs-json
 
 ## Authentication
 
-Set collection authorization to **Bearer Token** with `{{accessToken}}`. Login responses contain tokens at `data.tokens.accessToken` and `data.tokens.refreshToken`. The supplied environment keeps separate secret variables for Customer, Tasker, Admin, and Super Admin sessions; it contains no credentials or real tokens.
+Collection authorization is set to **Bearer Token** with `{{accessToken}}`. Login responses contain tokens at `data.tokens.accessToken` and `data.tokens.refreshToken`; paste the `accessToken` value into the environment's `accessToken` variable (typed as `secret`) after logging in. The environment ships with no credentials or real tokens.
 
 Public/authentication requests may use **No Auth**. Protected requests should inherit collection authorization. Never put real tokens, passwords, Stripe keys, SMTP credentials, or provider secrets into an exported shared collection.
