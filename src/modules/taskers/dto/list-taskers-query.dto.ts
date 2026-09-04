@@ -84,9 +84,9 @@ export class ListTaskersQueryDto {
     example: 15,
     minimum: 1,
     maximum: 500,
-    default: 20,
+    default: 100,
     description:
-      'Search radius in kilometers around lat/lng. Only used together with lat/lng; defaults to the platform default radius (20 km unless reconfigured by an admin) and is clamped to the platform min/max radius policy.',
+      'Search radius in kilometers around lat/lng. Only used together with lat/lng; defaults to the platform default radius (100 km unless reconfigured by an admin) and is clamped to the platform min/max radius policy.',
   })
   @IsOptional()
   @Type(() => Number)

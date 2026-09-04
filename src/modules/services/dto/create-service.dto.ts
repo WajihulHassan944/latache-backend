@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -14,6 +15,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SERVICE_ICON_VALUES } from '../../../common/constants/service-icon.constant';
 import { TranslationDto } from '../../localization/translation.dto';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -39,10 +41,15 @@ export class CreateServiceDto {
   @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   slug!: string;
 
-  @ApiProperty({ example: 'https://res.cloudinary.com/demo/image/upload/service.webp' })
+  @ApiProperty({
+    enum: SERVICE_ICON_VALUES,
+    example: 'Zap',
+    description:
+      'Icon key identifying this service, rendered by the frontend via a shared lucide-react icon lookup keyed by this exact value. Tied to the service itself - never to its position in a list - so reordering or filtering services can never mismatch the icon shown. Must be one of the values returned by GET /api/admin/services?view=icons.',
+  })
   @Transform(trim)
   @IsString()
-  @Length(1, 2048)
+  @IsIn(SERVICE_ICON_VALUES)
   icon!: string;
 
   @ApiProperty({ example: 15, minimum: 0.01, description: 'Minimum Tasker hourly rate in the current platform currency.' })
@@ -108,11 +115,16 @@ export class UpdateServiceDto {
   @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   slug?: string;
 
-  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/demo/image/upload/service.webp' })
+  @ApiPropertyOptional({
+    enum: SERVICE_ICON_VALUES,
+    example: 'Zap',
+    description:
+      'Icon key identifying this service, rendered by the frontend via a shared lucide-react icon lookup keyed by this exact value. Tied to the service itself - never to its position in a list - so reordering or filtering services can never mismatch the icon shown. Must be one of the values returned by GET /api/admin/services?view=icons.',
+  })
   @IsOptional()
   @Transform(trim)
   @IsString()
-  @Length(1, 2048)
+  @IsIn(SERVICE_ICON_VALUES)
   icon?: string;
 
   @ApiPropertyOptional({ minimum: 0.01, description: 'Minimum Tasker hourly rate in the current platform currency.' })

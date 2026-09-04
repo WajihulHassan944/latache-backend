@@ -16,9 +16,15 @@ export class ReferralRewardsWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     if (this.config.get<boolean>('jobs.enabled', false)) return;
     const pollMs = this.config.get<number>('referrals.workerPollMs', 60_000);
-    this.timer = setInterval(() => void this.runOnce(), pollMs);
+    // runOnce() logs and re-throws on failure so BullMQ (see
+    // PerformanceJobsService) can retry a failed job; this interval-driven
+    // fallback path only runs when BullMQ is disabled, so it must swallow
+    // that re-thrown rejection itself - otherwise a single failed tick (e.g.
+    // a transient DB timeout) becomes an unhandled rejection that crashes
+    // the whole process instead of just being logged and retried next tick.
+    this.timer = setInterval(() => void this.runOnce().catch(() => {}), pollMs);
     this.timer.unref();
-    void this.runOnce();
+    void this.runOnce().catch(() => {});
   }
 
   onModuleDestroy(): void {

@@ -16,7 +16,7 @@ import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
 import { PlatformSettingsQueryDto, UpdatePlatformSettingsDto } from './dto/platform-settings.dto';
 import { PlatformSettingsService } from './platform-settings.service';
 
-@ApiTags('27 Admin - Platform Settings')
+@ApiTags('51 Admin - Platform Settings')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid administrator session is required.' })
 @ApiForbiddenResponse({ description: 'The administrator lacks the required settings permission.' })

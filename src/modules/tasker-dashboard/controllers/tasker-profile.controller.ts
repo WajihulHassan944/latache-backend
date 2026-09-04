@@ -22,7 +22,7 @@ import {
 } from '../dto';
 import { TaskerProfileService } from '../services/tasker-profile.service';
 
-@ApiTags('11 Tasker Profile & Skills')
+@ApiTags('12 Tasker Profile & Skills')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Tasker)

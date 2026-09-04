@@ -599,7 +599,7 @@ export class PlatformSettingsService {
       },
       serviceRadius: {
         enforcementEnabled: true,
-        defaultRadiusKm: 20,
+        defaultRadiusKm: 100,
         minimumRadiusKm: 1,
         maximumRadiusKm: 500,
         dynamicRadiusAdjustment: false,
@@ -1004,7 +1004,7 @@ export class PlatformSettingsService {
       const current = await this.section<ServiceRadiusSettingsDto>('serviceRadius');
       const min = dto.serviceRadius.minimumRadiusKm ?? current.minimumRadiusKm ?? 1;
       const max = dto.serviceRadius.maximumRadiusKm ?? current.maximumRadiusKm ?? 500;
-      const def = dto.serviceRadius.defaultRadiusKm ?? current.defaultRadiusKm ?? 20;
+      const def = dto.serviceRadius.defaultRadiusKm ?? current.defaultRadiusKm ?? 100;
       if (min > max || def < min || def > max) {
         throw new BadRequestException(
           'Service radius must satisfy minimumRadiusKm <= defaultRadiusKm <= maximumRadiusKm',

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { User } from '../../generated/prisma/client';
+import type { UpdateLocationDto } from '../../common/dto/update-location.dto';
 import type { UserRole } from '../../common/enums/user-role.enum';
 import type {
   AddCustomerRoleDto,
@@ -129,6 +130,10 @@ export class AuthService {
 
   updateMe(userId: number, dto: UpdateProfileDto, activeRole?: UserRole) {
     return this.profiles.update(userId, dto, activeRole);
+  }
+
+  updateMyLocation(userId: number, dto: UpdateLocationDto, activeRole?: UserRole) {
+    return this.profiles.updateLocation(userId, dto, activeRole);
   }
 
   listSessions(userId: number) {

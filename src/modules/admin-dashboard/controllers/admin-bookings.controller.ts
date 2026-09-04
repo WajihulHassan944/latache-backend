@@ -29,7 +29,7 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminBookingActionDto, AdminBookingsQueryDto } from '../dto';
 import { AdminBookingsService } from '../services/admin-bookings.service';
 
-@ApiTags('24 Admin - Booking Management')
+@ApiTags('56 Admin - Booking Management')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid active administrator session is required.' })
 @ApiForbiddenResponse({ description: 'The administrator lacks the required permission.' })

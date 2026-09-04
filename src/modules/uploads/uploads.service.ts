@@ -398,6 +398,41 @@ export class UploadsService {
     return verified;
   }
 
+  /**
+   * Verifies a Tasker onboarding identity document against Cloudinary before
+   * it is persisted: confirms the publicId exists under this Tasker's own
+   * tasker-identity-documents namespace, the secureUrl exactly matches the
+   * live Cloudinary resource, and the MIME type is an allowed document type.
+   * This is what lets the backend reliably locate the file later - a
+   * client-supplied name/size/type alone cannot be trusted or resolved back
+   * to a real asset.
+   */
+  async verifyTaskerIdentityDocument(
+    user: User,
+    reference: {
+      publicId: string;
+      secureUrl: string;
+      resourceType?: string;
+      mimeType?: string;
+      originalFileName?: string;
+    },
+  ): Promise<ConversationAttachmentReference> {
+    const globalMaximum = this.config.get<number>('cloudinary.maxFileSizeBytes', 10 * 1024 * 1024);
+    const [verified] = await this.verifyManagedChatAttachments(
+      user,
+      UploadFolder.TaskerIdentityDocument,
+      [reference],
+      this.documentMimeTypes,
+      {
+        maxFilesPerMessage: 1,
+        maxFileSizeBytes: globalMaximum,
+        maxTotalSizeBytes: globalMaximum,
+      },
+    );
+    if (!verified) throw new BadRequestException('Identity document could not be verified');
+    return verified;
+  }
+
   async verifyDisputeAttachments(
     user: User,
     references: Array<{
@@ -464,7 +499,8 @@ export class UploadsService {
     folder:
       | UploadFolder.ConversationAttachment
       | UploadFolder.SupportAttachment
-      | UploadFolder.BookingAttachment,
+      | UploadFolder.BookingAttachment
+      | UploadFolder.TaskerIdentityDocument,
     references: Array<{
       publicId: string;
       secureUrl: string;

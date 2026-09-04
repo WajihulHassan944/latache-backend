@@ -9,6 +9,7 @@ import { DisputesModule } from '../../modules/disputes/disputes.module';
 import { EliteProgramModule } from '../../modules/elite-program/elite-program.module';
 import { NotificationsModule } from '../../modules/notifications/notifications.module';
 import { FcmModule } from '../../modules/fcm/fcm.module';
+import { GuestModule } from '../../modules/guest/guest.module';
 
 @Global()
 @Module({
@@ -22,6 +23,7 @@ import { FcmModule } from '../../modules/fcm/fcm.module';
     EliteProgramModule,
     NotificationsModule,
     FcmModule,
+    GuestModule,
   ],
   providers: [PerformanceJobsService],
   exports: [PerformanceJobsService],

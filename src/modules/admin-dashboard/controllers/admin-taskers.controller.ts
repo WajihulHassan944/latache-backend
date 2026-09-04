@@ -36,7 +36,7 @@ import { AdminAnalyticsService } from '../services/admin-analytics.service';
 import { AdminTaskersService } from '../services/admin-taskers.service';
 import { PermanentDeleteDto } from '../../account-deletion/dto/permanent-delete.dto';
 
-@ApiTags('22 Admin Dashboard - Taskers')
+@ApiTags('54 Admin - Dashboard Taskers')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid active administrator session is required.' })
 @ApiForbiddenResponse({ description: 'The administrator lacks the required permission.' })

@@ -7,7 +7,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TaskerDashboardService } from '../tasker-dashboard/services/tasker-dashboard.service';
 import { CustomerDashboardService } from './customer-dashboard.service';
 
-@ApiTags('04 Dashboard')
+@ApiTags('05 Dashboard')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard)
 @Controller('dashboard')

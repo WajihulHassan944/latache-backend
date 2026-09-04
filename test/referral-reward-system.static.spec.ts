@@ -13,8 +13,16 @@ describe('production referral reward system', () => {
   const payments = read('src/modules/payments/payments.service.ts');
   const jobs = read('src/infrastructure/jobs/performance-jobs.service.ts');
 
-  it('persists one attribution per referred account with immutable policy and reward ledgers', () => {
-    expect(schema).toContain('referredUserId      Int       @unique');
+  it('persists one attribution per referred account per program with immutable policy and reward ledgers', () => {
+    // The original single-column @unique on referredUserId (from this
+    // migration) was deliberately relaxed to a composite
+    // (referredUserId, program) unique by the later
+    // 20260819130000_multi_role_identity_profiles migration, so one
+    // referred account can be attributed under more than one program -
+    // still at most once per program.
+    expect(schema).toContain(
+      '@@unique([referredUserId, program], map: "referrals_referred_user_program_unique")',
+    );
     expect(schema).toContain('policySnapshot');
     expect(schema).toContain('idempotencyKey');
     expect(schema).toContain('referralRewardId');

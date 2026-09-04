@@ -9,7 +9,7 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { SeoManagementService } from '../services/seo-management.service';
 import { SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntryDto, SeoSettingsDto, UpsertSeoPageDto } from '../dto/seo.dto';
 
-@ApiTags('30 SEO')
+@ApiTags('20 SEO')
 @Controller('seo')
 export class SeoPublicController {
   constructor(private readonly seo: SeoManagementService) {}
@@ -18,7 +18,7 @@ export class SeoPublicController {
   @Get('robots.txt') @Throttle({ default: { limit: 20, ttl: 60_000 } }) @Header('Content-Type', 'text/plain; charset=utf-8') @ApiOperation({ summary: 'Generate robots.txt from managed SEO rules' }) robots() { return this.seo.robots(); }
 }
 
-@ApiTags('30 Admin - SEO')
+@ApiTags('63 Admin - SEO')
 @ApiBearerAuth('bearer')
 @UseGuards(AdminAuthGuard, PermissionsGuard)
 @Controller('admin/seo')

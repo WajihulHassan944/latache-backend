@@ -51,7 +51,7 @@ export class RealtimeDispatcherService implements OnModuleInit, OnModuleDestroy 
     const pollMs = this.config.get<number>('realtime.outboxPollMs', 500);
     const sessionSweepMs = this.config.get<number>('realtime.sessionSweepMs', 30_000);
     this.timer = setInterval(() => void this.flush(), pollMs);
-    this.sessionTimer = setInterval(() => void this.gateway.sweepInvalidSessions(), sessionSweepMs);
+    this.sessionTimer = setInterval(() => void this.runSessionSweep(), sessionSweepMs);
     this.timer.unref();
     this.sessionTimer.unref();
   }
@@ -69,6 +69,17 @@ export class RealtimeDispatcherService implements OnModuleInit, OnModuleDestroy 
     } catch (error) {
       this.logger.error(
         'Conversation call sweep failed',
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
+      );
+    }
+  }
+
+  private async runSessionSweep(): Promise<void> {
+    try {
+      await this.gateway.sweepInvalidSessions();
+    } catch (error) {
+      this.logger.error(
+        'Realtime session sweep failed',
         error instanceof Error ? (error.stack ?? error.message) : String(error),
       );
     }

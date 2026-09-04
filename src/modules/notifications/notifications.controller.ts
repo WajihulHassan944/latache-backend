@@ -11,7 +11,7 @@ import { RequestLocale } from '../localization/request-locale.decorator';
 import { FcmService } from '../fcm/fcm.service';
 import { RegisterFcmTokenDto, RemoveFcmTokenDto } from '../fcm/fcm.dto';
 
-@ApiTags('08 Notifications')
+@ApiTags('09 Notifications')
 @ApiHeader({
   name: 'Accept-Language',
   required: false,

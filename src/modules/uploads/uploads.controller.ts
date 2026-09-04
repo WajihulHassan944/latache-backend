@@ -129,7 +129,7 @@ const multipartFileSchema = {
   },
 };
 
-@ApiTags('02 Uploads')
+@ApiTags('04 Uploads')
 @Controller('uploads')
 export class RegistrationUploadsController {
   constructor(private readonly uploads: UploadsService) {}
@@ -203,7 +203,7 @@ export class RegistrationUploadsController {
   }
 }
 
-@ApiTags('02 Uploads')
+@ApiTags('04 Uploads')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtIdentityGuard)
 @Controller('uploads')

@@ -17,7 +17,7 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminDisputeActionDto, AdminDisputesQueryDto } from '../dto';
 import { AdminDisputesService } from '../services/admin-disputes.service';
 
-@ApiTags('25 Admin - Dispute Management')
+@ApiTags('57 Admin - Dispute Management')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid active administrator session is required.' })
 @ApiForbiddenResponse({ description: 'The administrator lacks the required permission.' })

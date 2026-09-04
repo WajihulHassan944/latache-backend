@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   ServiceUnavailableException,
@@ -13,6 +14,11 @@ import type { BufferedUploadFile, CloudinaryClient } from './uploads.types';
 const customer = {
   id: 42,
   role: UserRole.Customer,
+} as User;
+
+const tasker = {
+  id: 42,
+  role: UserRole.Tasker,
 } as User;
 
 const file: BufferedUploadFile = {
@@ -143,6 +149,44 @@ describe('UploadsService', () => {
   it('canonicalizes support attachments from provider ownership metadata', async () => {
     const { service, cloudinary } = createService();
     const publicId = 'latache/support-attachments/customer/42/support-image';
+    const secureUrl = 'https://res.cloudinary.com/demo/image/upload/support-image.png';
+    jest.mocked(cloudinary.api.resource).mockResolvedValueOnce({
+      public_id: publicId,
+      secure_url: secureUrl,
+      resource_type: 'image',
+      format: 'png',
+      bytes: 512,
+      context: {
+        custom: {
+          owner_namespace: 'customer/42',
+          upload_folder: 'support-attachments',
+          mime_type: 'image/png',
+          original_file_name: 'support-image.png',
+        },
+      },
+    });
+
+    await expect(
+      service.verifySupportAttachments(customer, [{ publicId, secureUrl, resourceType: 'image' }]),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        publicId,
+        secureUrl,
+        mimeType: 'image/png',
+        bytes: 512,
+      }),
+    ]);
+  });
+
+  it('rejects a support attachment whose claimed secureUrl does not match the verified Cloudinary resource', async () => {
+    // Added alongside the disputes system (see uploads.service.ts's exact
+    // secure_url match check): the client's publicId is trusted only to
+    // look up the resource, never to imply its URL - a stale/mismatched
+    // claimed secureUrl is rejected outright rather than silently
+    // overwritten, since it signals the caller's record has diverged from
+    // the server's rather than validation being merely cosmetic here.
+    const { service, cloudinary } = createService();
+    const publicId = 'latache/support-attachments/customer/42/support-image';
     jest.mocked(cloudinary.api.resource).mockResolvedValueOnce({
       public_id: publicId,
       secure_url: 'https://res.cloudinary.com/demo/image/upload/support-image.png',
@@ -167,14 +211,64 @@ describe('UploadsService', () => {
           resourceType: 'image',
         },
       ]),
-    ).resolves.toEqual([
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('verifies a Tasker identity document against Cloudinary and returns the server-confirmed reference', async () => {
+    const { service, cloudinary } = createService();
+    const publicId = 'latache/tasker-identity-documents/tasker/42/passport';
+    jest.mocked(cloudinary.api.resource).mockResolvedValueOnce({
+      public_id: publicId,
+      secure_url: 'https://res.cloudinary.com/demo/image/upload/passport.pdf',
+      resource_type: 'raw',
+      format: 'pdf',
+      bytes: 1234567,
+      context: {
+        custom: {
+          owner_namespace: 'tasker/42',
+          upload_folder: 'tasker-identity-documents',
+          mime_type: 'application/pdf',
+          original_file_name: 'passport.pdf',
+        },
+      },
+    });
+
+    await expect(
+      service.verifyTaskerIdentityDocument(tasker, {
+        publicId,
+        secureUrl: 'https://res.cloudinary.com/demo/image/upload/passport.pdf',
+        mimeType: 'application/pdf',
+      }),
+    ).resolves.toEqual(
       expect.objectContaining({
         publicId,
-        secureUrl: 'https://res.cloudinary.com/demo/image/upload/support-image.png',
-        mimeType: 'image/png',
-        bytes: 512,
+        secureUrl: 'https://res.cloudinary.com/demo/image/upload/passport.pdf',
+        mimeType: 'application/pdf',
+        bytes: 1234567,
       }),
-    ]);
+    );
+  });
+
+  it('rejects an identity document publicId that does not belong to the calling Tasker', async () => {
+    const { service } = createService();
+    await expect(
+      service.verifyTaskerIdentityDocument(tasker, {
+        publicId: 'latache/tasker-identity-documents/tasker/999/passport',
+        secureUrl: 'https://res.cloudinary.com/demo/image/upload/passport.pdf',
+        mimeType: 'application/pdf',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects an identity document reference whose secureUrl is not a genuine Cloudinary delivery URL', async () => {
+    const { service } = createService();
+    await expect(
+      service.verifyTaskerIdentityDocument(tasker, {
+        publicId: 'latache/tasker-identity-documents/tasker/42/passport',
+        secureUrl: 'https://evil.example.com/passport.pdf',
+        mimeType: 'application/pdf',
+      }),
+    ).rejects.toThrow();
   });
 
   it('fails closed when Cloudinary verification is unavailable', async () => {

@@ -18,9 +18,18 @@ describe('production chat completeness static contract', () => {
     const schema = read('prisma/schema.prisma');
     const conversations = read('src/modules/conversations/conversations.service.ts');
     const support = read('src/modules/support/support.service.ts');
-    expect(schema).toContain('task_messages_sender_client_message_unique');
-    expect(schema).toContain('support_tickets_user_client_request_unique');
-    expect(schema).toContain('support_ticket_messages_sender_client_message_unique');
+    // Renamed/rescoped by 20260819130000_multi_role_identity_profiles from
+    // (senderId, clientMessageId) to (senderId, bookingId, clientMessageId),
+    // so retry-safe dedup is scoped per booking.
+    expect(schema).toContain('task_messages_sender_booking_client_message_unique');
+    // Renamed/rescoped by 20260819130000_multi_role_identity_profiles to
+    // include requesterRole, so a customer and tasker ticket from the same
+    // multi-role identity can reuse the same client request ID.
+    expect(schema).toContain('support_tickets_user_role_client_request_unique');
+    // Renamed/rescoped by 20260819130000_multi_role_identity_profiles from
+    // (senderId, clientMessageId) to (senderId, ticketId, clientMessageId),
+    // so retry-safe dedup is scoped per ticket.
+    expect(schema).toContain('support_ticket_messages_sender_ticket_client_message_unique');
     expect(conversations).toContain('CLIENT_MESSAGE_ID_REUSED');
     expect(support).toContain('CLIENT_REQUEST_ID_REUSED');
     expect(support).toContain('CLIENT_MESSAGE_ID_REUSED');
@@ -60,7 +69,10 @@ describe('production chat completeness static contract', () => {
     expect(uploads).toContain('context.owner_namespace');
     expect(uploads).toContain('context.upload_folder');
     expect(uploads).toContain('assertChatAssetNotReferenced');
-    expect(uploads).toContain('CHAT_ASSET_IN_USE');
+    // Renamed from CHAT_ASSET_IN_USE once assertChatAssetNotReferenced grew
+    // to also protect dispute evidence, task complaints, and booking work
+    // proofs, not just chat/support messages.
+    expect(uploads).toContain('MANAGED_ASSET_IN_USE');
   });
 
   it('commits notification records and their realtime outbox events atomically', () => {

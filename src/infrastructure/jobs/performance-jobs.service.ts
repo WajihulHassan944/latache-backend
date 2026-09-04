@@ -12,6 +12,7 @@ import { ReferralRewardsWorker } from '../../modules/referrals/referral-rewards.
 import { DisputeLifecycleService } from '../../modules/disputes/dispute-lifecycle.service';
 import { EliteProgramService } from '../../modules/elite-program/services/elite-program.service';
 import { FcmService } from '../../modules/fcm/fcm.service';
+import { GuestService } from '../../modules/guest/guest.service';
 
 const JOB_NAMES = {
   ReleaseEarnings: 'finance.release-mature',
@@ -23,6 +24,7 @@ const JOB_NAMES = {
   MaintainDisputes: 'disputes.maintain',
   MaintainElite: 'elite.maintain',
   DispatchFcmPush: 'notifications.dispatch-fcm-push',
+  CleanupGuestSessions: 'guest.cleanup-sessions',
 } as const;
 
 export interface QueueHealth {
@@ -60,6 +62,7 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly disputes: DisputeLifecycleService,
     private readonly elite: EliteProgramService,
     private readonly fcm: FcmService,
+    private readonly guests: GuestService,
   ) {
     this.enabled = this.config.get<boolean>('jobs.enabled', false);
     this.workerEnabled = this.config.get<boolean>('jobs.workerEnabled', false);
@@ -86,6 +89,15 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         removeOnComplete: { age: 86_400, count: 5_000 },
         removeOnFail: { age: 7 * 86_400, count: 10_000 },
       },
+    });
+    // BullMQ's Queue is an EventEmitter that emits 'error' on Redis
+    // connection trouble; Node throws (or crashes the process) on an
+    // unhandled 'error' event, same failure class as this.worker below - so
+    // this needs the same listener even though nothing here needs to react.
+    this.queue.on('error', (error) => {
+      this.lastError = this.message(error);
+      this.metrics.recordQueueFailure();
+      this.logger.error(`BullMQ queue error: ${this.lastError}`);
     });
 
     if (this.schedulerEnabled) {
@@ -204,6 +216,11 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { every: this.config.get<number>('fcm.pollMs', 1_000) },
         { name: JOB_NAMES.DispatchFcmPush, data: {} },
       ),
+      queue.upsertJobScheduler(
+        'cleanup-guest-sessions-v1',
+        { every: this.config.get<number>('jobs.guestSessionCleanupIntervalMs', 3_600_000) },
+        { name: JOB_NAMES.CleanupGuestSessions, data: {} },
+      ),
     ]);
   }
 
@@ -265,6 +282,8 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return this.elite.runMaintenance(this.config.get<number>('elite.workerBatchSize', 200));
       case JOB_NAMES.DispatchFcmPush:
         return this.fcm.runOnce();
+      case JOB_NAMES.CleanupGuestSessions:
+        return this.guests.runOnce();
       default: {
         throw new Error(`Unsupported maintenance job: ${job.name}`);
       }

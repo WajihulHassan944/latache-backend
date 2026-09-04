@@ -26,7 +26,7 @@ import {
 import { ReviewsService } from './reviews.service';
 import type { ReviewListView, ReviewView } from './reviews.types';
 
-@ApiTags('09 Reviews')
+@ApiTags('10 Reviews')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Customer, UserRole.Tasker)

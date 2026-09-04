@@ -23,7 +23,7 @@ import {
 } from '../dto/referrals.dto';
 import { ReferralsService } from '../services/referrals.service';
 
-@ApiTags('33 Referrals')
+@ApiTags('21 Referrals')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid active session is required.' })
 @ApiForbiddenResponse({ description: 'Verified Customer or Tasker access is required.' })

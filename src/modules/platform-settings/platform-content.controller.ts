@@ -4,7 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { RequestLocale } from '../localization/request-locale.decorator';
 import { PlatformSettingsService } from './platform-settings.service';
 
-@ApiTags('01 Platform')
+@ApiTags('03 Platform')
 @Controller('platform/content')
 export class PlatformContentController {
   constructor(private readonly settings: PlatformSettingsService) {}

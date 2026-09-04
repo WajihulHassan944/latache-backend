@@ -9,7 +9,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FavoriteTaskerParamDto, ListFavoritesQueryDto } from './favorites.dto';
 import { FavoritesService } from './favorites.service';
 
-@ApiTags('10 Favorites')
+@ApiTags('11 Favorites')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Customer)

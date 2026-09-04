@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { SERVICE_ICON_OPTIONS } from '../../../common/constants/service-icon.constant';
 import { normalizePagination } from '../../../common/utils/pagination.util';
 import { PrismaService } from '../../../database/prisma.service';
 import { Prisma } from '../../../generated/prisma/client';
@@ -13,10 +14,22 @@ export class AdminServicesService {
   ) {}
 
   async read(query: AdminServicesQueryDto): Promise<Record<string, unknown>> {
-    if ((query.view ?? 'catalog') === 'pricing') {
+    if (query.view === 'pricing') {
       return this.pricing();
     }
+    if (query.view === 'icons') {
+      return this.icons();
+    }
     return this.catalog(query);
+  }
+
+  /**
+   * Static catalogue (no DB read) so the admin create/edit-service form can
+   * populate its icon picker from the same list the backend validates
+   * Service.icon against - the two can never drift out of sync.
+   */
+  private icons(): Record<string, unknown> {
+    return { view: 'icons', icons: SERVICE_ICON_OPTIONS };
   }
 
   async detail(serviceId: number): Promise<Record<string, unknown>> {

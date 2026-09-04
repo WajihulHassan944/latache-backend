@@ -33,7 +33,11 @@ import type { Request } from 'express';
 import { RequestLocale } from '../localization/request-locale.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UpdateLocationDto } from '../../common/dto/update-location.dto';
+import { UserRole } from '../../common/enums/user-role.enum';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
 import type { User } from '../../generated/prisma/client';
 import { AuthService } from './auth.service';
@@ -711,6 +715,41 @@ export class AuthController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.auth.updateMe(user.id, dto, request.auth.role);
+  }
+
+  @Patch('me/location')
+  @ApiBearerAuth('bearer')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.Customer)
+  @ApiOperation({
+    summary: "Save the authenticated Customer's selected location",
+    description:
+      'Customer-only. Persists latitude/longitude on the account so GET /api/taskers falls back to it whenever a request omits lat/lng. Only this explicit call changes the saved location - lat/lng sent directly to GET /api/taskers are used for that one request only and never overwrite it.',
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        success: true,
+        data: {
+          user: {
+            id: 12,
+            latitude: 33.5731,
+            longitude: -7.5898,
+            locationUpdatedAt: '2026-09-04T10:00:00.000Z',
+          },
+        },
+        message: 'Location saved successfully.',
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({ description: 'Bearer token or active session is missing or invalid.' })
+  @ApiForbiddenResponse({ description: 'The authenticated identity does not have the Customer role.' })
+  updateMyLocation(
+    @CurrentUser() user: User,
+    @Body() dto: UpdateLocationDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.auth.updateMyLocation(user.id, dto, request.auth.role);
   }
 
   @Get('sessions')

@@ -167,7 +167,7 @@ export class TaskersRepository {
       eligibleConditions.push(Prisma.sql`u."serviceAreaLat" IS NOT NULL`);
       eligibleConditions.push(Prisma.sql`u."serviceAreaLng" IS NOT NULL`);
       eligibleConditions.push(Prisma.sql`u."serviceAreaRadiusKm" IS NOT NULL`);
-      eligibleConditions.push(Prisma.sql`${distance} <= ${query.radius ?? 20}`);
+      eligibleConditions.push(Prisma.sql`${distance} <= ${query.radius ?? 100}`);
       eligibleConditions.push(Prisma.sql`${distance} <= u."serviceAreaRadiusKm"::float8`);
     }
 

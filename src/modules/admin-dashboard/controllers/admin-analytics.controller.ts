@@ -14,7 +14,7 @@ import { AdminActivityQueryDto, AdminDateRangeQueryDto } from '../dto';
 import { AdminAnalyticsService } from '../services/admin-analytics.service';
 import { AdminAnalyticsCacheInterceptor } from '../admin-analytics-cache.interceptor';
 
-@ApiTags('20 Admin Dashboard - Analytics')
+@ApiTags('52 Admin - Dashboard Analytics')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid active administrator session is required.' })
 @ApiForbiddenResponse({ description: 'The administrator lacks one or more required permissions.' })

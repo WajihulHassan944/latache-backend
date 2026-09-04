@@ -16,7 +16,7 @@ import {
 } from '../dto/content.dto';
 import { ContentManagementService } from '../services/content-management.service';
 
-@ApiTags('29 Content Management')
+@ApiTags('19 Content Management')
 @Controller('content/home')
 export class PublicHomepageContentController {
   constructor(private readonly content: ContentManagementService) {}
@@ -29,7 +29,7 @@ export class PublicHomepageContentController {
   @Get('social') @Throttle({ default: { limit: 60, ttl: 60_000 } }) social(@RequestLocale() locale: string) { return this.content.homepageManagedBlock('social_links', locale); }
 }
 
-@ApiTags('29 Content Management')
+@ApiTags('19 Content Management')
 @Controller('content')
 export class ContentManagementController {
   constructor(private readonly content: ContentManagementService) {}
@@ -43,7 +43,7 @@ export class ContentManagementController {
   }
 }
 
-@ApiTags('29 Admin - Content Management')
+@ApiTags('61 Admin - Content Management')
 @ApiBearerAuth('bearer')
 @UseGuards(AdminAuthGuard, PermissionsGuard)
 @Controller('admin/content')

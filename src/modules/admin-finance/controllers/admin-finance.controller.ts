@@ -31,7 +31,7 @@ import { AdminFinanceQueryDto, AdminPayoutActionDto } from '../dto/admin-finance
 import { AdminEarningActionDto } from '../../tasker-finance/dto/tasker-finance.dto';
 import { AdminFinanceService } from '../services/admin-finance.service';
 
-@ApiTags('26 Admin - Payments & Finance')
+@ApiTags('58 Admin - Payments & Finance')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid administrator session is required.' })
 @ApiForbiddenResponse({ description: 'The administrator lacks the required finance permission.' })

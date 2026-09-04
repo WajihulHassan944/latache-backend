@@ -34,7 +34,7 @@ import type {
   WalletView,
 } from './payments.types';
 
-@ApiTags('06 Payments')
+@ApiTags('07 Payments')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Customer)

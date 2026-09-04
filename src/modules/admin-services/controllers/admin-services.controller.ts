@@ -25,7 +25,7 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminServicesQueryDto } from '../dto/admin-services.dto';
 import { AdminServicesService } from '../services/admin-services.service';
 
-@ApiTags('28 Admin - Service Management')
+@ApiTags('60 Admin - Service Management')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid administrator session is required.' })
 @ApiForbiddenResponse({ description: 'The administrator lacks services.read.' })
@@ -39,7 +39,7 @@ export class AdminServicesController {
   @ApiOperation({
     summary: 'Unified Service Management dashboard read API',
     description:
-      'Use view=catalog for category/sub-service/active-Tasker metrics, including all configured translations, and view=pricing for the existing commission/tax/Elite pricing policy. Category/sub-service and translation mutations deliberately reuse /api/services/*; pricing mutations reuse /api/admin/platform-settings. view=pricing additionally requires settings.read for non-super-admin users.',
+      'Use view=catalog for category/sub-service/active-Tasker metrics, including all configured translations, view=pricing for the existing commission/tax/Elite pricing policy, and view=icons for the curated list of valid Service.icon values (value + display label) to populate the create/edit-service icon picker. Category/sub-service and translation mutations deliberately reuse /api/services/*; pricing mutations reuse /api/admin/platform-settings. view=pricing additionally requires settings.read for non-super-admin users.',
   })
   @ApiOkResponse({
     description:

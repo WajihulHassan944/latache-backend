@@ -36,7 +36,7 @@ import { BookTaskerDto } from './dto/book-tasker.dto';
 import { ConfirmCashCollectionDto } from '../tasker-finance/dto/tasker-finance.dto';
 import { WorkOtpDto, WorkProofDto } from './dto/work-verification.dto';
 
-@ApiTags('05 Bookings & Tasks')
+@ApiTags('06 Bookings & Tasks')
 @Controller('bookings')
 export class BookingDiscoveryController {
   constructor(private readonly bookings: BookingsService) {}
@@ -53,7 +53,7 @@ export class BookingDiscoveryController {
   }
 }
 
-@ApiTags('05 Bookings & Tasks')
+@ApiTags('06 Bookings & Tasks')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Customer, UserRole.Tasker)

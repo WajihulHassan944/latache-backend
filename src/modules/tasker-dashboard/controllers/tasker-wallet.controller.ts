@@ -45,7 +45,7 @@ import {
 import { TaskerWalletService } from '../services/tasker-wallet.service';
 import { TaskerEarningsQueryDto } from '../../tasker-finance/dto/tasker-finance.dto';
 
-@ApiTags('12 Tasker Wallet & Payouts')
+@ApiTags('13 Tasker Wallet & Payouts')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Tasker)

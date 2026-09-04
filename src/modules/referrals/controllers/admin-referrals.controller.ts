@@ -17,7 +17,7 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminReferralQueryDto, ReferralParamDto, RevokeReferralDto } from '../dto/referrals.dto';
 import { ReferralsService } from '../services/referrals.service';
 
-@ApiTags('34 Admin - Referrals')
+@ApiTags('64 Admin - Referrals')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid administrator session is required.' })
 @ApiForbiddenResponse({ description: 'The administrator lacks the required finance permission.' })

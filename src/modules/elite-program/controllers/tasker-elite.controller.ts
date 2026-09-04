@@ -17,7 +17,7 @@ import { TaskerEliteRequestDto } from '../dto';
 import { EliteProgramService } from '../services/elite-program.service';
 import { RequestLocale } from '../../localization/request-locale.decorator';
 
-@ApiTags('12 Tasker - Elite Program')
+@ApiTags('14 Tasker - Elite Program')
 @ApiHeader({
   name: 'Accept-Language',
   required: false,

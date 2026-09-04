@@ -38,6 +38,7 @@ import { PerformanceJobsModule } from './infrastructure/jobs/performance-jobs.mo
 import { ReferralsModule } from './modules/referrals/referrals.module';
 import { ContentManagementModule } from './modules/content-management/content-management.module';
 import { SeoManagementModule } from './modules/seo-management/seo-management.module';
+import { GuestModule } from './modules/guest/guest.module';
 
 @Module({
   imports: [
@@ -84,6 +85,7 @@ import { SeoManagementModule } from './modules/seo-management/seo-management.mod
     ReferralsModule,
     ContentManagementModule,
     SeoManagementModule,
+    GuestModule,
     HealthModule,
     PerformanceJobsModule,
   ],

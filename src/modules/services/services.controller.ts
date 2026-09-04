@@ -17,6 +17,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -24,6 +25,7 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { User } from '../../generated/prisma/client';
 import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
+import { GuestOrIdentityGuard } from '../guest/guards/guest-or-identity.guard';
 import { CreateServiceDto, UpdateServiceDto } from './dto/create-service.dto';
 import { ListServicesQueryDto } from './dto/list-services-query.dto';
 import {
@@ -35,7 +37,7 @@ import {
 import { ServicesService } from './services.service';
 import { RequestLocale } from '../localization/request-locale.decorator';
 
-@ApiTags('13 Services')
+@ApiTags('15 Services')
 @ApiHeader({
   name: 'Accept-Language',
   required: false,
@@ -49,10 +51,13 @@ export class ServicesController {
 
   @Get()
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiBearerAuth('bearer')
+  @UseGuards(GuestOrIdentityGuard)
+  @ApiUnauthorizedResponse({ description: 'Guest token or bearer session is missing, invalid, expired, or revoked.' })
   @ApiOperation({
     summary: 'List active service categories for customer/tasker flows',
     description:
-      'Inactive categories are intentionally hidden from new discovery and booking flows.',
+      'Requires either a guest token from POST /guest/token or a normal Customer/Tasker/Admin bearer session. Inactive categories are intentionally hidden from new discovery and booking flows.',
   })
   getServices(
     @Query() query: ListServicesQueryDto,
@@ -63,11 +68,14 @@ export class ServicesController {
 
   @Get(':serviceId/options')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiBearerAuth('bearer')
+  @UseGuards(GuestOrIdentityGuard)
+  @ApiUnauthorizedResponse({ description: 'Guest token or bearer session is missing, invalid, expired, or revoked.' })
   @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
     summary: 'List active booking options for a service',
     description:
-      'Returns an empty array when the service has no configured sub-options; no design placeholder data is fabricated.',
+      'Requires either a guest token from POST /guest/token or a normal Customer/Tasker/Admin bearer session. Returns an empty array when the service has no configured sub-options; no design placeholder data is fabricated.',
   })
   serviceOptions(
     @Param() params: ServiceIdParamDto,
@@ -78,11 +86,14 @@ export class ServicesController {
 
   @Get(':serviceId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiBearerAuth('bearer')
+  @UseGuards(GuestOrIdentityGuard)
+  @ApiUnauthorizedResponse({ description: 'Guest token or bearer session is missing, invalid, expired, or revoked.' })
   @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
     summary: 'Get one active service category with its active booking options',
     description:
-      'This is the canonical customer/tasker service-detail read. Super Admin/Admin manage the same resource through POST/PATCH/DELETE on /api/services.',
+      'Requires either a guest token from POST /guest/token or a normal Customer/Tasker/Admin bearer session. This is the canonical customer/tasker service-detail read. Super Admin/Admin manage the same resource through POST/PATCH/DELETE on /api/services.',
   })
   getService(
     @Param() params: ServiceIdParamDto,
@@ -165,7 +176,7 @@ export class ServicesController {
   @ApiOperation({
     summary: 'Update a service category',
     description:
-      'Allows canonical English content, translations[], slug, image/icon, ordering and active-state changes. Locale rows are upserted; existing bookings and IDs are never rewritten.',
+      'Allows canonical English content, translations[], slug, icon (see GET /api/admin/services?view=icons for valid values), ordering and active-state changes. Locale rows are upserted; existing bookings and IDs are never rewritten.',
   })
   updateService(
     @CurrentUser() actor: User,
@@ -183,7 +194,7 @@ export class ServicesController {
   @ApiOperation({
     summary: 'Permanently delete an unused service category',
     description:
-      'Irreversible deletion of the canonical service, options, translations, tasker assignments and managed image. Existing booking history blocks deletion and returns SERVICE_PURGE_BLOCKED.',
+      'Irreversible deletion of the canonical service, options, translations, and tasker assignments. Existing booking history blocks deletion and returns SERVICE_PURGE_BLOCKED.',
   })
   @ApiConflictResponse({ description: 'SERVICE_PURGE_BLOCKED with booking count.' })
   deleteService(@CurrentUser() actor: User, @Param() params: ServiceIdParamDto): Promise<unknown> {

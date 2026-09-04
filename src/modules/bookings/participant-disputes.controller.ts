@@ -16,7 +16,7 @@ import {
   SubmitDisputeSatisfactionDto,
 } from './dto/participant-disputes.dto';
 
-@ApiTags('05 Bookings & Tasks')
+@ApiTags('06 Bookings & Tasks')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Customer, UserRole.Tasker)

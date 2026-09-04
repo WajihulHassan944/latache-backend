@@ -22,6 +22,9 @@ model User {
   otpAttempts                  Int       @default(0)
   password                     String?   @db.VarChar(255)
   zipCode                      String?   @db.VarChar(255)
+  latitude                     Decimal?  @db.Decimal(9, 6)
+  longitude                    Decimal?  @db.Decimal(9, 6)
+  locationUpdatedAt            DateTime? @db.Timestamptz(6)
   passwordResetCode            Int?
   passwordResetCodeHash        String?   @db.VarChar(64)
   passwordResetCodeExpires     DateTime? @db.Timestamptz(6)
@@ -86,7 +89,7 @@ model User {
   updatedAt                    DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   refreshTokens               RefreshToken[]
-  socialAuthIdentities         SocialAuthIdentity[]
+  socialAuthIdentities        SocialAuthIdentity[]
   customerProfile             CustomerProfile?
   taskerProfile               TaskerProfile?
   userServices                UserService[]
@@ -114,14 +117,14 @@ model User {
   disputeEvidenceReviewed     DisputeEvidence[]           @relation("DisputeEvidenceReviewer")
   disputeEvidenceRequestsMade DisputeEvidenceRequest[]    @relation("DisputeEvidenceRequester")
   disputeResolutions          DisputeResolution[]         @relation("DisputeResolutionActor")
-  disputesWithdrawn            TaskComplaint[]             @relation("DisputeWithdrawnBy")
-  disputeParticipantActions    DisputeParticipantAction[]
-  disputeComments              DisputeComment[]
-  disputeSatisfactionSurveys   DisputeSatisfactionSurvey[]
-  disputeDeliveries            DisputeDelivery[]            @relation("DisputeDeliveryRecipient")
-  cashRefundsConfirmed         DisputeCashRefund[]          @relation("DisputeCashRefundConfirmer")
-  disciplinaryActionsReceived DisciplinaryAction[]         @relation("DisciplinaryActionTarget")
-  disciplinaryActionsIssued   DisciplinaryAction[]         @relation("DisciplinaryActionActor")
+  disputesWithdrawn           TaskComplaint[]             @relation("DisputeWithdrawnBy")
+  disputeParticipantActions   DisputeParticipantAction[]
+  disputeComments             DisputeComment[]
+  disputeSatisfactionSurveys  DisputeSatisfactionSurvey[]
+  disputeDeliveries           DisputeDelivery[]           @relation("DisputeDeliveryRecipient")
+  cashRefundsConfirmed        DisputeCashRefund[]         @relation("DisputeCashRefundConfirmer")
+  disciplinaryActionsReceived DisciplinaryAction[]        @relation("DisciplinaryActionTarget")
+  disciplinaryActionsIssued   DisciplinaryAction[]        @relation("DisciplinaryActionActor")
   taskMessagesSent            TaskMessage[]               @relation("TaskMessageSender")
   conversationCallsInitiated  ConversationCall[]          @relation("ConversationCallInitiator")
   conversationCallsReceived   ConversationCall[]          @relation("ConversationCallRecipient")
@@ -152,6 +155,7 @@ model User {
   referralsMade               Referral[]                  @relation("ReferralReferrer")
   referralsReceived           Referral[]                  @relation("ReferralReferred")
   referralRewards             ReferralReward[]            @relation("ReferralRewardRecipient")
+  convertedGuestSessions      GuestSession[]              @relation("GuestSessionConvertedUser")
 
   @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
   @@index([roles], type: Gin, map: "users_roles_gin_idx")
@@ -161,9 +165,39 @@ model User {
   @@index([createdById], map: "users_created_by_idx")
   @@index([rbacRoleId], map: "users_rbac_role_idx")
   @@index([eliteTierId, accountStatus], map: "users_elite_tier_status_idx")
+  @@index([latitude, longitude], map: "users_location_idx")
   @@map("Users")
 }
 
+/// Anonymous browsing session for unauthenticated website visitors. Never
+/// carries a role or grants access beyond the read-only public endpoints it
+/// is explicitly attached to; see GuestOrIdentityGuard.
+model GuestSession {
+  id                Int       @id @default(autoincrement())
+  guestId           String    @unique(map: "GuestSessions_guestId_key") @db.VarChar(64)
+  tokenHash         String    @unique(map: "GuestSessions_tokenHash_key") @db.VarChar(64)
+  status            String    @default("active") @db.VarChar(16)
+  deviceId          String?   @db.VarChar(255)
+  ipAddress         String?   @db.VarChar(64)
+  userAgent         String?   @db.VarChar(512)
+  usageCount        Int       @default(0)
+  latitude          Decimal?  @db.Decimal(9, 6)
+  longitude         Decimal?  @db.Decimal(9, 6)
+  locationUpdatedAt DateTime? @db.Timestamptz(6)
+  convertedUserId   Int?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  expiresAt         DateTime  @db.Timestamptz(6)
+  lastActivityAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  convertedUser User? @relation("GuestSessionConvertedUser", fields: [convertedUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "GuestSessions_convertedUserId_fkey")
+
+  @@index([status, expiresAt], map: "guest_sessions_status_expires_idx")
+  @@index([deviceId], map: "guest_sessions_device_idx")
+  @@index([convertedUserId], map: "guest_sessions_converted_user_idx")
+  @@index([latitude, longitude], map: "guest_sessions_location_idx")
+  @@map("GuestSessions")
+}
 
 model SocialAuthIdentity {
   id               String   @id @default(cuid()) @db.VarChar(40)
@@ -187,19 +221,19 @@ model SocialAuthIdentity {
 }
 
 model CustomerProfile {
-  userId        Int      @id
-  status        String   @default("active") @db.VarChar(32)
-  rating        Decimal  @default(0) @db.Decimal(2, 1)
-  reviewsCount  Int      @default(0)
-  disputeStrikePoints Int @default(0)
-  disciplinaryState String @default("clear") @db.VarChar(32)
+  userId                   Int       @id
+  status                   String    @default("active") @db.VarChar(32)
+  rating                   Decimal   @default(0) @db.Decimal(2, 1)
+  reviewsCount             Int       @default(0)
+  disputeStrikePoints      Int       @default(0)
+  disciplinaryState        String    @default("clear") @db.VarChar(32)
   lastDisciplinaryActionAt DateTime? @db.Timestamptz(6)
-  activatedAt   DateTime @default(now()) @db.Timestamptz(6)
-  suspendedAt   DateTime? @db.Timestamptz(6)
-  deactivatedAt DateTime? @db.Timestamptz(6)
-  statusReason  String?  @db.VarChar(1000)
-  createdAt     DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  activatedAt              DateTime  @default(now()) @db.Timestamptz(6)
+  suspendedAt              DateTime? @db.Timestamptz(6)
+  deactivatedAt            DateTime? @db.Timestamptz(6)
+  statusReason             String?   @db.VarChar(1000)
+  createdAt                DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "CustomerProfiles_userId_fkey")
 
@@ -208,20 +242,20 @@ model CustomerProfile {
 }
 
 model TaskerProfile {
-  userId        Int      @id
-  status        String   @default("pending_approval") @db.VarChar(32)
-  rating        Decimal  @default(0) @db.Decimal(2, 1)
-  reviewsCount  Int      @default(0)
-  disputeStrikePoints Int @default(0)
-  disciplinaryState String @default("clear") @db.VarChar(32)
+  userId                   Int       @id
+  status                   String    @default("pending_approval") @db.VarChar(32)
+  rating                   Decimal   @default(0) @db.Decimal(2, 1)
+  reviewsCount             Int       @default(0)
+  disputeStrikePoints      Int       @default(0)
+  disciplinaryState        String    @default("clear") @db.VarChar(32)
   lastDisciplinaryActionAt DateTime? @db.Timestamptz(6)
-  approvedAt    DateTime? @db.Timestamptz(6)
-  rejectedAt    DateTime? @db.Timestamptz(6)
-  suspendedAt   DateTime? @db.Timestamptz(6)
-  deactivatedAt DateTime? @db.Timestamptz(6)
-  statusReason  String?  @db.VarChar(1000)
-  createdAt     DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  approvedAt               DateTime? @db.Timestamptz(6)
+  rejectedAt               DateTime? @db.Timestamptz(6)
+  suspendedAt              DateTime? @db.Timestamptz(6)
+  deactivatedAt            DateTime? @db.Timestamptz(6)
+  statusReason             String?   @db.VarChar(1000)
+  createdAt                DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "TaskerProfiles_userId_fkey")
 
@@ -230,19 +264,19 @@ model TaskerProfile {
 }
 
 model EliteTier {
-  id           String   @id @default(cuid()) @db.VarChar(40)
-  code         String   @unique(map: "EliteTiers_code_key") @db.VarChar(32)
-  name         String   @db.VarChar(80)
-  rank         Int      @unique(map: "EliteTiers_rank_key")
-  description  String?  @db.VarChar(500)
-  requirements Json?    @db.JsonB
-  isActive     Boolean  @default(true)
-  autoPromotionEnabled Boolean @default(false)
-  autoDemotionEnabled  Boolean @default(true)
-  retentionGraceDays   Int     @default(14)
-  requestCooldownDays  Int     @default(3)
-  createdAt    DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  id                   String   @id @default(cuid()) @db.VarChar(40)
+  code                 String   @unique(map: "EliteTiers_code_key") @db.VarChar(32)
+  name                 String   @db.VarChar(80)
+  rank                 Int      @unique(map: "EliteTiers_rank_key")
+  description          String?  @db.VarChar(500)
+  requirements         Json?    @db.JsonB
+  isActive             Boolean  @default(true)
+  autoPromotionEnabled Boolean  @default(false)
+  autoDemotionEnabled  Boolean  @default(true)
+  retentionGraceDays   Int      @default(14)
+  requestCooldownDays  Int      @default(3)
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   members      User[]                 @relation("EliteTierMembers")
   benefits     EliteBenefit[]
@@ -409,7 +443,6 @@ model EliteTaskerBadge {
   @@map("EliteTaskerBadges")
 }
 
-
 model EliteEvaluation {
   id                   String   @id @default(cuid()) @db.VarChar(40)
   taskerId             Int
@@ -441,60 +474,59 @@ model PlatformSetting {
   @@map("PlatformSettings")
 }
 
-
 model SeoSettings {
-  id                    String   @id @default("global") @db.VarChar(40)
-  siteName              String?  @db.VarChar(255)
-  defaultTitle          String?  @db.VarChar(255)
-  defaultDescription    String?  @db.VarChar(1000)
-  defaultCanonicalBaseUrl String? @db.VarChar(500)
-  defaultOgImageUrl     String?  @db.VarChar(1000)
-  defaultOgImageAlt     String?  @db.VarChar(255)
-  twitterCard           String   @default("summary_large_image") @db.VarChar(32)
-  twitterHandle         String?  @db.VarChar(100)
-  defaultRobotsIndex    Boolean  @default(true)
-  defaultRobotsFollow   Boolean  @default(true)
-  organizationSchema    Json     @default("{}") @db.JsonB
-  defaultStructuredData Json     @default("{}") @db.JsonB
-  robotsRules           Json     @default("[\"Disallow: /api/\",\"Allow: /api/seo/\"]") @db.JsonB
-  sitemapEnabled        Boolean  @default(true)
-  includeServices       Boolean  @default(true)
-  includePublicTaskers  Boolean  @default(false)
-  servicePathTemplate   String   @default("/services/{slug}") @db.VarChar(255)
-  taskerPathTemplate    String   @default("/taskers/{id}") @db.VarChar(255)
-  updatedById           Int?
-  createdAt             DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  id                      String   @id @default("global") @db.VarChar(40)
+  siteName                String?  @db.VarChar(255)
+  defaultTitle            String?  @db.VarChar(255)
+  defaultDescription      String?  @db.VarChar(1000)
+  defaultCanonicalBaseUrl String?  @db.VarChar(500)
+  defaultOgImageUrl       String?  @db.VarChar(1000)
+  defaultOgImageAlt       String?  @db.VarChar(255)
+  twitterCard             String   @default("summary_large_image") @db.VarChar(32)
+  twitterHandle           String?  @db.VarChar(100)
+  defaultRobotsIndex      Boolean  @default(true)
+  defaultRobotsFollow     Boolean  @default(true)
+  organizationSchema      Json     @default("{}") @db.JsonB
+  defaultStructuredData   Json     @default("{}") @db.JsonB
+  robotsRules             Json     @default("[\"Disallow: /api/\",\"Allow: /api/seo/\"]") @db.JsonB
+  sitemapEnabled          Boolean  @default(true)
+  includeServices         Boolean  @default(true)
+  includePublicTaskers    Boolean  @default(false)
+  servicePathTemplate     String   @default("/services/{slug}") @db.VarChar(255)
+  taskerPathTemplate      String   @default("/taskers/{id}") @db.VarChar(255)
+  updatedById             Int?
+  createdAt               DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   @@map("SeoSettings")
 }
 
 model SeoPage {
-  id                String   @id @default(cuid()) @db.VarChar(40)
-  path              String   @db.VarChar(500)
-  locale            String   @db.VarChar(10)
-  title             String?  @db.VarChar(255)
-  description       String?  @db.VarChar(1000)
-  canonicalUrl      String?  @db.VarChar(1000)
-  robotsIndex       Boolean  @default(true)
-  robotsFollow      Boolean  @default(true)
-  ogTitle           String?  @db.VarChar(255)
-  ogDescription     String?  @db.VarChar(1000)
-  ogImageUrl        String?  @db.VarChar(1000)
-  ogImageAlt        String?  @db.VarChar(255)
-  twitterCard       String?  @db.VarChar(32)
-  twitterTitle      String?  @db.VarChar(255)
-  twitterDescription String? @db.VarChar(1000)
-  twitterImageUrl   String?  @db.VarChar(1000)
-  keywords          String[] @default([]) @db.VarChar(100)
-  structuredData    Json     @default("{}") @db.JsonB
-  alternates        Json     @default("{}") @db.JsonB
-  priority          Decimal? @db.Decimal(3, 2)
-  changeFrequency   String?  @db.VarChar(16)
-  isActive          Boolean  @default(true)
-  updatedById       Int?
-  createdAt         DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt         DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  id                 String   @id @default(cuid()) @db.VarChar(40)
+  path               String   @db.VarChar(500)
+  locale             String   @db.VarChar(10)
+  title              String?  @db.VarChar(255)
+  description        String?  @db.VarChar(1000)
+  canonicalUrl       String?  @db.VarChar(1000)
+  robotsIndex        Boolean  @default(true)
+  robotsFollow       Boolean  @default(true)
+  ogTitle            String?  @db.VarChar(255)
+  ogDescription      String?  @db.VarChar(1000)
+  ogImageUrl         String?  @db.VarChar(1000)
+  ogImageAlt         String?  @db.VarChar(255)
+  twitterCard        String?  @db.VarChar(32)
+  twitterTitle       String?  @db.VarChar(255)
+  twitterDescription String?  @db.VarChar(1000)
+  twitterImageUrl    String?  @db.VarChar(1000)
+  keywords           String[] @default([]) @db.VarChar(100)
+  structuredData     Json     @default("{}") @db.JsonB
+  alternates         Json     @default("{}") @db.JsonB
+  priority           Decimal? @db.Decimal(3, 2)
+  changeFrequency    String?  @db.VarChar(16)
+  isActive           Boolean  @default(true)
+  updatedById        Int?
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   @@unique([path, locale], map: "seo_pages_path_locale_unique")
   @@index([path, isActive], map: "seo_pages_path_active_idx")
@@ -519,37 +551,37 @@ model SeoRedirect {
 }
 
 model SeoSitemapEntry {
-  id              String   @id @default(cuid()) @db.VarChar(40)
-  path            String   @unique(map: "seo_sitemap_entries_path_key") @db.VarChar(1000)
-  locale          String?  @db.VarChar(10)
-  priority        Decimal? @db.Decimal(3, 2)
-  changeFrequency String?  @db.VarChar(16)
+  id              String    @id @default(cuid()) @db.VarChar(40)
+  path            String    @unique(map: "seo_sitemap_entries_path_key") @db.VarChar(1000)
+  locale          String?   @db.VarChar(10)
+  priority        Decimal?  @db.Decimal(3, 2)
+  changeFrequency String?   @db.VarChar(16)
   lastModifiedAt  DateTime? @db.Timestamptz(6)
-  isActive        Boolean  @default(true)
+  isActive        Boolean   @default(true)
   updatedById     Int?
-  createdAt       DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   @@index([isActive, updatedAt], map: "seo_sitemap_entries_active_updated_idx")
   @@map("SeoSitemapEntries")
 }
 
 model ContentPage {
-  id             String                  @id @default(cuid()) @db.VarChar(40)
-  slug           String                  @unique(map: "content_pages_slug_key") @db.VarChar(120)
-  pageType       String                  @default("standard") @db.VarChar(64)
-  status         String                  @default("draft") @db.VarChar(32)
-  isPublished    Boolean                 @default(false)
-  version        Int                     @default(1)
-  title          String?                 @db.VarChar(255)
-  description    String?                 @db.Text
-  seoTitle       String?                 @db.VarChar(255)
-  seoDescription String?                 @db.VarChar(1000)
-  metadata       Json                    @default("{}") @db.JsonB
-  publishedAt    DateTime?               @db.Timestamptz(6)
+  id             String    @id @default(cuid()) @db.VarChar(40)
+  slug           String    @unique(map: "content_pages_slug_key") @db.VarChar(120)
+  pageType       String    @default("standard") @db.VarChar(64)
+  status         String    @default("draft") @db.VarChar(32)
+  isPublished    Boolean   @default(false)
+  version        Int       @default(1)
+  title          String?   @db.VarChar(255)
+  description    String?   @db.Text
+  seoTitle       String?   @db.VarChar(255)
+  seoDescription String?   @db.VarChar(1000)
+  metadata       Json      @default("{}") @db.JsonB
+  publishedAt    DateTime? @db.Timestamptz(6)
   updatedById    Int?
-  createdAt      DateTime                @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   translations ContentPageTranslation[]
   blocks       ContentBlock[]
@@ -560,15 +592,15 @@ model ContentPage {
 }
 
 model ContentPageTranslation {
-  id             String      @id @default(cuid()) @db.VarChar(40)
-  pageId         String      @db.VarChar(40)
-  locale         String      @db.VarChar(10)
-  title          String?     @db.VarChar(255)
-  description    String?     @db.Text
-  seoTitle       String?     @db.VarChar(255)
-  seoDescription String?     @db.VarChar(1000)
-  createdAt      DateTime    @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime    @default(now()) @updatedAt @db.Timestamptz(6)
+  id             String   @id @default(cuid()) @db.VarChar(40)
+  pageId         String   @db.VarChar(40)
+  locale         String   @db.VarChar(10)
+  title          String?  @db.VarChar(255)
+  description    String?  @db.Text
+  seoTitle       String?  @db.VarChar(255)
+  seoDescription String?  @db.VarChar(1000)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   page ContentPage @relation(fields: [pageId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ContentPageTranslations_pageId_fkey")
 
@@ -578,17 +610,17 @@ model ContentPageTranslation {
 }
 
 model ContentBlock {
-  id         String   @id @default(cuid()) @db.VarChar(40)
-  pageId     String   @db.VarChar(40)
-  key        String   @db.VarChar(120)
-  type       String   @db.VarChar(64)
-  sortOrder  Int      @default(0)
-  isActive   Boolean  @default(true)
-  payload    Json     @default("{}") @db.JsonB
-  createdAt  DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  id        String   @id @default(cuid()) @db.VarChar(40)
+  pageId    String   @db.VarChar(40)
+  key       String   @db.VarChar(120)
+  type      String   @db.VarChar(64)
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  payload   Json     @default("{}") @db.JsonB
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  page         ContentPage            @relation(fields: [pageId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ContentBlocks_pageId_fkey")
+  page         ContentPage               @relation(fields: [pageId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ContentBlocks_pageId_fkey")
   translations ContentBlockTranslation[]
 
   @@unique([pageId, key], map: "content_blocks_page_key_unique")
@@ -655,17 +687,17 @@ model RbacRole {
 }
 
 model Service {
-  id          Int      @id @default(autoincrement())
-  name        String?  @db.VarChar(255)
-  description String?  @db.Text
-  slug        String?  @db.VarChar(255)
-  icon        String?  @db.VarChar(255)
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  minHourlyRateUsd Decimal @default(1) @db.Decimal(10, 2)
-  maxHourlyRateUsd Decimal @default(10000) @db.Decimal(10, 2)
-  createdAt   DateTime @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+  id               Int      @id @default(autoincrement())
+  name             String?  @db.VarChar(255)
+  description      String?  @db.Text
+  slug             String?  @db.VarChar(255)
+  icon             String?  @db.VarChar(255)
+  isActive         Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  minHourlyRateUsd Decimal  @default(1) @db.Decimal(10, 2)
+  maxHourlyRateUsd Decimal  @default(10000) @db.Decimal(10, 2)
+  createdAt        DateTime @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
 
   userServices UserService[]
   bookings     Booking[]
@@ -1082,19 +1114,19 @@ model TaskComplaint {
   createdAt            DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  booking          Booking                  @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskComplaints_bookingId_fkey")
-  filedBy          User                     @relation("TaskComplaintFiledBy", fields: [filedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskComplaints_filedById_fkey")
-  assignedAdmin    User?                    @relation("DisputeAssignedAdmin", fields: [assignedAdminId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "TaskComplaints_assignedAdminId_fkey")
-  resolvedBy       User?                    @relation("DisputeResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "TaskComplaints_resolvedById_fkey")
-  withdrawnBy      User?                    @relation("DisputeWithdrawnBy", fields: [withdrawnById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "TaskComplaints_withdrawnById_fkey")
-  evidences        DisputeEvidence[]
-  evidenceRequests DisputeEvidenceRequest[]
-  resolutions      DisputeResolution[]
-  participantActions DisputeParticipantAction[]
-  comments         DisputeComment[]
+  booking             Booking                     @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskComplaints_bookingId_fkey")
+  filedBy             User                        @relation("TaskComplaintFiledBy", fields: [filedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskComplaints_filedById_fkey")
+  assignedAdmin       User?                       @relation("DisputeAssignedAdmin", fields: [assignedAdminId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "TaskComplaints_assignedAdminId_fkey")
+  resolvedBy          User?                       @relation("DisputeResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "TaskComplaints_resolvedById_fkey")
+  withdrawnBy         User?                       @relation("DisputeWithdrawnBy", fields: [withdrawnById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "TaskComplaints_withdrawnById_fkey")
+  evidences           DisputeEvidence[]
+  evidenceRequests    DisputeEvidenceRequest[]
+  resolutions         DisputeResolution[]
+  participantActions  DisputeParticipantAction[]
+  comments            DisputeComment[]
   satisfactionSurveys DisputeSatisfactionSurvey[]
-  deliveries       DisputeDelivery[]
-  cashRefunds      DisputeCashRefund[]
+  deliveries          DisputeDelivery[]
+  cashRefunds         DisputeCashRefund[]
   disciplinaryActions DisciplinaryAction[]
 
   @@unique([filedById, clientRequestKey], map: "task_complaints_filer_client_request_unique")
@@ -1133,18 +1165,18 @@ model DisputeEvidence {
 }
 
 model DisputeEvidenceRequest {
-  id            String    @id @default(cuid()) @db.VarChar(40)
-  complaintId   String    @db.VarChar(40)
-  createdById   Int
-  requestedFrom String    @db.VarChar(32)
-  message       String    @db.VarChar(1000)
-  status        String    @default("pending") @db.VarChar(32)
-  dueAt         DateTime? @db.Timestamptz(6)
+  id             String    @id @default(cuid()) @db.VarChar(40)
+  complaintId    String    @db.VarChar(40)
+  createdById    Int
+  requestedFrom  String    @db.VarChar(32)
+  message        String    @db.VarChar(1000)
+  status         String    @default("pending") @db.VarChar(32)
+  dueAt          DateTime? @db.Timestamptz(6)
   reminderSentAt DateTime? @db.Timestamptz(6)
-  overdueAt     DateTime? @db.Timestamptz(6)
-  expiredAt     DateTime? @db.Timestamptz(6)
-  fulfilledAt   DateTime? @db.Timestamptz(6)
-  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  overdueAt      DateTime? @db.Timestamptz(6)
+  expiredAt      DateTime? @db.Timestamptz(6)
+  fulfilledAt    DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
 
   complaint TaskComplaint @relation(fields: [complaintId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "DisputeEvidenceRequests_complaintId_fkey")
   createdBy User          @relation("DisputeEvidenceRequester", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "DisputeEvidenceRequests_createdById_fkey")
@@ -1156,30 +1188,30 @@ model DisputeEvidenceRequest {
 }
 
 model DisputeResolution {
-  id                   String    @id @default(cuid()) @db.VarChar(40)
-  complaintId          String    @db.VarChar(40)
-  actorId              Int
-  status               String    @default("draft") @db.VarChar(32)
-  actionType           String    @db.VarChar(48)
-  refundAmount         Decimal?  @db.Decimal(14, 2)
-  currency             String?   @db.VarChar(3)
-  warningTarget        String?   @db.VarChar(32)
-  notifyParties        Boolean   @default(true)
-  summary              String    @db.Text
-  refundTransactionId  String?   @unique(map: "DisputeResolutions_refundTransactionId_key") @db.VarChar(40)
-  providerRefundId     String?   @db.VarChar(255)
-  providerRefundStatus String?   @db.VarChar(48)
-  failureReason        String?   @db.VarChar(1000)
-  proposedAt           DateTime? @db.Timestamptz(6)
+  id                    String    @id @default(cuid()) @db.VarChar(40)
+  complaintId           String    @db.VarChar(40)
+  actorId               Int
+  status                String    @default("draft") @db.VarChar(32)
+  actionType            String    @db.VarChar(48)
+  refundAmount          Decimal?  @db.Decimal(14, 2)
+  currency              String?   @db.VarChar(3)
+  warningTarget         String?   @db.VarChar(32)
+  notifyParties         Boolean   @default(true)
+  summary               String    @db.Text
+  refundTransactionId   String?   @unique(map: "DisputeResolutions_refundTransactionId_key") @db.VarChar(40)
+  providerRefundId      String?   @db.VarChar(255)
+  providerRefundStatus  String?   @db.VarChar(48)
+  failureReason         String?   @db.VarChar(1000)
+  proposedAt            DateTime? @db.Timestamptz(6)
   proposalResponseDueAt DateTime? @db.Timestamptz(6)
-  appliedAt            DateTime? @db.Timestamptz(6)
-  createdAt            DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  appliedAt             DateTime? @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  complaint TaskComplaint @relation(fields: [complaintId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "DisputeResolutions_complaintId_fkey")
-  actor     User          @relation("DisputeResolutionActor", fields: [actorId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "DisputeResolutions_actorId_fkey")
+  complaint          TaskComplaint              @relation(fields: [complaintId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "DisputeResolutions_complaintId_fkey")
+  actor              User                       @relation("DisputeResolutionActor", fields: [actorId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "DisputeResolutions_actorId_fkey")
   participantActions DisputeParticipantAction[]
-  cashRefund DisputeCashRefund?
+  cashRefund         DisputeCashRefund?
 
   @@index([complaintId, status, createdAt], map: "dispute_resolutions_complaint_status_created_idx")
   @@index([status, proposalResponseDueAt], map: "dispute_resolutions_status_response_due_idx")
@@ -1187,7 +1219,6 @@ model DisputeResolution {
   @@index([actionType, appliedAt], map: "dispute_resolutions_action_applied_idx")
   @@map("DisputeResolutions")
 }
-
 
 model DisputeParticipantAction {
   id           String   @id @default(cuid()) @db.VarChar(40)
@@ -1199,8 +1230,8 @@ model DisputeParticipantAction {
   message      String?  @db.VarChar(5000)
   createdAt    DateTime @default(now()) @db.Timestamptz(6)
 
-  complaint TaskComplaint      @relation(fields: [complaintId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "DisputeParticipantActions_complaintId_fkey")
-  user      User               @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "DisputeParticipantActions_userId_fkey")
+  complaint  TaskComplaint      @relation(fields: [complaintId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "DisputeParticipantActions_complaintId_fkey")
+  user       User               @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "DisputeParticipantActions_userId_fkey")
   resolution DisputeResolution? @relation(fields: [resolutionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "DisputeParticipantActions_resolutionId_fkey")
 
   @@index([complaintId, createdAt], map: "dispute_participant_actions_complaint_created_idx")
@@ -1284,9 +1315,9 @@ model DisputeCashRefund {
   createdAt               DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt               DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  complaint TaskComplaint   @relation(fields: [complaintId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "DisputeCashRefunds_complaintId_fkey")
-  resolution DisputeResolution @relation(fields: [resolutionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "DisputeCashRefunds_resolutionId_fkey")
-  confirmedBy User?          @relation("DisputeCashRefundConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "DisputeCashRefunds_confirmedById_fkey")
+  complaint   TaskComplaint     @relation(fields: [complaintId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "DisputeCashRefunds_complaintId_fkey")
+  resolution  DisputeResolution @relation(fields: [resolutionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "DisputeCashRefunds_resolutionId_fkey")
+  confirmedBy User?             @relation("DisputeCashRefundConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "DisputeCashRefunds_confirmedById_fkey")
 
   @@index([complaintId, status, createdAt], map: "dispute_cash_refunds_complaint_status_idx")
   @@index([taskerId, status, createdAt], map: "dispute_cash_refunds_tasker_status_idx")
@@ -1326,7 +1357,7 @@ model StripeChargeback {
   amount                Decimal   @db.Decimal(14, 2)
   currency              String    @db.VarChar(3)
   evidenceDueBy         DateTime? @db.Timestamptz(6)
-  isChargeRefundable    Boolean?  
+  isChargeRefundable    Boolean?
   balanceTransactionId  String?   @db.VarChar(255)
   latestStripeEventType String    @db.VarChar(120)
   openedAt              DateTime  @default(now()) @db.Timestamptz(6)
@@ -1409,7 +1440,7 @@ model TaskNotification {
   readAt         DateTime? @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @db.Timestamptz(6)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "TaskNotifications_userId_fkey")
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "TaskNotifications_userId_fkey")
   fcmPushDeliveries FcmPushDelivery[]
 
   @@index([userId, audienceRole, readAt, createdAt], map: "task_notifications_user_role_read_created_idx")
@@ -1852,22 +1883,21 @@ model ObjectStorageDeletionTask {
   @@map("ObjectStorageDeletionTasks")
 }
 
-
 model FcmDeviceToken {
-  id         String   @id @db.VarChar(40)
+  id         String    @id @db.VarChar(40)
   userId     Int
-  tokenHash  String   @unique(map: "fcm_device_tokens_token_hash_key") @db.VarChar(64)
-  token      String   @db.VarChar(4096)
-  platform   String   @db.VarChar(16)
-  deviceId   String?  @db.VarChar(255)
-  enabled    Boolean  @default(true)
-  lastSeenAt DateTime @default(now()) @db.Timestamptz(6)
+  tokenHash  String    @unique(map: "fcm_device_tokens_token_hash_key") @db.VarChar(64)
+  token      String    @db.VarChar(4096)
+  platform   String    @db.VarChar(16)
+  deviceId   String?   @db.VarChar(255)
+  enabled    Boolean   @default(true)
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(6)
   disabledAt DateTime? @db.Timestamptz(6)
-  lastError  String?  @db.VarChar(1000)
-  createdAt  DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  lastError  String?   @db.VarChar(1000)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "FcmDeviceTokens_userId_fkey")
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "FcmDeviceTokens_userId_fkey")
   deliveries FcmPushDelivery[]
 
   @@index([userId, enabled, updatedAt], map: "fcm_device_tokens_user_enabled_idx")
@@ -1875,23 +1905,23 @@ model FcmDeviceToken {
 }
 
 model FcmPushDelivery {
-  id             String   @id @db.VarChar(80)
-  notificationId String   @db.VarChar(40)
-  deviceTokenId  String   @db.VarChar(40)
-  title          String   @db.VarChar(160)
-  body           String   @db.VarChar(500)
-  status         String   @default("pending") @db.VarChar(16)
-  attempts       Int      @default(0)
-  nextAttemptAt  DateTime @default(now()) @db.Timestamptz(6)
+  id             String    @id @db.VarChar(80)
+  notificationId String    @db.VarChar(40)
+  deviceTokenId  String    @db.VarChar(40)
+  title          String    @db.VarChar(160)
+  body           String    @db.VarChar(500)
+  status         String    @default("pending") @db.VarChar(16)
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now()) @db.Timestamptz(6)
   lockedAt       DateTime? @db.Timestamptz(6)
-  lockToken      String?  @db.VarChar(64)
-  lastError      String?  @db.VarChar(1000)
+  lockToken      String?   @db.VarChar(64)
+  lastError      String?   @db.VarChar(1000)
   sentAt         DateTime? @db.Timestamptz(6)
-  createdAt      DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  notification   TaskNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "FcmPushDeliveries_notificationId_fkey")
-  deviceToken    FcmDeviceToken  @relation(fields: [deviceTokenId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "FcmPushDeliveries_deviceTokenId_fkey")
+  notification TaskNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "FcmPushDeliveries_notificationId_fkey")
+  deviceToken  FcmDeviceToken   @relation(fields: [deviceTokenId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "FcmPushDeliveries_deviceTokenId_fkey")
 
   @@unique([notificationId, deviceTokenId], map: "fcm_push_deliveries_notification_device_unique")
   @@index([status, nextAttemptAt, lockedAt, createdAt], map: "fcm_push_deliveries_queue_idx")

@@ -8,7 +8,7 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminReviewModerationDto, AdminReviewsQueryDto } from '../dto/admin-reviews.dto';
 import { AdminReviewsService } from '../services/admin-reviews.service';
 
-@ApiTags('29 Admin - Review Moderation')
+@ApiTags('62 Admin - Review Moderation')
 @ApiBearerAuth('bearer')
 @UseGuards(AdminAuthGuard, PermissionsGuard)
 @Controller('admin/reviews')

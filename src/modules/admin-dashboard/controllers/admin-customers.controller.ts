@@ -35,7 +35,7 @@ import {
 import { AdminCustomersService } from '../services/admin-customers.service';
 import { PermanentDeleteDto } from '../../account-deletion/dto/permanent-delete.dto';
 
-@ApiTags('21 Admin Dashboard - Customers')
+@ApiTags('53 Admin - Dashboard Customers')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid active administrator session is required.' })
 @ApiForbiddenResponse({ description: 'The administrator lacks the required permission.' })

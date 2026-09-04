@@ -28,7 +28,7 @@ import type {
   MessageListView,
 } from './conversations.types';
 
-@ApiTags('07 Conversations')
+@ApiTags('08 Conversations')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Customer, UserRole.Tasker)

@@ -187,6 +187,11 @@ export default () => {
         15,
       ),
     },
+    guest: {
+      tokenExpiresInHours: asPositiveInteger(process.env.GUEST_TOKEN_EXPIRES_IN_HOURS, 24),
+      retentionDays: asPositiveInteger(process.env.GUEST_SESSION_RETENTION_DAYS, 7),
+      cleanupBatchSize: asPositiveInteger(process.env.GUEST_SESSION_CLEANUP_BATCH_SIZE, 500),
+    },
     socialAuth: {
       googleClientIds: asStringList(process.env.GOOGLE_AUTH_CLIENT_IDS),
       appleClientIds: asStringList(process.env.APPLE_AUTH_CLIENT_IDS),

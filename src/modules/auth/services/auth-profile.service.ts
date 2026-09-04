@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import type { UpdateLocationDto } from '../../../common/dto/update-location.dto';
 import type { UserRole } from '../../../common/enums/user-role.enum';
 import { serializeUser, type PublicUser } from '../../../common/utils/user.util';
 import { success, type SuccessEnvelope } from '../auth-response';
@@ -38,5 +39,24 @@ export class AuthProfileService {
     }
     const user = await this.repository.updateUser(userId, dto);
     return success({ user: serializeUser(user, activeRole) }, 'Profile updated successfully.');
+  }
+
+  /**
+   * Explicit Customer location save. Kept separate from update() so
+   * latitude/longitude only ever change through this dedicated call, never
+   * as a side effect of a general profile edit or of GET /api/taskers
+   * merely being called with lat/lng.
+   */
+  async updateLocation(
+    userId: number,
+    dto: UpdateLocationDto,
+    activeRole?: UserRole,
+  ): Promise<SuccessEnvelope<{ user: PublicUser }>> {
+    const user = await this.repository.updateUser(userId, {
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+      locationUpdatedAt: new Date(),
+    });
+    return success({ user: serializeUser(user, activeRole) }, 'Location saved successfully.');
   }
 }

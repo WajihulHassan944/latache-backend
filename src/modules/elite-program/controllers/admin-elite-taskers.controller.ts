@@ -42,7 +42,7 @@ import {
 } from '../dto';
 import { EliteProgramService } from '../services/elite-program.service';
 
-@ApiTags('23 Admin - Elite Tasker Program')
+@ApiTags('55 Admin - Elite Tasker Program')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid active administrator session is required.' })
 @ApiForbiddenResponse({

@@ -57,7 +57,7 @@ import {
 import { RbacService } from '../services/rbac.service';
 import { PermanentDeleteDto } from '../../account-deletion/dto/permanent-delete.dto';
 
-@ApiTags('03 RBAC - Roles & Permissions')
+@ApiTags('50 Admin - RBAC & Permissions')
 @ApiBearerAuth('bearer')
 @ApiUnauthorizedResponse({ description: 'A valid active administrator session is required.' })
 @Controller('rbac')

@@ -18,6 +18,7 @@ const canonicalRoutes = [
   ['changePassword', RequestMethod.PATCH, 'change-password'],
   ['me', RequestMethod.GET, 'me'],
   ['updateMe', RequestMethod.PATCH, 'me'],
+  ['updateMyLocation', RequestMethod.PATCH, 'me/location'],
   ['listSessions', RequestMethod.GET, 'sessions'],
   ['revokeSession', RequestMethod.DELETE, 'sessions/:id'],
   ['logout', RequestMethod.POST, 'logout'],

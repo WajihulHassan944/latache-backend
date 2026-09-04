@@ -152,82 +152,129 @@ async function bootstrap(): Promise<void> {
           config.get<string>('app.baseUrl', 'http://localhost:8080'),
           'Configured API origin',
         )
+        // ============================================================
+        // User-facing APIs (Customer/Tasker/public/guest). Auth stays at
+        // 01, unchanged, as the shared entry point for every role.
+        // ============================================================
         .addTag('01 Auth', 'Customer, tasker, admin, super-admin, session, and password flows')
         .addTag(
-          '02 Uploads',
+          '02 Guest Sessions',
+          'Anonymous browsing sessions for public website read-only APIs, and the authenticated flow to link one to a real account after signup/login',
+        )
+        .addTag(
+          '03 Platform',
+          'Public platform content and current currency context, read-only',
+        )
+        .addTag(
+          '04 Uploads',
           'Cloudinary signup, profile, identity, work-image, service-image, and booking-attachment uploads',
         )
+        .addTag('05 Dashboard', 'Role-aware customer/tasker dashboard overview')
         .addTag(
-          '03 RBAC - Roles & Permissions',
-          'Administrator roles, permissions, assignments, and account access',
-        )
-        .addTag('04 Dashboard', 'Role-aware customer/tasker dashboard overview')
-        .addTag(
-          '05 Bookings & Tasks',
+          '06 Bookings & Tasks',
           'Unified customer/tasker booking lifecycle, navigation, timer, rescheduling, extensions, and disputes',
         )
         .addTag(
-          '06 Payments',
+          '07 Payments',
           'Customer Stripe cards, SetupIntents, real wallet ledger, and booking payment state',
         )
         .addTag(
-          '07 Conversations',
+          '08 Conversations',
           'Booking-backed messages, verified document attachments, and persisted voice/video call history',
         )
         .addTag(
-          '08 Notifications',
+          '09 Notifications',
           'Role-aware persisted, template-backed localized notification inbox',
         )
-        .addTag('09 Reviews', 'Booking-backed reviews shared by customers and taskers')
-        .addTag('10 Favorites', 'Customer favorite taskers')
-        .addTag('11 Tasker Profile & Skills', 'Tasker personal/business profile and active skills')
+        .addTag('10 Reviews', 'Booking-backed reviews shared by customers and taskers')
+        .addTag('11 Favorites', 'Customer favorite taskers')
+        .addTag('12 Tasker Profile & Skills', 'Tasker personal/business profile and active skills')
         .addTag(
-          '12 Tasker Wallet & Payouts',
+          '13 Tasker Wallet & Payouts',
           'Ledger-backed pending/available earnings, cash platform payables, encrypted payout methods, and non-fabricated withdrawals',
         )
-        .addTag('13 Services', 'Localized service catalogue and optional booking service options')
-        .addTag('14 Tasker Discovery', 'Tasker discovery, availability and onboarding')
         .addTag(
-          '15 Support',
+          '14 Tasker - Elite Program',
+          "A tasker's own Elite tier status, requirements progress, and membership request history",
+        )
+        .addTag('15 Services', 'Localized service catalogue and optional booking service options')
+        .addTag('16 Tasker Discovery', 'Tasker discovery, availability and onboarding')
+        .addTag(
+          '17 Support',
           'Shared customer/tasker support tickets and persisted live-chat conversations',
         )
         .addTag(
-          '16 Realtime',
+          '18 Realtime',
           'Authenticated Socket.IO contract for notifications, chat, booking state, live location, and WebRTC voice/video signaling',
         )
         .addTag(
-          '33 Referrals',
+          '19 Content Management',
+          'Public homepage sections and published content pages, read-only',
+        )
+        .addTag('20 SEO', 'Public SEO metadata, robots.txt, XML sitemap, redirects, and structured data')
+        .addTag(
+          '21 Referrals',
           'Customer/Tasker referral codes, attribution, qualification, reward history, and optional masked leaderboard',
         )
+        // ============================================================
+        // Admin APIs only. Every super-admin/administrator-facing
+        // endpoint lives below this line, grouped together and gated by
+        // AdminAuthGuard/PermissionsGuard.
+        // ============================================================
         .addTag(
-          '34 Admin - Referrals',
-          'RBAC-controlled referral investigation and immutable reward clawbacks',
+          '50 Admin - RBAC & Permissions',
+          'Administrator roles, permissions, assignments, and account access',
         )
         .addTag(
-          '26 Admin - Payments & Finance',
-          'Payment, earning-clearance, cash-receivable, payout, refund and revenue views backed by real financial records',
+          '51 Admin - Platform Settings',
+          'Super-admin-owned booking, service-radius, commission/tax, and finance policy configuration',
+        )
+        .addTag('52 Admin - Dashboard Analytics', 'Platform-wide analytics and reporting overview')
+        .addTag(
+          '53 Admin - Dashboard Customers',
+          'Permission-aware customer directory, moderation, and detail views',
         )
         .addTag(
-          '27 Admin - Support Center',
-          'Permission-aware support queues, live chat, assignment, escalation and reports',
+          '54 Admin - Dashboard Taskers',
+          'Permission-aware Tasker directory, verification queue, and moderation',
         )
         .addTag(
-          '28 Admin - Service Management',
-          'Service catalogue, sub-services, Tasker coverage and canonical pricing-policy views',
+          '55 Admin - Elite Tasker Program',
+          'RBAC-controlled Elite tier configuration, membership decisions, and evaluations',
         )
         .addTag(
-          '29 Admin - Review Moderation',
-          'Permission-aware public review visibility moderation without rewriting author content',
-        )
-        .addTag(
-          '24 Admin - Booking Management',
+          '56 Admin - Booking Management',
           'Permission-aware booking operations, filtering, reporting, and safe lifecycle actions',
         )
         .addTag(
-          '25 Admin - Dispute Management',
+          '57 Admin - Dispute Management',
           'Investigation, evidence, resolution drafts, refunds, warnings, and audit-backed dispute decisions',
         )
-        .addTag('30 SEO', 'Public SEO metadata, robots.txt, XML sitemap, redirects, structured data, and RBAC-managed SEO configuration')
+        .addTag(
+          '58 Admin - Payments & Finance',
+          'Payment, earning-clearance, cash-receivable, payout, refund and revenue views backed by real financial records',
+        )
+        .addTag(
+          '59 Admin - Support Center',
+          'Permission-aware support queues, live chat, assignment, escalation and reports',
+        )
+        .addTag(
+          '60 Admin - Service Management',
+          'Service catalogue, sub-services, Tasker coverage and canonical pricing-policy views',
+        )
+        .addTag(
+          '61 Admin - Content Management',
+          'RBAC-managed homepage sections and content page authoring/publishing',
+        )
+        .addTag(
+          '62 Admin - Review Moderation',
+          'Permission-aware public review visibility moderation without rewriting author content',
+        )
+        .addTag('63 Admin - SEO', 'RBAC-managed SEO configuration, redirects, and sitemap entries')
+        .addTag(
+          '64 Admin - Referrals',
+          'RBAC-controlled referral investigation and immutable reward clawbacks',
+        )
         .addTag('health', 'API, PostgreSQL, Redis, BullMQ worker/queue and realtime outbox health')
         .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'bearer')
         .build(),

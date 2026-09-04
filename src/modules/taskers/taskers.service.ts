@@ -15,11 +15,13 @@ import {
 } from '../../common/utils/date.util';
 import { parseTimeToMinutes, rangesOverlap } from '../../common/utils/time.util';
 import { PrismaService } from '../../database/prisma.service';
-import { Prisma } from '../../generated/prisma/client';
+import { Prisma, type User } from '../../generated/prisma/client';
+import type { SavedLocation } from './discovery-location.util';
 import { ListTaskersQueryDto } from './dto/list-taskers-query.dto';
 import { PublicTaskerReviewsQueryDto } from './dto/public-tasker-reviews-query.dto';
 import { ReviewsService } from '../reviews/reviews.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
+import { UploadsService } from '../uploads/uploads.service';
 import { AvailabilitySlotDto, SubmitOnboardingDto } from './dto/submit-onboarding.dto';
 import { TaskersRepository } from './taskers.repository';
 
@@ -30,9 +32,11 @@ export class TaskersService {
     private readonly repository: TaskersRepository,
     private readonly reviews: ReviewsService,
     private readonly platformSettings: PlatformSettingsService,
+    private readonly uploads: UploadsService,
   ) {}
 
-  async submitOnboarding(userId: number, dto: SubmitOnboardingDto) {
+  async submitOnboarding(user: User, dto: SubmitOnboardingDto) {
+    const userId = user.id;
     this.validateAvailability(dto.availability);
     const requestedSlugs = dto.services.map((service) => service.slug);
     const duplicates = requestedSlugs.filter(
@@ -43,6 +47,13 @@ export class TaskersService {
         `Duplicate service(s) in request: ${[...new Set(duplicates)].join(', ')}`,
       );
     }
+
+    // Verified up front (outside the transaction, since it calls out to
+    // Cloudinary) so identityDocument always stores the server-confirmed
+    // publicId/secureUrl rather than trusting the client's copy verbatim.
+    const verifiedDocument = dto.identity.document
+      ? await this.uploads.verifyTaskerIdentityDocument(user, dto.identity.document)
+      : null;
 
     const submittedAt = new Date();
     await this.prisma.$transaction(async (transaction) => {
@@ -192,8 +203,8 @@ export class TaskersService {
           yearsOfExperience: dto.yearsOfExperience,
           bio: dto.bio,
           idType: dto.identity.idType,
-          identityDocument: dto.identity.document
-            ? (dto.identity.document as unknown as Prisma.InputJsonValue)
+          identityDocument: verifiedDocument
+            ? (verifiedDocument as unknown as Prisma.InputJsonValue)
             : Prisma.DbNull,
           serviceAreaLabel: dto.serviceArea.label,
           serviceAreaLat: dto.serviceArea.lat,
@@ -214,10 +225,22 @@ export class TaskersService {
     };
   }
 
-  async list(query: ListTaskersQueryDto, locale: string) {
+  async list(
+    query: ListTaskersQueryDto,
+    locale: string,
+    savedLocation: SavedLocation | null = null,
+  ) {
     try {
       const effectiveQuery = { ...query };
-      if (query.lat !== undefined && query.lng !== undefined) {
+      // Precedence: incoming lat+lng first; otherwise fall back to the
+      // caller's saved location. A request with only one of lat/lng is left
+      // untouched so the LAT_LNG_PAIR_REQUIRED check below still rejects it
+      // with a 400 instead of silently substituting the saved coordinates.
+      if (effectiveQuery.lat === undefined && effectiveQuery.lng === undefined && savedLocation) {
+        effectiveQuery.lat = savedLocation.lat;
+        effectiveQuery.lng = savedLocation.lng;
+      }
+      if (effectiveQuery.lat !== undefined && effectiveQuery.lng !== undefined) {
         const policy = await this.platformSettings.serviceRadiusPolicy();
         if (policy.enforcementEnabled !== false) {
           const maximum = Number(policy.maximumRadiusKm ?? 500);

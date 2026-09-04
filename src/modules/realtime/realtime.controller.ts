@@ -13,7 +13,7 @@ import {
 } from './realtime.constants';
 import { WebRtcConfigService } from './webrtc-config.service';
 
-@ApiTags('16 Realtime')
+@ApiTags('18 Realtime')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard)
 @Controller('realtime')

@@ -27,7 +27,7 @@ import {
 } from './dto/support.dto';
 import { SupportService } from './support.service';
 
-@ApiTags('27 Admin - Support Center')
+@ApiTags('59 Admin - Support Center')
 @ApiBearerAuth('bearer')
 @UseGuards(AdminAuthGuard, PermissionsGuard)
 @Controller('admin/support')

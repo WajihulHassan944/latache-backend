@@ -3,10 +3,15 @@ import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AdminServicesQueryDto {
-  @ApiPropertyOptional({ enum: ['catalog', 'pricing'], default: 'catalog' })
+  @ApiPropertyOptional({
+    enum: ['catalog', 'pricing', 'icons'],
+    default: 'catalog',
+    description:
+      'view=icons returns the curated catalogue of valid Service.icon values (with display labels) for building the create/edit-service icon picker.',
+  })
   @IsOptional()
-  @IsIn(['catalog', 'pricing'])
-  view?: 'catalog' | 'pricing';
+  @IsIn(['catalog', 'pricing', 'icons'])
+  view?: 'catalog' | 'pricing' | 'icons';
 
   @ApiPropertyOptional({ enum: ['all', 'active', 'inactive'], default: 'all' })
   @IsOptional()
