@@ -61,5 +61,8 @@ export class ReviewBookingParamDto {
 }
 
 export class ReviewIdParamDto {
+  @Transform(trim)
+  @IsString()
+  @MaxLength(40)
   id!: string;
 }

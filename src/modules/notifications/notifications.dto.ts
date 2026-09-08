@@ -50,5 +50,7 @@ export class ListNotificationsQueryDto {
 }
 
 export class NotificationIdParamDto {
+  @IsString()
+  @Length(1, 40)
   id!: string;
 }
