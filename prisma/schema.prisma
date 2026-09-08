@@ -256,6 +256,11 @@ model TaskerProfile {
   suspendedAt              DateTime? @db.Timestamptz(6)
   deactivatedAt            DateTime? @db.Timestamptz(6)
   statusReason             String?   @db.VarChar(1000)
+  statusReasonCode         String?   @db.VarChar(64)
+  reapplyCount             Int       @default(0)
+  lastRejectedAt           DateTime? @db.Timestamptz(6)
+  lastRejectionReason      String?   @db.VarChar(1000)
+  lastRejectionReasonCode  String?   @db.VarChar(64)
   createdAt                DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt                DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 

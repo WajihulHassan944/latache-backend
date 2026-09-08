@@ -196,10 +196,26 @@ export class TaskersService {
         })),
       });
 
+      const existingProfile = await transaction.taskerProfile.findUnique({ where: { userId } });
+      const isResubmissionAfterRejection = existingProfile?.status === 'rejected';
+
       await transaction.taskerProfile.upsert({
         where: { userId },
         create: { userId, status: 'pending_approval' },
-        update: { status: 'pending_approval', rejectedAt: null, statusReason: null },
+        update: {
+          status: 'pending_approval',
+          rejectedAt: null,
+          statusReason: null,
+          statusReasonCode: null,
+          ...(isResubmissionAfterRejection
+            ? {
+                lastRejectedAt: existingProfile.rejectedAt,
+                lastRejectionReason: existingProfile.statusReason,
+                lastRejectionReasonCode: existingProfile.statusReasonCode,
+                reapplyCount: { increment: 1 },
+              }
+            : {}),
+        },
       });
 
       await transaction.user.update({

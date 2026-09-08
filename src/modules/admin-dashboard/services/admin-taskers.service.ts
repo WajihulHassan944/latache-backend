@@ -94,7 +94,17 @@ export class AdminTaskersService {
           profilePicture: true,
           accountStatus: true,
           onboardingStatus: true,
-          taskerProfile: { select: { status: true, rating: true, reviewsCount: true } },
+          taskerProfile: {
+            select: {
+              status: true,
+              rating: true,
+              reviewsCount: true,
+              reapplyCount: true,
+              lastRejectedAt: true,
+              lastRejectionReason: true,
+              lastRejectionReasonCode: true,
+            },
+          },
           isVerified: true,
           isDocVerified: true,
           isElite: true,
@@ -140,6 +150,10 @@ export class AdminTaskersService {
         isElite: tasker.isElite,
         rating: Number(tasker.taskerProfile?.rating ?? tasker.rating),
         reviewsCount: tasker.taskerProfile?.reviewsCount ?? tasker.reviewsCount,
+        reapplyCount: tasker.taskerProfile?.reapplyCount ?? 0,
+        lastRejectedAt: tasker.taskerProfile?.lastRejectedAt?.toISOString() ?? null,
+        lastRejectionReason: tasker.taskerProfile?.lastRejectionReason ?? null,
+        lastRejectionReasonCode: tasker.taskerProfile?.lastRejectionReasonCode ?? null,
         completedTasks: tasker.completedTasks,
         bookingsCount: tasker._count.bookingsAsTasker,
         serviceCount: tasker._count.userServices,
@@ -204,6 +218,10 @@ export class AdminTaskersService {
         isElite: tasker.isElite,
         rating: Number(tasker.taskerProfile?.rating ?? tasker.rating),
         reviewsCount: tasker.taskerProfile?.reviewsCount ?? tasker.reviewsCount,
+        reapplyCount: tasker.taskerProfile?.reapplyCount ?? 0,
+        lastRejectedAt: tasker.taskerProfile?.lastRejectedAt?.toISOString() ?? null,
+        lastRejectionReason: tasker.taskerProfile?.lastRejectionReason ?? null,
+        lastRejectionReasonCode: tasker.taskerProfile?.lastRejectionReasonCode ?? null,
         completedTasks: tasker.completedTasks,
         yearsOfExperience: tasker.yearsOfExperience,
         submittedAt: tasker.submittedAt?.toISOString() ?? null,
@@ -318,8 +336,14 @@ export class AdminTaskersService {
         where: { userId: taskerId },
         data:
           dto.action === 'approve'
-            ? { status: 'active', approvedAt: new Date(), rejectedAt: null, statusReason: null }
-            : { status: 'rejected', rejectedAt: new Date(), approvedAt: null, statusReason: dto.reason?.trim() ?? dto.reasonCode ?? 'rejected' },
+            ? { status: 'active', approvedAt: new Date(), rejectedAt: null, statusReason: null, statusReasonCode: null }
+            : {
+                status: 'rejected',
+                rejectedAt: new Date(),
+                approvedAt: null,
+                statusReason: dto.reason?.trim() ?? dto.reasonCode ?? 'rejected',
+                statusReasonCode: dto.reasonCode ?? null,
+              },
       });
 
       if (dto.action === 'reject') {
