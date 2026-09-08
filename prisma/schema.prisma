@@ -781,8 +781,8 @@ model UserAvailability {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "UserAvailabilities_userId_fkey")
-  booking Booking?
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "UserAvailabilities_userId_fkey")
+  bookings Booking[]
 
   @@index([userId, date], map: "user_availabilities_user_id_date")
   @@index([userId, date, isBooked], map: "user_availabilities_open_slot_idx")
@@ -795,7 +795,7 @@ model Booking {
   taskerId                  Int
   serviceId                 Int
   serviceOptionId           Int?
-  availabilityId            Int       @unique(map: "Bookings_availabilityId_key")
+  availabilityId            Int
   hourlyRate                Decimal   @db.Decimal(10, 2)
   bookingDate               DateTime  @db.Date
   startTime                 String    @db.VarChar(255)
@@ -885,6 +885,7 @@ model Booking {
   referralQualifications Referral[]
   referralRewards        ReferralReward[]
 
+  @@index([availabilityId], map: "bookings_availability_idx")
   @@index([customerId, bookingDate], map: "bookings_customer_date_idx")
   @@index([taskerId, bookingDate], map: "bookings_tasker_date_idx")
   @@index([taskerId, status, bookingDate], map: "bookings_tasker_status_date_idx")
