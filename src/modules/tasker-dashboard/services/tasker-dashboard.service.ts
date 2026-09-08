@@ -25,7 +25,7 @@ export class TaskerDashboardService {
         profilePicture: true,
         onboardingStatus: true,
         accountStatus: true,
-        taskerProfile: { select: { status: true } },
+        taskerProfile: { select: { status: true, statusReason: true } },
         isElite: true,
         completedTasks: true,
       },
@@ -102,6 +102,8 @@ export class TaskerDashboardService {
         profilePicture: tasker.profilePicture ?? '',
         onboardingStatus: tasker.onboardingStatus,
         accountStatus: tasker.taskerProfile?.status ?? tasker.accountStatus,
+        rejectionReason:
+          tasker.taskerProfile?.status === 'rejected' ? tasker.taskerProfile.statusReason ?? null : null,
       },
       setup: {
         completed: setupSteps.filter((step) => step.completed).length,

@@ -49,7 +49,8 @@ describe('pending customer verification flow', () => {
     expect(token).toContain("user.onboardingStatus === 'pending_customer_verification'");
   });
 
-  it('allows the frontend development origin on port 3001', () => {
-    expect(config).toContain("'http://localhost:3001'");
+  it('allows the frontend development origin on port 3000 but not 3001', () => {
+    expect(config).toContain("'http://localhost:3000'");
+    expect(config).not.toContain("'http://localhost:3001'");
   });
 });

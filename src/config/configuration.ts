@@ -44,7 +44,6 @@ export default () => {
       corsOrigins: Array.from(
         new Set([
           'http://localhost:3000',
-          'http://localhost:3001',
           'https://latache-web.vercel.app',
           'https://latache-be-production.up.railway.app',
           ...asStringList(process.env.CORS_ORIGINS),

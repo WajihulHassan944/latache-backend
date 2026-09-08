@@ -301,6 +301,7 @@ export interface DashboardOverviewView {
     profilePicture: string;
     onboardingStatus: string | null;
     accountStatus: string;
+    rejectionReason: string | null;
   };
   setup: {
     completed: number;
