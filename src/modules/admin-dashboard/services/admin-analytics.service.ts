@@ -477,7 +477,7 @@ export class AdminAnalyticsService {
         }),
         this.prisma.taskComplaint.count({
           where: {
-            status: { notIn: ['resolved', 'closed'] },
+            status: { notIn: ['resolved', 'dismissed', 'withdrawn'] },
             ...(bookingDate ? { createdAt: bookingDate } : {}),
           },
         }),

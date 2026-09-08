@@ -189,7 +189,7 @@ export class AdminTaskersService {
       }),
       this.prisma.booking.groupBy({ by: ['status'], where: { taskerId }, _count: { _all: true } }),
       this.prisma.taskComplaint.count({
-        where: { booking: { taskerId }, status: { notIn: ['resolved', 'closed'] } },
+        where: { booking: { taskerId }, status: { notIn: ['resolved', 'dismissed', 'withdrawn'] } },
       }),
       this.prisma.adminAuditLog.findMany({
         where: { targetUserId: taskerId },
