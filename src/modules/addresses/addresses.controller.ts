@@ -9,7 +9,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AddressParamDto, CreateAddressDto, UpdateAddressDto } from './addresses.dto';
 import { AddressesService } from './addresses.service';
 
-@ApiTags('12 Saved Addresses')
+@ApiTags('22 Saved Addresses')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Customer)

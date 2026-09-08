@@ -7,7 +7,7 @@ Latache's OpenAPI document is canonical. In local development it is available at
 
 ## Recommended import
 
-`postman/Latache-API-v3.36.0-Vercel.postman_collection.json` is the current collection, generated from the live OpenAPI document (`/api/docs-json`) served by the deployed backend. Import it together with `postman/Latache-Vercel.postman_environment.json`.
+`postman/Latache-API-v3.37.0-Vercel.postman_collection.json` is the current collection, generated from the live OpenAPI document (`/api/docs-json`) served by the deployed backend. Import it together with `postman/Latache-Vercel.postman_environment.json`.
 
 Folders are grouped by tag and ordered to match Swagger: user-facing APIs first (`01 Auth` through `21 Referrals`), then every admin-only surface as a contiguous block (`50 Admin - RBAC & Permissions` through `64 Admin - Referrals`, each folder name prefixed `Admin -`), with `health` last. `01 Auth` is shared by every role and always stays first.
 
