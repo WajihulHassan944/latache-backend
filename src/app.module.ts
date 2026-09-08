@@ -39,6 +39,7 @@ import { ReferralsModule } from './modules/referrals/referrals.module';
 import { ContentManagementModule } from './modules/content-management/content-management.module';
 import { SeoManagementModule } from './modules/seo-management/seo-management.module';
 import { GuestModule } from './modules/guest/guest.module';
+import { AddressesModule } from './modules/addresses/addresses.module';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { GuestModule } from './modules/guest/guest.module';
     ReviewsModule,
     PaymentsModule,
     FavoritesModule,
+    AddressesModule,
     ReferralsModule,
     ContentManagementModule,
     SeoManagementModule,

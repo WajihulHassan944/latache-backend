@@ -79,4 +79,26 @@ export class AuthSessionsRepository {
     `;
     return rows.length === 0 ? null : transaction.refreshToken.findUnique({ where: { tokenHash } });
   }
+
+  /** Distinct account IDs that have ever logged a session from this exact IP address. */
+  async findUserIdsByIpAddress(ipAddress: string): Promise<number[]> {
+    const rows = await this.prisma.refreshToken.findMany({
+      where: { ipAddress },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    return rows.map((row) => row.userId);
+  }
+
+  /** Most-recently-used distinct IP addresses recorded for one account, for admin investigation. */
+  async listRecentIpAddresses(userId: number, limit = 10): Promise<string[]> {
+    const rows = await this.prisma.refreshToken.findMany({
+      where: { userId, ipAddress: { not: null } },
+      select: { ipAddress: true },
+      distinct: ['ipAddress'],
+      orderBy: { lastUsedAt: 'desc' },
+      take: limit,
+    });
+    return rows.map((row) => row.ipAddress as string);
+  }
 }

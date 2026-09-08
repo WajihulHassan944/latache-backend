@@ -21,9 +21,11 @@ import { DisputeLifecycleService } from '../disputes/dispute-lifecycle.service';
 import type { ConfirmCashCollectionInput } from '../tasker-finance/tasker-finance.types';
 import {
   CUSTOMER_WALLET_ENTRY_KIND,
+  CUSTOMER_WITHDRAWAL_STATUS,
   PAYMENT_SOURCE,
   PAYMENT_STATUS,
   PAYMENT_TRANSACTION_KIND,
+  WALLET_WITHDRAWAL_EXECUTION_MODE,
 } from './payments.constants';
 import { ListPaymentTransactionsQueryDto, RetryBookingPaymentDto } from './payments.dto';
 import type {
@@ -31,6 +33,7 @@ import type {
   BookingRefundRequest,
   BookingRefundResult,
   ConfirmManualCashDisputeRefundInput,
+  CustomerWithdrawalView,
   ManualCashDisputeRefundResult,
   PaymentOrchestrationResult,
   PaymentTransactionListView,
@@ -352,6 +355,139 @@ export class PaymentsService {
       clientSecret: intent.client_secret,
       amount: { amount, currency: currency.code },
       status: intent.status,
+    };
+  }
+
+  /**
+   * Reserves wallet balance for a customer withdrawal request. This project has
+   * no configured customer payout provider/destination - Stripe only ever
+   * charges customers, it never pays them out - so unless
+   * CUSTOMER_WALLET_WITHDRAWAL_EXECUTION_MODE=manual is explicitly
+   * set, requests are rejected up front and no balance is touched. When
+   * enabled, this only creates the auditable pending_review request and
+   * ledger hold; actual payout execution/review remains an operational
+   * process outside this API, mirroring the existing Tasker withdrawal flow.
+   */
+  async requestWalletWithdrawal(
+    customerId: number,
+    amountInput: number,
+    idempotencyKey: string,
+  ): Promise<CustomerWithdrawalView> {
+    if (this.walletWithdrawalExecutionMode() !== WALLET_WITHDRAWAL_EXECUTION_MODE.Manual) {
+      throw new ServiceUnavailableException({
+        code: 'WALLET_WITHDRAWAL_EXECUTION_NOT_CONFIGURED',
+        message:
+          'Wallet withdrawals are disabled until a real payout process is configured. No funds were reserved.',
+      });
+    }
+    if (!idempotencyKey.trim()) {
+      throw new BadRequestException('Idempotency-Key header is required');
+    }
+
+    const currency = await this.platformSettings.currencyContext();
+    const minimumUsd = this.config.get<number>('payments.minimumWalletWithdrawal', 5);
+    const minimum = this.platformSettings.convertUsdAmount(minimumUsd, currency);
+    const amount = roundMoney(amountInput);
+    if (amount < minimum) {
+      throw new BadRequestException(
+        `Minimum withdrawal amount is ${currency.code} ${minimum.toFixed(2)}`,
+      );
+    }
+    const scopedKey = idempotencyKey.trim();
+
+    const withdrawal = await this.prisma.$transaction(async (transaction) => {
+      const wallet = await this.ensureCustomerWallet(customerId, transaction);
+      // Serialize withdrawal requests per wallet before the idempotency lookup, matching
+      // settleBookingFromCustomerWallet's locking order so concurrent retries with the
+      // same key observe the first committed row instead of racing into the unique constraint.
+      await transaction.$queryRaw`
+        SELECT "customerId" FROM "CustomerWallets" WHERE "customerId" = ${customerId} FOR UPDATE
+      `;
+
+      const existing = await transaction.customerWithdrawal.findFirst({
+        where: { customerId, idempotencyKey: scopedKey },
+      });
+      if (existing) {
+        if (Number(existing.amount) !== amount) {
+          throw new ConflictException(
+            'Idempotency-Key was already used with different withdrawal parameters',
+          );
+        }
+        return existing;
+      }
+
+      if (Number(wallet.availableBalance) < amount) {
+        throw new BadRequestException('Insufficient available wallet balance');
+      }
+
+      const created = await transaction.customerWithdrawal.create({
+        data: {
+          customerId,
+          amount: moneyString(amount),
+          currency: wallet.currency,
+          status: CUSTOMER_WITHDRAWAL_STATUS.PendingReview,
+          idempotencyKey: scopedKey,
+        },
+      });
+      await transaction.customerWallet.update({
+        where: { customerId },
+        data: { availableBalance: { decrement: moneyString(amount) } },
+      });
+      await transaction.customerWalletLedgerEntry.create({
+        data: {
+          customerId,
+          withdrawalId: created.id,
+          kind: CUSTOMER_WALLET_ENTRY_KIND.WithdrawalHold,
+          status: 'reserved',
+          amount: moneyString(amount),
+          balanceDelta: moneyString(-amount),
+          currency: wallet.currency,
+          description: 'Withdrawal reserved pending review',
+          idempotencyKey: `withdrawal:${created.id}:hold`,
+        },
+      });
+      await this.notifications.create(
+        customerId,
+        {
+          category: 'wallet',
+          type: 'withdrawal_requested',
+          title: 'Withdrawal requested',
+          body: `Your ${wallet.currency} ${amount.toFixed(2)} withdrawal is pending review.`,
+          entityType: 'withdrawal',
+          entityId: created.id,
+        },
+        transaction,
+      );
+      return created;
+    });
+    return this.serializeWithdrawal(withdrawal);
+  }
+
+  private walletWithdrawalExecutionMode(): string {
+    return this.config.get<string>(
+      'payments.walletWithdrawalExecutionMode',
+      WALLET_WITHDRAWAL_EXECUTION_MODE.Disabled,
+    );
+  }
+
+  private serializeWithdrawal(withdrawal: {
+    id: string;
+    amount: Prisma.Decimal;
+    currency: string;
+    status: string;
+    failureReason: string | null;
+    requestedAt: Date;
+    processedAt: Date | null;
+    cancelledAt: Date | null;
+  }): CustomerWithdrawalView {
+    return {
+      id: withdrawal.id,
+      amount: { amount: Number(withdrawal.amount), currency: withdrawal.currency },
+      status: withdrawal.status,
+      failureReason: withdrawal.failureReason,
+      requestedAt: withdrawal.requestedAt.toISOString(),
+      processedAt: withdrawal.processedAt?.toISOString() ?? null,
+      cancelledAt: withdrawal.cancelledAt?.toISOString() ?? null,
     };
   }
 

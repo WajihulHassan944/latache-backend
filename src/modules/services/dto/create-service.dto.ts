@@ -21,6 +21,44 @@ import { TranslationDto } from '../../localization/translation.dto';
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
+const trimBullets = ({ value }: { value: unknown }): unknown =>
+  Array.isArray(value)
+    ? value
+        .map((item) => (typeof item === 'string' ? item.trim() : item))
+        .filter((item) => item !== '')
+    : value;
+
+export class ServiceTranslationDto extends TranslationDto {
+  @ApiPropertyOptional({
+    type: [String],
+    example: [
+      'Installation and repair of electrical fixtures, outlets, and switches.',
+      'Fault diagnosis and circuit troubleshooting in residential and commercial settings.',
+    ],
+    description: 'Typical scope-of-work bullets for this service, in this locale.',
+  })
+  @IsOptional()
+  @Transform(trimBullets)
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @Length(1, 500, { each: true })
+  scope?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Multimeter / voltage tester', 'Wire strippers and crimping tools'],
+    description: 'Recommended-tools-to-bring bullets for this service, in this locale.',
+  })
+  @IsOptional()
+  @Transform(trimBullets)
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @Length(1, 500, { each: true })
+  tools?: string[];
+}
+
 export class CreateServiceDto {
   @ApiProperty({ example: 'Home Cleaning' })
   @Transform(trim)
@@ -33,6 +71,35 @@ export class CreateServiceDto {
   @IsString()
   @Length(2, 1000)
   description!: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: [
+      'Installation and repair of electrical fixtures, outlets, and switches.',
+      'Fault diagnosis and circuit troubleshooting in residential and commercial settings.',
+    ],
+    description: 'Canonical English typical-scope-of-work bullets.',
+  })
+  @IsOptional()
+  @Transform(trimBullets)
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @Length(1, 500, { each: true })
+  scope?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Multimeter / voltage tester', 'Wire strippers and crimping tools'],
+    description: 'Canonical English recommended-tools-to-bring bullets.',
+  })
+  @IsOptional()
+  @Transform(trimBullets)
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @Length(1, 500, { each: true })
+  tools?: string[];
 
   @ApiProperty({ example: 'home-cleaning' })
   @Transform(trim)
@@ -80,16 +147,17 @@ export class CreateServiceDto {
   sortOrder?: number;
 
   @ApiPropertyOptional({
-    type: [TranslationDto],
+    type: [ServiceTranslationDto],
     example: [{ locale: 'ar', name: 'تنظيف المنزل', description: 'خدمات تنظيف احترافية.' }],
-    description: 'Additional configured translations. name/description remain canonical English.',
+    description:
+      'Additional configured translations. name/description/scope/tools remain canonical English.',
   })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(20)
   @ValidateNested({ each: true })
-  @Type(() => TranslationDto)
-  translations?: TranslationDto[];
+  @Type(() => ServiceTranslationDto)
+  translations?: ServiceTranslationDto[];
 }
 
 export class UpdateServiceDto {
@@ -106,6 +174,35 @@ export class UpdateServiceDto {
   @IsString()
   @Length(2, 1000)
   description?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: [
+      'Installation and repair of electrical fixtures, outlets, and switches.',
+      'Fault diagnosis and circuit troubleshooting in residential and commercial settings.',
+    ],
+    description: 'Canonical English typical-scope-of-work bullets.',
+  })
+  @IsOptional()
+  @Transform(trimBullets)
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @Length(1, 500, { each: true })
+  scope?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Multimeter / voltage tester', 'Wire strippers and crimping tools'],
+    description: 'Canonical English recommended-tools-to-bring bullets.',
+  })
+  @IsOptional()
+  @Transform(trimBullets)
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @Length(1, 500, { each: true })
+  tools?: string[];
 
   @ApiPropertyOptional({ example: 'home-cleaning' })
   @IsOptional()
@@ -157,7 +254,7 @@ export class UpdateServiceDto {
   sortOrder?: number;
 
   @ApiPropertyOptional({
-    type: [TranslationDto],
+    type: [ServiceTranslationDto],
     description:
       'Upserts locale rows. An en row updates the canonical English fallback; missing locales are unchanged.',
   })
@@ -165,6 +262,6 @@ export class UpdateServiceDto {
   @IsArray()
   @ArrayMaxSize(20)
   @ValidateNested({ each: true })
-  @Type(() => TranslationDto)
-  translations?: TranslationDto[];
+  @Type(() => ServiceTranslationDto)
+  translations?: ServiceTranslationDto[];
 }

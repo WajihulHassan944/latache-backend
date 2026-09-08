@@ -32,4 +32,21 @@ export const CUSTOMER_WALLET_ENTRY_KIND = {
   Topup: 'topup',
   BookingDebit: 'booking_debit',
   Refund: 'refund',
+  WithdrawalHold: 'withdrawal_hold',
+  WithdrawalRelease: 'withdrawal_release',
+} as const;
+
+/** No customer payout provider/destination is configured yet - Stripe only ever charges customers, it never pays them out. */
+export const WALLET_WITHDRAWAL_EXECUTION_MODE = {
+  Disabled: 'disabled',
+  Manual: 'manual',
+} as const;
+
+export const CUSTOMER_WITHDRAWAL_STATUS = {
+  PendingReview: 'pending_review',
+  Processing: 'processing',
+  Paid: 'paid',
+  Failed: 'failed',
+  Rejected: 'rejected',
+  Cancelled: 'cancelled',
 } as const;

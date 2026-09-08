@@ -8,7 +8,7 @@ import { normalizePagination } from '../../common/utils/pagination.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { Prisma, Service, User } from '../../generated/prisma/client';
 import { AdminAuditService } from '../admin-audit/admin-audit.service';
-import { CreateServiceDto, UpdateServiceDto } from './dto/create-service.dto';
+import { CreateServiceDto, ServiceTranslationDto, UpdateServiceDto } from './dto/create-service.dto';
 import { ListServicesQueryDto } from './dto/list-services-query.dto';
 import { CreateServiceOptionDto, UpdateServiceOptionDto } from './dto/service-option.dto';
 import { LocaleService } from '../localization/locale.service';
@@ -23,13 +23,15 @@ export interface ServiceResponse {
   id: string;
   name: string | null;
   description: string | null;
+  scope: string[];
+  tools: string[];
   icon: string;
   slug: string | null;
   isActive: boolean;
   sortOrder: number;
   resolvedLocale?: string;
   translationFallback?: boolean;
-  translations?: TranslationRow[];
+  translations?: ServiceTranslationRow[];
   rateLimits: { minimumHourlyRate: number; maximumHourlyRate: number; currency: string; symbol: string };
 }
 
@@ -37,6 +39,11 @@ interface TranslationRow {
   locale: string;
   name: string;
   description: string | null;
+}
+
+interface ServiceTranslationRow extends TranslationRow {
+  scope: string[];
+  tools: string[];
 }
 
 @Injectable()
@@ -162,7 +169,7 @@ export class ServicesService {
       dto.maximumHourlyRate,
       currency,
     );
-    const translations = this.normalizeTranslations(dto.translations);
+    const translations = this.normalizeServiceTranslations(dto.translations);
     const service = await this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`latache-service:${dto.slug.toLowerCase()}`}))
@@ -176,6 +183,8 @@ export class ServicesService {
         data: {
           name: dto.name,
           description: dto.description,
+          scope: this.normalizeBulletList(dto.scope),
+          tools: this.normalizeBulletList(dto.tools),
           slug: dto.slug,
           icon: dto.icon,
           isActive: dto.isActive ?? true,
@@ -189,6 +198,8 @@ export class ServicesService {
       await this.upsertServiceTranslations(transaction, created.id, translations, {
         name: created.name ?? dto.name,
         description: created.description,
+        scope: created.scope,
+        tools: created.tools,
       });
       await this.audit.record(
         {
@@ -231,7 +242,7 @@ export class ServicesService {
         'minimumHourlyRate must be less than or equal to maximumHourlyRate',
       );
     }
-    const translations = this.normalizeTranslations(dto.translations);
+    const translations = this.normalizeServiceTranslations(dto.translations);
     const english = translations.find(
       (translation) => translation.locale === this.locales.defaultLocale,
     );
@@ -282,6 +293,12 @@ export class ServicesService {
           ...(dto.description !== undefined || english?.description !== undefined
             ? { description: dto.description ?? english?.description }
             : {}),
+          ...(dto.scope !== undefined || english?.scope !== undefined
+            ? { scope: dto.scope !== undefined ? this.normalizeBulletList(dto.scope) : english?.scope }
+            : {}),
+          ...(dto.tools !== undefined || english?.tools !== undefined
+            ? { tools: dto.tools !== undefined ? this.normalizeBulletList(dto.tools) : english?.tools }
+            : {}),
           ...(dto.slug !== undefined ? { slug: dto.slug } : {}),
           ...(dto.icon !== undefined ? { icon: dto.icon } : {}),
           ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
@@ -297,6 +314,8 @@ export class ServicesService {
       await this.upsertServiceTranslations(transaction, serviceId, translations, {
         name: row.name ?? service.name ?? '',
         description: row.description,
+        scope: row.scope,
+        tools: row.tools,
       });
       await this.audit.record(
         {
@@ -541,7 +560,7 @@ export class ServicesService {
   }
 
   private serialize(
-    service: Service & { translations?: TranslationRow[] },
+    service: Service & { translations?: ServiceTranslationRow[] },
     locale: string,
     currency: PlatformCurrencyContext,
   ): ServiceResponse {
@@ -550,6 +569,8 @@ export class ServicesService {
       id: service.id.toString(),
       name: selected.translation?.name ?? service.name,
       description: selected.translation?.description ?? service.description,
+      scope: selected.translation?.scope ?? service.scope,
+      tools: selected.translation?.tools ?? service.tools,
       icon: service.icon ?? '',
       slug: service.slug,
       isActive: service.isActive,
@@ -561,13 +582,15 @@ export class ServicesService {
   }
 
   private serializeAdmin(
-    service: Service & { translations: TranslationRow[] },
+    service: Service & { translations: ServiceTranslationRow[] },
     currency: PlatformCurrencyContext,
   ): ServiceResponse {
     return {
       id: service.id.toString(),
       name: service.name,
       description: service.description,
+      scope: service.scope,
+      tools: service.tools,
       icon: service.icon ?? '',
       slug: service.slug,
       isActive: service.isActive,
@@ -630,22 +653,50 @@ export class ServicesService {
     return normalized;
   }
 
+  private normalizeServiceTranslations(
+    translations: ServiceTranslationDto[] | undefined,
+  ): ServiceTranslationRow[] {
+    const normalized = (translations ?? []).map((translation) => ({
+      locale: this.locales.requireSupported(translation.locale),
+      name: translation.name.trim(),
+      description: translation.description?.trim() ?? null,
+      scope: this.normalizeBulletList(translation.scope),
+      tools: this.normalizeBulletList(translation.tools),
+    }));
+    const locales = normalized.map((translation) => translation.locale);
+    if (new Set(locales).size !== locales.length) {
+      throw new BadRequestException({
+        code: 'DUPLICATE_TRANSLATION_LOCALE',
+        message: 'Each locale may appear only once in translations',
+      });
+    }
+    return normalized;
+  }
+
+  private normalizeBulletList(values: string[] | undefined): string[] {
+    return (values ?? []).map((value) => value.trim()).filter((value) => value.length > 0);
+  }
+
   private async upsertServiceTranslations(
     transaction: Prisma.TransactionClient,
     serviceId: number,
-    translations: TranslationRow[],
-    canonical: { name: string; description: string | null },
+    translations: ServiceTranslationRow[],
+    canonical: { name: string; description: string | null; scope: string[]; tools: string[] },
   ): Promise<void> {
     const byLocale = new Map(translations.map((translation) => [translation.locale, translation]));
     byLocale.set(this.locales.defaultLocale, {
       locale: this.locales.defaultLocale,
       name: canonical.name,
       description: canonical.description,
+      scope: canonical.scope,
+      tools: canonical.tools,
     });
     for (const translation of byLocale.values()) {
       const data = {
         name: translation.name,
         description: translation.description,
+        scope: translation.scope,
+        tools: translation.tools,
         normalizedName: this.locales.normalizeSearchText(translation.name),
         normalizedDescription: translation.description
           ? this.locales.normalizeSearchText(translation.description)

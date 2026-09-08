@@ -76,6 +76,16 @@ export interface WalletTopupIntentView {
   status: string;
 }
 
+export interface CustomerWithdrawalView {
+  id: string;
+  amount: { amount: number; currency: string };
+  status: string;
+  failureReason: string | null;
+  requestedAt: string;
+  processedAt: string | null;
+  cancelledAt: string | null;
+}
+
 export interface PaymentOrchestrationResult {
   bookingId: number;
   status: string;

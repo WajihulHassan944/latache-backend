@@ -147,7 +147,7 @@ export class TaskersController {
   @ApiUnauthorizedResponse({ description: 'Guest token or bearer session is missing, invalid, expired, or revoked.' })
   @ApiBadRequestResponse({
     description:
-      'lat was provided without lng (or vice versa), sort=nearest was used without lat/lng, minPrice is greater than maxPrice, or a field fails validation.',
+      'lat was provided without lng (or vice versa), sort=nearest was used without lat/lng, minPrice is greater than maxPrice, minRating is greater than maxRating, or a field fails validation.',
   })
   @ApiOkResponse({
     description: 'Paginated Tasker results.',

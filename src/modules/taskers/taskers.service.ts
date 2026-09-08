@@ -52,7 +52,12 @@ export class TaskersService {
     // Cloudinary) so identityDocument always stores the server-confirmed
     // publicId/secureUrl rather than trusting the client's copy verbatim.
     const verifiedDocument = dto.identity.document
-      ? await this.uploads.verifyTaskerIdentityDocument(user, dto.identity.document)
+      ? await this.uploads.verifyTaskerIdentityDocument(user, {
+          publicId: dto.identity.document.publicId,
+          secureUrl: dto.identity.document.secureUrl,
+          mimeType: dto.identity.document.type,
+          originalFileName: dto.identity.document.name,
+        })
       : null;
 
     const submittedAt = new Date();
@@ -293,6 +298,9 @@ export class TaskersService {
       }
       if (error instanceof Error && error.message === 'INVALID_PRICE_RANGE') {
         throw new BadRequestException('minPrice must be less than or equal to maxPrice');
+      }
+      if (error instanceof Error && error.message === 'INVALID_RATING_RANGE') {
+        throw new BadRequestException('minRating must be less than or equal to maxRating');
       }
       if (error instanceof Error && error.message === 'NEAREST_SORT_REQUIRES_LOCATION') {
         throw new BadRequestException('sort=nearest requires both lat and lng');

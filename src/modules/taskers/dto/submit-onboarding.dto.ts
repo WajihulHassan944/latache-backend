@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsEnum,
@@ -120,14 +121,12 @@ export class ServiceAreaDto {
 export class SubmitOnboardingDto {
   @ApiProperty({
     type: [TaskerServiceDto],
-    description: 'At least one service with its hourly rate.',
-    example: [
-      { slug: 'cleaning', hourlyRate: 15 },
-      { slug: 'gardening', hourlyRate: 20 },
-    ],
+    description: 'Exactly one service with its hourly rate.',
+    example: [{ slug: 'cleaning', hourlyRate: 15 }],
   })
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(1)
   @ValidateNested({ each: true })
   @Type(() => TaskerServiceDto)
   services!: TaskerServiceDto[];

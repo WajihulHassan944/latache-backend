@@ -218,7 +218,7 @@ export class AuthTokenService {
       secret: this.accessSecret(role),
       expiresIn: this.config.get<string>(
         'auth.accessTokenExpiresIn',
-        '15m',
+        '1d',
       ) as JwtSignOptions['expiresIn'],
     });
   }

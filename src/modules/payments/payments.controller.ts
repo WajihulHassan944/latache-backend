@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   BookingPaymentParamDto,
   CreateWalletTopupDto,
+  CreateWalletWithdrawalDto,
   ListPaymentTransactionsQueryDto,
   PaymentMethodParamDto,
   RetryBookingPaymentDto,
@@ -27,6 +28,7 @@ import {
 import { PaymentsService } from './payments.service';
 import type {
   BookingPaymentStatusView,
+  CustomerWithdrawalView,
   PaymentTransactionListView,
   SavedPaymentMethodView,
   SetupIntentView,
@@ -112,6 +114,26 @@ export class PaymentsController {
     @Body() dto: CreateWalletTopupDto,
   ): Promise<WalletTopupIntentView> {
     return this.payments.createWalletTopup(user.id, dto.amount, idempotencyKey ?? '');
+  }
+
+  @Post('wallet/withdrawals')
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key per withdrawal attempt. Reusing it with different parameters is rejected.',
+    example: 'wallet-withdrawal-20260907-01',
+  })
+  @ApiOperation({
+    summary: 'Request a wallet withdrawal',
+    description:
+      'Reserves the requested amount out of the available wallet balance for an auditable pending-review withdrawal. This backend has no configured customer payout destination/provider yet, so the request is rejected with 503 WALLET_WITHDRAWAL_EXECUTION_NOT_CONFIGURED (no funds reserved) unless that has been explicitly configured.',
+  })
+  requestWithdrawal(
+    @CurrentUser() user: User,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() dto: CreateWalletWithdrawalDto,
+  ): Promise<CustomerWithdrawalView> {
+    return this.payments.requestWalletWithdrawal(user.id, dto.amount, idempotencyKey ?? '');
   }
 
   @Get('transactions')

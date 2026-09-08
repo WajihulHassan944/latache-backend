@@ -115,6 +115,22 @@ export class ListTaskersQueryDto {
   @Min(0)
   maxPrice?: number;
 
+  @ApiPropertyOptional({ example: 4, minimum: 0, maximum: 5, description: 'Minimum Tasker rating, inclusive.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(5)
+  minRating?: number;
+
+  @ApiPropertyOptional({ example: 5, minimum: 0, maximum: 5, description: 'Maximum Tasker rating, inclusive.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(5)
+  maxRating?: number;
+
   @ApiPropertyOptional({
     enum: TaskerSort,
     example: TaskerSort.RatingDescending,

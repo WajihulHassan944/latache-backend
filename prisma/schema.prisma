@@ -136,8 +136,10 @@ model User {
   reviewsModerated            Review[]                    @relation("ReviewsModerated")
   favoriteTaskers             FavoriteTasker[]            @relation("CustomerFavoriteTaskers")
   favoritedByCustomers        FavoriteTasker[]            @relation("FavoritedTasker")
+  savedAddresses               CustomerAddress[]
   customerWallet              CustomerWallet?
   customerWalletLedger        CustomerWalletLedgerEntry[]
+  customerWithdrawals          CustomerWithdrawal[]
   paymentTransactions         PaymentTransaction[]
   adminAuditActions           AdminAuditLog[]             @relation("AdminAuditActor")
   adminAuditTargets           AdminAuditLog[]             @relation("AdminAuditTarget")
@@ -690,6 +692,8 @@ model Service {
   id               Int      @id @default(autoincrement())
   name             String?  @db.VarChar(255)
   description      String?  @db.Text
+  scope            String[] @default([])
+  tools            String[] @default([])
   slug             String?  @db.VarChar(255)
   icon             String?  @db.VarChar(255)
   isActive         Boolean  @default(true)
@@ -714,6 +718,8 @@ model ServiceTranslation {
   locale                String   @db.VarChar(10)
   name                  String   @db.VarChar(255)
   description           String?  @db.Text
+  scope                 String[] @default([])
+  tools                 String[] @default([])
   normalizedName        String   @db.VarChar(255)
   normalizedDescription String?  @db.Text
   createdAt             DateTime @default(now()) @db.Timestamptz(6)
@@ -948,6 +954,27 @@ model FavoriteTasker {
   @@map("FavoriteTaskers")
 }
 
+/// A Customer's persistent saved address (Home, Work, etc.), distinct from
+/// User.latitude/longitude which only tracks the Customer's current/active
+/// location for nearby-Tasker discovery. Saved addresses are never read by
+/// GET /api/taskers - only the explicit PATCH /api/auth/me/location value is.
+model CustomerAddress {
+  id         String   @id @default(cuid()) @db.VarChar(40)
+  customerId Int
+  label      String   @db.VarChar(120)
+  address    String   @db.VarChar(500)
+  latitude   Decimal  @db.Decimal(9, 6)
+  longitude  Decimal  @db.Decimal(9, 6)
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "CustomerAddresses_customerId_fkey")
+
+  @@index([customerId, isDefault], map: "customer_addresses_customer_default_idx")
+  @@map("CustomerAddresses")
+}
+
 model CustomerWallet {
   customerId       Int      @id
   currency         String   @default("USD") @db.VarChar(3)
@@ -965,6 +992,7 @@ model CustomerWalletLedgerEntry {
   customerId        Int
   bookingId         Int?
   referralRewardId  String?  @db.VarChar(40)
+  withdrawalId      String?  @db.VarChar(40)
   kind              String   @db.VarChar(48)
   status            String   @db.VarChar(32)
   amount            Decimal  @db.Decimal(14, 2)
@@ -975,14 +1003,48 @@ model CustomerWalletLedgerEntry {
   idempotencyKey    String   @unique(map: "CustomerWalletLedger_idempotencyKey_key") @db.VarChar(180)
   createdAt         DateTime @default(now()) @db.Timestamptz(6)
 
-  customer       User            @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "CustomerWalletLedger_customerId_fkey")
-  booking        Booking?        @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "CustomerWalletLedger_bookingId_fkey")
-  referralReward ReferralReward? @relation("CustomerReferralRewardLedger", fields: [referralRewardId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "CustomerWalletLedger_referralRewardId_fkey")
+  customer       User                @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "CustomerWalletLedger_customerId_fkey")
+  booking        Booking?            @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "CustomerWalletLedger_bookingId_fkey")
+  referralReward ReferralReward?     @relation("CustomerReferralRewardLedger", fields: [referralRewardId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "CustomerWalletLedger_referralRewardId_fkey")
+  withdrawal     CustomerWithdrawal? @relation(fields: [withdrawalId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "CustomerWalletLedger_withdrawalId_fkey")
 
   @@index([customerId, createdAt], map: "customer_wallet_ledger_customer_created_idx")
   @@index([bookingId], map: "customer_wallet_ledger_booking_idx")
   @@index([referralRewardId, createdAt], map: "customer_wallet_ledger_referral_reward_idx")
+  @@index([withdrawalId], map: "customer_wallet_ledger_withdrawal_idx")
   @@map("CustomerWalletLedger")
+}
+
+/// A Customer's request to withdraw wallet balance out of the platform.
+/// Mirrors TaskerWithdrawal's audit/ledger pattern, but this project has no
+/// configured customer payout provider/destination yet (Stripe only ever
+/// charges customers, it does not pay them out) - see
+/// payments.walletWithdrawalExecutionMode (CUSTOMER_WALLET_WITHDRAWAL_EXECUTION_MODE).
+/// Until that is configured, requests are rejected before any balance is touched.
+model CustomerWithdrawal {
+  id                String    @id @default(cuid()) @db.VarChar(40)
+  customerId        Int
+  amount            Decimal   @db.Decimal(14, 2)
+  currency          String    @db.VarChar(3)
+  status            String    @default("pending_review") @db.VarChar(32)
+  idempotencyKey    String    @db.VarChar(120)
+  providerReference String?   @db.VarChar(255)
+  failureReason     String?   @db.VarChar(500)
+  reviewedById      Int?
+  reviewedAt        DateTime? @db.Timestamptz(6)
+  adminNote         String?   @db.VarChar(1000)
+  requestedAt       DateTime  @default(now()) @db.Timestamptz(6)
+  processedAt       DateTime? @db.Timestamptz(6)
+  cancelledAt       DateTime? @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  customer      User                        @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "CustomerWithdrawals_customerId_fkey")
+  ledgerEntries CustomerWalletLedgerEntry[]
+
+  @@unique([customerId, idempotencyKey], map: "customer_withdrawals_customer_idempotency_unique")
+  @@index([customerId, status, requestedAt], map: "customer_withdrawals_customer_status_requested_idx")
+  @@map("CustomerWithdrawals")
 }
 
 model PaymentTransaction {

@@ -81,6 +81,13 @@ export class TaskersRepository {
     ) {
       throw new Error('INVALID_PRICE_RANGE');
     }
+    if (
+      query.minRating !== undefined &&
+      query.maxRating !== undefined &&
+      query.minRating > query.maxRating
+    ) {
+      throw new Error('INVALID_RATING_RANGE');
+    }
     if (query.sort === TaskerSort.Nearest && (query.lat === undefined || query.lng === undefined)) {
       throw new Error('NEAREST_SORT_REQUIRES_LOCATION');
     }
@@ -109,6 +116,12 @@ export class TaskersRepository {
     }
     if (query.isElite !== undefined) {
       eligibleConditions.push(Prisma.sql`u."isElite" = ${query.isElite}`);
+    }
+    if (query.minRating !== undefined) {
+      eligibleConditions.push(Prisma.sql`u."rating" >= ${query.minRating}`);
+    }
+    if (query.maxRating !== undefined) {
+      eligibleConditions.push(Prisma.sql`u."rating" <= ${query.maxRating}`);
     }
     if (query.date) {
       if (query.startTime && query.endTime) {

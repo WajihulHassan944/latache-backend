@@ -56,16 +56,45 @@ export class AdminCustomersService {
                 LIKE ${`%${phoneDigits}%`}
         `
       : null;
+    const ipAddress = query.ipAddress?.trim();
+    const ipUserIds = ipAddress ? await this.sessions.findUserIdsByIpAddress(ipAddress) : null;
     const fromDate = query.from ? new Date(`${query.from}T00:00:00.000Z`) : null;
     const toExclusive = query.to
       ? new Date(new Date(`${query.to}T00:00:00.000Z`).getTime() + 24 * 60 * 60 * 1000)
       : null;
     const location = query.location?.trim();
+    // Bounding-box approximation, not an exact circle: cheap to express as
+    // plain Decimal range predicates on the existing findMany() below,
+    // without switching this list query to raw SQL for one admin filter.
+    // 1 degree latitude ~= 111km; degrees-per-km for longitude shrinks with
+    // cos(latitude), same approximation the platform already documents for
+    // "activeCurrencies"-style static presets elsewhere.
+    const nearBox =
+      query.nearLat !== undefined && query.nearLng !== undefined
+        ? (() => {
+            const radiusKm = query.radiusKm ?? 20;
+            const latDelta = radiusKm / 111;
+            const lngDelta = radiusKm / (111 * Math.max(0.01, Math.cos((query.nearLat * Math.PI) / 180)));
+            return {
+              latMin: query.nearLat - latDelta,
+              latMax: query.nearLat + latDelta,
+              lngMin: query.nearLng - lngDelta,
+              lngMax: query.nearLng + lngDelta,
+            };
+          })()
+        : null;
     const where: Prisma.UserWhereInput = {
       roles: { has: UserRole.Customer },
       deletedAt: null,
       customerProfile: { isNot: null },
       ...(phoneIds ? { id: { in: phoneIds.map((row) => row.id) } } : {}),
+      ...(ipUserIds ? { id: { in: ipUserIds } } : {}),
+      ...(nearBox
+        ? {
+            latitude: { gte: nearBox.latMin, lte: nearBox.latMax },
+            longitude: { gte: nearBox.lngMin, lte: nearBox.lngMax },
+          }
+        : {}),
       ...(fromDate || toExclusive
         ? {
             createdAt: {

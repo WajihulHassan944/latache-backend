@@ -33,6 +33,28 @@ export class ListAdminTaskersDto extends AdminPaginationDto {
   @IsBoolean()
   isElite?: boolean;
 
+  @ApiPropertyOptional({ example: 'Islamabad', description: 'Matches the Tasker\'s configured service-area city.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  city?: string;
+
+  @ApiPropertyOptional({ example: 'Soan Garden', description: 'Matches the Tasker\'s configured service-area neighborhood/area.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  area?: string;
+
+  @ApiPropertyOptional({
+    example: '203.0.113.5',
+    description:
+      'Exact match against any session IP address ever recorded for the Tasker (see RefreshToken). Requires taskers.read_sensitive.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  ipAddress?: string;
+
   @ApiPropertyOptional({
     enum: ['newest', 'oldest', 'rating_desc', 'completed_desc'],
     default: 'newest',

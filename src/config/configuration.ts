@@ -176,7 +176,7 @@ export default () => {
       jwtSecret: process.env.JWT_SECRET,
       adminJwtSecret: process.env.JWT_SECRET_ADMIN,
       otpHashSecret: process.env.OTP_HASH_SECRET ?? process.env.JWT_SECRET,
-      accessTokenExpiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
+      accessTokenExpiresIn: process.env.JWT_EXPIRES_IN ?? '1d',
       refreshTokenExpiresInDays: asPositiveInteger(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS, 30),
       bcryptRounds: asPositiveInteger(process.env.BCRYPT_ROUNDS, 12),
       maxFailedLoginAttempts: asPositiveInteger(process.env.AUTH_MAX_FAILED_LOGIN_ATTEMPTS, 5),
@@ -206,6 +206,8 @@ export default () => {
       platformFeePercent: asNonNegativeNumber(process.env.PAYMENTS_PLATFORM_FEE_PERCENT, 0),
       minimumBillableMinutes: asPositiveInteger(process.env.BOOKING_MINIMUM_BILLABLE_MINUTES, 120),
       minimumWalletTopup: asPositiveNumber(process.env.CUSTOMER_WALLET_MIN_TOPUP, 5),
+      minimumWalletWithdrawal: asPositiveNumber(process.env.CUSTOMER_WALLET_MIN_WITHDRAWAL, 5),
+      walletWithdrawalExecutionMode: process.env.CUSTOMER_WALLET_WITHDRAWAL_EXECUTION_MODE ?? 'disabled',
     },
     taskerPayout: {
       currency: (process.env.TASKER_WALLET_CURRENCY ?? 'USD').trim().toUpperCase(),

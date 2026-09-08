@@ -29,6 +29,15 @@ export class CreateWalletTopupDto {
   amount!: number;
 }
 
+export class CreateWalletWithdrawalDto {
+  @ApiProperty({ example: 50 })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(1)
+  @Max(100000)
+  amount!: number;
+}
+
 export class RetryBookingPaymentDto {
   @ApiPropertyOptional({
     example: 'pm_123',

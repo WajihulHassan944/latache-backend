@@ -80,6 +80,12 @@ export const PERMISSION_CATALOG = [
         description:
           'Irreversibly delete eligible customer accounts and managed assets. Protected financial and booking history blocks deletion.',
       },
+      {
+        key: 'customers.read_sensitive',
+        label: 'View customer IP/location signals',
+        description:
+          'View a customer\'s recorded session IP addresses and saved location, and filter/search customers by them. Kept separate from customers.read since these are more sensitive than basic profile data.',
+      },
     ],
   },
   {
@@ -101,6 +107,12 @@ export const PERMISSION_CATALOG = [
         label: 'Permanently delete taskers',
         description:
           'Irreversibly delete eligible Tasker accounts and managed assets. Protected financial and booking history blocks deletion.',
+      },
+      {
+        key: 'taskers.read_sensitive',
+        label: 'View tasker IP signals',
+        description:
+          'View a Tasker\'s recorded session IP addresses, and filter/search taskers by them. Kept separate from taskers.read since this is more sensitive than basic profile/service-area data.',
       },
     ],
   },
