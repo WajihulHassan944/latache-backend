@@ -128,9 +128,6 @@ export class GuestService {
     if (result.count === 0) {
       throw new ConflictException('This guest session is already linked to another account');
     }
-    if (session.latitude !== null && session.longitude !== null) {
-      await this.repository.copyLocationToUserIfMissing(userId, session.latitude, session.longitude);
-    }
     return { guestId: session.guestId, linked: true };
   }
 

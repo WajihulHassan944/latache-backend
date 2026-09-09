@@ -75,19 +75,6 @@ describe('GuestRepository concurrency-safe writes', () => {
     });
   });
 
-  it('copyLocationToUserIfMissing() only writes when the User has no saved location yet, never overwriting one it already set', async () => {
-    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
-    const prisma = { user: { updateMany } } as unknown as PrismaService;
-    const repository = new GuestRepository(prisma);
-
-    await repository.copyLocationToUserIfMissing(42, 34.02 as never, -6.83 as never);
-
-    expect(updateMany).toHaveBeenCalledWith({
-      where: { id: 42, latitude: null, longitude: null },
-      data: { latitude: 34.02, longitude: -6.83, locationUpdatedAt: expect.any(Date) },
-    });
-  });
-
   it('expireDue() never touches a session that is not both active and past expiresAt', async () => {
     const findMany = jest.fn().mockResolvedValue([{ id: 9 }]);
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });

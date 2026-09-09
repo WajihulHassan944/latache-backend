@@ -62,23 +62,6 @@ export class GuestRepository {
     });
   }
 
-  /**
-   * Best-effort continuity when a guest converts to a real account: carries
-   * the guest's saved location onto the User row only if that account has no
-   * saved location of its own yet, so this never overwrites a location the
-   * Customer already set explicitly.
-   */
-  copyLocationToUserIfMissing(
-    userId: number,
-    latitude: Prisma.Decimal,
-    longitude: Prisma.Decimal,
-  ): Promise<Prisma.BatchPayload> {
-    return this.prisma.user.updateMany({
-      where: { id: userId, latitude: null, longitude: null },
-      data: { latitude, longitude, locationUpdatedAt: new Date() },
-    });
-  }
-
   /** Hard-deletes expired/revoked rows past the retention window, in bounded batches. */
   async deleteStale(olderThan: Date, batchSize: number): Promise<number> {
     const stale = await this.prisma.guestSession.findMany({

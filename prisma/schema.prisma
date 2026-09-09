@@ -22,9 +22,6 @@ model User {
   otpAttempts                  Int       @default(0)
   password                     String?   @db.VarChar(255)
   zipCode                      String?   @db.VarChar(255)
-  latitude                     Decimal?  @db.Decimal(9, 6)
-  longitude                    Decimal?  @db.Decimal(9, 6)
-  locationUpdatedAt            DateTime? @db.Timestamptz(6)
   passwordResetCode            Int?
   passwordResetCodeHash        String?   @db.VarChar(64)
   passwordResetCodeExpires     DateTime? @db.Timestamptz(6)
@@ -167,7 +164,6 @@ model User {
   @@index([createdById], map: "users_created_by_idx")
   @@index([rbacRoleId], map: "users_rbac_role_idx")
   @@index([eliteTierId, accountStatus], map: "users_elite_tier_status_idx")
-  @@index([latitude, longitude], map: "users_location_idx")
   @@map("Users")
 }
 
@@ -962,10 +958,9 @@ model FavoriteTasker {
 
 /// A Customer's persistent saved address (Home, Work, etc.). GET /api/taskers
 /// falls back to the Customer's default (isDefault) saved address when a
-/// request omits lat/lng; User.latitude/longitude no longer feeds this - that
-/// field is Guest-session-only now (PATCH /guest/location), since the
-/// Customer-facing PATCH /auth/me/location endpoint was removed in favor of
-/// this table as the single source of a Customer's location.
+/// request omits lat/lng - the single source of a Customer's location. The
+/// User model has no equivalent field; guests instead get GuestSession's own
+/// latitude/longitude (PATCH /guest/location), since they have no addresses.
 model CustomerAddress {
   id         String   @id @default(cuid()) @db.VarChar(40)
   customerId Int

@@ -36,13 +36,7 @@ const MARKETPLACE_SHARED_FIELDS = [
   'referralCode',
 ] as const;
 
-const CUSTOMER_ONLY_FIELDS = [
-  'stripeCustomerId',
-  'defaultStripePaymentMethodId',
-  'latitude',
-  'longitude',
-  'locationUpdatedAt',
-] as const;
+const CUSTOMER_ONLY_FIELDS = ['stripeCustomerId', 'defaultStripePaymentMethodId'] as const;
 
 const TASKER_ONLY_FIELDS = [
   'yearsOfExperience',

@@ -197,31 +197,6 @@ describe('GuestService.convert', () => {
     expect(result).toEqual({ guestId: 'guest_test', linked: true });
   });
 
-  it('carries the guest-saved location onto the new account when the session had one saved', async () => {
-    const copyLocationToUserIfMissing = jest.fn().mockResolvedValue({ count: 1 });
-    const repository = {
-      findByTokenHash: jest
-        .fn()
-        .mockResolvedValue(buildSession({ latitude: 34.02, longitude: -6.83 })),
-      convert: jest.fn().mockResolvedValue({ count: 1 }),
-      copyLocationToUserIfMissing,
-    } as unknown as GuestRepository;
-    const service = new GuestService(repository, config);
-    await service.convert('a'.repeat(128), 42);
-    expect(copyLocationToUserIfMissing).toHaveBeenCalledWith(42, 34.02, -6.83);
-  });
-
-  it('does not attempt a location carry-over when the guest session never saved one', async () => {
-    const copyLocationToUserIfMissing = jest.fn();
-    const repository = {
-      findByTokenHash: jest.fn().mockResolvedValue(buildSession()),
-      convert: jest.fn().mockResolvedValue({ count: 1 }),
-      copyLocationToUserIfMissing,
-    } as unknown as GuestRepository;
-    const service = new GuestService(repository, config);
-    await service.convert('a'.repeat(128), 42);
-    expect(copyLocationToUserIfMissing).not.toHaveBeenCalled();
-  });
 });
 
 describe('GuestService.updateLocation', () => {
