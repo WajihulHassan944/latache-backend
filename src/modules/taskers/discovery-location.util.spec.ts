@@ -1,7 +1,7 @@
 import { resolveSavedLocation } from './discovery-location.util';
 
 describe('resolveSavedLocation', () => {
-  it('returns null when neither a user nor a guest is given', () => {
+  it('returns null when neither a default address nor a guest is given', () => {
     expect(resolveSavedLocation(undefined, undefined)).toBeNull();
   });
 
@@ -17,20 +17,20 @@ describe('resolveSavedLocation', () => {
     expect(resolveSavedLocation({ latitude: null, longitude: -7.5898 } as never)).toBeNull();
   });
 
-  it('resolves a fully saved Customer location', () => {
+  it('resolves a fully saved default address location', () => {
     expect(resolveSavedLocation({ latitude: 33.5731, longitude: -7.5898 } as never)).toEqual({
       lat: 33.5731,
       lng: -7.5898,
     });
   });
 
-  it('falls back to the guest session location when there is no authenticated user', () => {
+  it('falls back to the guest session location when there is no default address', () => {
     expect(
       resolveSavedLocation(undefined, { latitude: 34.02, longitude: -6.83 } as never),
     ).toEqual({ lat: 34.02, lng: -6.83 });
   });
 
-  it('prefers the authenticated user location over a guest session, when somehow both are present', () => {
+  it('prefers the default address location over a guest session, when somehow both are present', () => {
     expect(
       resolveSavedLocation(
         { latitude: 33.5731, longitude: -7.5898 } as never,

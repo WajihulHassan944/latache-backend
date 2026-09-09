@@ -3865,214 +3865,6 @@
           }
         },
         {
-          "id": "62c6d7da-ca35-42f7-bb1b-9c99691ef95b",
-          "name": "Save the authenticated Customer's selected location",
-          "request": {
-            "name": "Save the authenticated Customer's selected location",
-            "description": {
-              "content": "Customer-only. Persists latitude/longitude on the account so GET /api/taskers falls back to it whenever a request omits lat/lng. Only this explicit call changes the saved location - lat/lng sent directly to GET /api/taskers are used for that one request only and never overwrite it.",
-              "type": "text/plain"
-            },
-            "url": {
-              "path": [
-                "api",
-                "auth",
-                "me",
-                "location"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "query": [],
-              "variable": []
-            },
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "method": "PATCH",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"latitude\": \"<number>\",\n  \"longitude\": \"<number>\"\n}",
-              "options": {
-                "raw": {
-                  "headerFamily": "json",
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [
-            {
-              "id": "e8486d08-908f-4ff1-bee5-2a4c57782e6c",
-              "name": "200",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me",
-                    "location"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": []
-                },
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  },
-                  {
-                    "description": {
-                      "content": "Added as a part of security scheme: bearer",
-                      "type": "text/plain"
-                    },
-                    "key": "Authorization",
-                    "value": "Bearer <token>"
-                  }
-                ],
-                "method": "PATCH",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"latitude\": \"<number>\",\n  \"longitude\": \"<number>\"\n}",
-                  "options": {
-                    "raw": {
-                      "headerFamily": "json",
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "e1498961-f44b-423a-98a8-8acde4b75224",
-              "name": "Bearer token or active session is missing or invalid.",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me",
-                    "location"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": []
-                },
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "description": {
-                      "content": "Added as a part of security scheme: bearer",
-                      "type": "text/plain"
-                    },
-                    "key": "Authorization",
-                    "value": "Bearer <token>"
-                  }
-                ],
-                "method": "PATCH",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"latitude\": \"<number>\",\n  \"longitude\": \"<number>\"\n}",
-                  "options": {
-                    "raw": {
-                      "headerFamily": "json",
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Unauthorized",
-              "code": 401,
-              "header": [],
-              "cookie": [],
-              "_postman_previewlanguage": "text"
-            },
-            {
-              "id": "c1586aaa-8803-43b3-a7dc-7031e5a4774b",
-              "name": "The authenticated identity does not have the Customer role.",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "api",
-                    "auth",
-                    "me",
-                    "location"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": []
-                },
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "description": {
-                      "content": "Added as a part of security scheme: bearer",
-                      "type": "text/plain"
-                    },
-                    "key": "Authorization",
-                    "value": "Bearer <token>"
-                  }
-                ],
-                "method": "PATCH",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"latitude\": \"<number>\",\n  \"longitude\": \"<number>\"\n}",
-                  "options": {
-                    "raw": {
-                      "headerFamily": "json",
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Forbidden",
-              "code": 403,
-              "header": [],
-              "cookie": [],
-              "_postman_previewlanguage": "text"
-            }
-          ],
-          "event": [],
-          "protocolProfileBehavior": {
-            "disableBodyPruning": true
-          }
-        },
-        {
           "id": "33f2dd1c-3392-4aec-9c70-9246a78c97d8",
           "name": "List active account sessions",
           "request": {
@@ -21034,7 +20826,7 @@
           "request": {
             "name": "Search/list active Taskers, optionally filtered by nearby location",
             "description": {
-              "content": "Requires either a guest token from POST /guest/token or a normal Customer/Tasker/Admin bearer session, sent as Authorization: Bearer <token>. Location precedence: (1) lat+lng on this request, if both are provided; (2) otherwise, the saved location on the authenticated Customer's account or, for a guest, on the guest session (from PATCH /auth/me/location or PATCH /guest/location); (3) otherwise, plain discovery with no location filtering. Only Taskers whose distance from the resolved point is within both radius (default 100 km) and their own configured service radius are returned, and every result includes distanceKm from that point; sort=nearest orders by distance ascending. Sending lat/lng here never changes the saved location - only the dedicated location-update endpoints do that. Combine with serviceSlug, date/startTime/endTime availability, minPrice/maxPrice, isElite, search, and sort for a full discovery search.",
+              "content": "Requires either a guest token from POST /guest/token or a normal Customer/Tasker/Admin bearer session, sent as Authorization: Bearer <token>. Location precedence: (1) lat+lng on this request, if both are provided; (2) otherwise, the authenticated Customer's default saved address (see POST /api/addresses) or, for a guest, the guest session's saved location (from PATCH /guest/location); (3) otherwise, plain discovery with no location filtering. Only Taskers whose distance from the resolved point is within both radius (default 100 km) and their own configured service radius are returned, and every result includes distanceKm from that point; sort=nearest orders by distance ascending. Sending lat/lng here never changes any saved location - only PATCH /guest/location or managing addresses via /api/addresses does that. Combine with serviceSlug, date/startTime/endTime availability, minPrice/maxPrice, isElite, search, and sort for a full discovery search.",
               "type": "text/plain"
             },
             "url": {
@@ -31740,7 +31532,7 @@
                 {
                   "disabled": false,
                   "description": {
-                    "content": "Latitude of the area to search around, using each customer's own saved location (see PATCH /auth/me/location). Must be provided together with nearLng. Requires customers.read_sensitive.",
+                    "content": "Latitude of the area to search around, using each customer's default saved address (see CustomerAddress, isDefault=true). Must be provided together with nearLng. Requires customers.read_sensitive.",
                     "type": "text/plain"
                   },
                   "key": "nearLat",
@@ -31878,7 +31670,7 @@
                     {
                       "disabled": false,
                       "description": {
-                        "content": "Latitude of the area to search around, using each customer's own saved location (see PATCH /auth/me/location). Must be provided together with nearLng. Requires customers.read_sensitive.",
+                        "content": "Latitude of the area to search around, using each customer's default saved address (see CustomerAddress, isDefault=true). Must be provided together with nearLng. Requires customers.read_sensitive.",
                         "type": "text/plain"
                       },
                       "key": "nearLat",
@@ -32031,7 +31823,7 @@
                     {
                       "disabled": false,
                       "description": {
-                        "content": "Latitude of the area to search around, using each customer's own saved location (see PATCH /auth/me/location). Must be provided together with nearLng. Requires customers.read_sensitive.",
+                        "content": "Latitude of the area to search around, using each customer's default saved address (see CustomerAddress, isDefault=true). Must be provided together with nearLng. Requires customers.read_sensitive.",
                         "type": "text/plain"
                       },
                       "key": "nearLat",
@@ -32184,7 +31976,7 @@
                     {
                       "disabled": false,
                       "description": {
-                        "content": "Latitude of the area to search around, using each customer's own saved location (see PATCH /auth/me/location). Must be provided together with nearLng. Requires customers.read_sensitive.",
+                        "content": "Latitude of the area to search around, using each customer's default saved address (see CustomerAddress, isDefault=true). Must be provided together with nearLng. Requires customers.read_sensitive.",
                         "type": "text/plain"
                       },
                       "key": "nearLat",

@@ -18,7 +18,6 @@ const canonicalRoutes = [
   ['changePassword', RequestMethod.PATCH, 'change-password'],
   ['me', RequestMethod.GET, 'me'],
   ['updateMe', RequestMethod.PATCH, 'me'],
-  ['updateMyLocation', RequestMethod.PATCH, 'me/location'],
   ['listSessions', RequestMethod.GET, 'sessions'],
   ['revokeSession', RequestMethod.DELETE, 'sessions/:id'],
   ['logout', RequestMethod.POST, 'logout'],
@@ -35,6 +34,7 @@ const removedLegacyPaths = [
   'get-loggedin-user',
   'verify-token',
   'logout-all',
+  'me/location',
 ];
 
 describe('Auth Swagger and route surface', () => {

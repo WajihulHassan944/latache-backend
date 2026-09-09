@@ -1,5 +1,10 @@
 # API route inventory — v3.22.0
 
+## v3.35 Customer location consolidation
+
+- **Removed** `PATCH /api/auth/me/location`. `GET /api/taskers` now falls back to the Customer's default saved address (`CustomerAddress` where `isDefault=true`, managed via `GET/POST/PATCH/DELETE /api/addresses`) instead of a separate saved lat/lng on the User record, when a discovery request omits lat/lng. `PATCH /api/guest/location` is unaffected - guests have no addresses.
+- `GET /api/admin/customers?nearLat=&nearLng=` (Admin, `customers.read_sensitive`) now filters on each customer's default saved address instead of the removed `User.latitude/longitude`, for the same reason.
+
 ## v3.34 booking → payment lifecycle hardening
 
 - Added `POST /api/bookings/:bookingId/duration-review/approve` (Customer-only): approves the server-recomputed extra task time that put a booking into `payment.status = review_required_duration_exceeded` and re-attempts final payment. No automatic charge happens while that status stands; rejecting the extra time uses the existing `POST /api/bookings/:bookingId/disputes`.

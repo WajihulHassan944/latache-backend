@@ -28,6 +28,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../generated/prisma/client';
+import { AddressesService } from '../addresses/addresses.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { GuestAwareRequest } from '../guest/guest-request';
 import { GuestOrIdentityGuard } from '../guest/guards/guest-or-identity.guard';
@@ -54,7 +55,10 @@ interface DiscoveryRequest extends GuestAwareRequest {
 })
 @Controller('taskers')
 export class TaskersController {
-  constructor(private readonly taskers: TaskersService) {}
+  constructor(
+    private readonly taskers: TaskersService,
+    private readonly addresses: AddressesService,
+  ) {}
 
   @Post('onboarding')
   @HttpCode(HttpStatus.OK)
@@ -142,7 +146,7 @@ export class TaskersController {
   @ApiOperation({
     summary: 'Search/list active Taskers, optionally filtered by nearby location',
     description:
-      'Requires either a guest token from POST /guest/token or a normal Customer/Tasker/Admin bearer session, sent as Authorization: Bearer <token>. Location precedence: (1) lat+lng on this request, if both are provided; (2) otherwise, the saved location on the authenticated Customer\'s account or, for a guest, on the guest session (from PATCH /auth/me/location or PATCH /guest/location); (3) otherwise, plain discovery with no location filtering. Only Taskers whose distance from the resolved point is within both radius (default 100 km) and their own configured service radius are returned, and every result includes distanceKm from that point; sort=nearest orders by distance ascending. Sending lat/lng here never changes the saved location - only the dedicated location-update endpoints do that. Combine with serviceSlug, date/startTime/endTime availability, minPrice/maxPrice, isElite, search, and sort for a full discovery search.',
+      'Requires either a guest token from POST /guest/token or a normal Customer/Tasker/Admin bearer session, sent as Authorization: Bearer <token>. Location precedence: (1) lat+lng on this request, if both are provided; (2) otherwise, the authenticated Customer\'s default saved address (see POST /api/addresses) or, for a guest, the guest session\'s saved location (from PATCH /guest/location); (3) otherwise, plain discovery with no location filtering. Only Taskers whose distance from the resolved point is within both radius (default 100 km) and their own configured service radius are returned, and every result includes distanceKm from that point; sort=nearest orders by distance ascending. Sending lat/lng here never changes any saved location - only PATCH /guest/location or managing addresses via /api/addresses does that. Combine with serviceSlug, date/startTime/endTime availability, minPrice/maxPrice, isElite, search, and sort for a full discovery search.',
   })
   @ApiUnauthorizedResponse({ description: 'Guest token or bearer session is missing, invalid, expired, or revoked.' })
   @ApiBadRequestResponse({
@@ -181,12 +185,15 @@ export class TaskersController {
       },
     },
   })
-  getTaskers(
+  async getTaskers(
     @Query() query: ListTaskersQueryDto,
     @RequestLocale() locale: string,
     @Req() request: DiscoveryRequest,
   ) {
-    const savedLocation = resolveSavedLocation(request.user, request.guest);
+    const defaultAddress = request.user
+      ? await this.addresses.getDefaultLocation(request.user.id)
+      : null;
+    const savedLocation = resolveSavedLocation(defaultAddress, request.guest);
     return this.taskers.list(query, locale, savedLocation);
   }
 

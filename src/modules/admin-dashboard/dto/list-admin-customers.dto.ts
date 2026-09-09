@@ -39,7 +39,7 @@ export class ListAdminCustomersDto extends AdminPaginationDto {
     minimum: -90,
     maximum: 90,
     description:
-      'Latitude of the area to search around, using each customer\'s own saved location (see PATCH /auth/me/location). Must be provided together with nearLng. Requires customers.read_sensitive.',
+      'Latitude of the area to search around, using each customer\'s default saved address (see CustomerAddress, isDefault=true). Must be provided together with nearLng. Requires customers.read_sensitive.',
   })
   @IsOptional()
   @Type(() => Number)

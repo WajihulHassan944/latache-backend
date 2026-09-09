@@ -3,11 +3,12 @@ import { Type } from 'class-transformer';
 import { IsNumber, Max, Min } from 'class-validator';
 
 /**
- * Shared by the Customer (`PATCH /auth/me/location`) and Guest
- * (`PATCH /guest/location`) explicit location-save operations. Both fields
- * are required together: a saved location is only ever set wholesale by one
- * of these calls, never partially, so GET /api/taskers can trust that a
- * saved latitude always has a matching saved longitude.
+ * Used by the Guest (`PATCH /guest/location`) explicit location-save
+ * operation. Both fields are required together: a saved location is only
+ * ever set wholesale, never partially, so GET /api/taskers can trust that a
+ * saved latitude always has a matching saved longitude. The equivalent
+ * Customer-facing endpoint was removed in favor of GET /api/taskers falling
+ * back to the Customer's default saved address (see CustomerAddress).
  */
 export class UpdateLocationDto {
   @ApiProperty({

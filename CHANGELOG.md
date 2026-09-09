@@ -1,3 +1,7 @@
+# 3.35.0
+
+- **Breaking:** Removed `PATCH /api/auth/me/location`. `GET /api/taskers`'s Customer discovery-search fallback (used only when a request omits lat/lng) now reads the Customer's default saved address (`CustomerAddress` with `isDefault=true`, managed via `/api/addresses`) instead of a separate `User.latitude/longitude` value. The equivalent guest-session endpoint, `PATCH /api/guest/location`, is unchanged - guests have no addresses to fall back to. `Admin - GET /api/admin/customers?nearLat=&nearLng=` now filters on each customer's default saved address for the same reason. `User.latitude/longitude/locationUpdatedAt` remain in the schema for now (historical data only, no longer written).
+
 # 3.34.0
 
 - Added a BullMQ `bookings.expire-pending` maintenance job that automatically cancels a `pending` booking no Tasker confirmed within `BOOKING_PENDING_EXPIRY_MINUTES` (default 60). A pending booking was never charged, so this is a plain system-initiated cancellation: no Stripe/wallet/cash interaction, notifications sent to both participants, and the held availability slot is released.

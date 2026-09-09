@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import type { CustomerAddress } from '../../generated/prisma/client';
+import type { CustomerAddress, Prisma } from '../../generated/prisma/client';
 import { CreateAddressDto, UpdateAddressDto } from './addresses.dto';
 
 export interface AddressView {
@@ -24,6 +24,17 @@ export class AddressesService {
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
     });
     return rows.map((row) => this.serialize(row));
+  }
+
+  /** Used by GET /api/taskers as its Customer discovery-search fallback location. */
+  async getDefaultLocation(
+    customerId: number,
+  ): Promise<{ latitude: Prisma.Decimal; longitude: Prisma.Decimal } | null> {
+    const address = await this.prisma.customerAddress.findFirst({
+      where: { customerId, isDefault: true },
+      select: { latitude: true, longitude: true },
+    });
+    return address ?? null;
   }
 
   async create(customerId: number, dto: CreateAddressDto): Promise<AddressView> {

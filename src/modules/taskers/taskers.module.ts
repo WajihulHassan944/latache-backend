@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ReviewsModule } from '../reviews/reviews.module';
+import { AddressesModule } from '../addresses/addresses.module';
 import { AuthModule } from '../auth/auth.module';
 import { GuestModule } from '../guest/guest.module';
 import { PlatformSettingsModule } from '../platform-settings/platform-settings.module';
@@ -9,7 +10,14 @@ import { TaskersRepository } from './taskers.repository';
 import { TaskersService } from './taskers.service';
 
 @Module({
-  imports: [AuthModule, GuestModule, ReviewsModule, PlatformSettingsModule, UploadsModule],
+  imports: [
+    AuthModule,
+    GuestModule,
+    ReviewsModule,
+    PlatformSettingsModule,
+    UploadsModule,
+    AddressesModule,
+  ],
   controllers: [TaskersController],
   providers: [TaskersService, TaskersRepository],
   exports: [TaskersService, TaskersRepository],

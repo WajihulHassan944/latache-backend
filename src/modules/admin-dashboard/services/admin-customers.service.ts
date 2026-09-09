@@ -63,9 +63,10 @@ export class AdminCustomersService {
       ? new Date(new Date(`${query.to}T00:00:00.000Z`).getTime() + 24 * 60 * 60 * 1000)
       : null;
     const location = query.location?.trim();
-    // Bounding-box approximation, not an exact circle: cheap to express as
-    // plain Decimal range predicates on the existing findMany() below,
-    // without switching this list query to raw SQL for one admin filter.
+    // Bounding-box approximation, not an exact circle: cheap to express as a
+    // relational Decimal range predicate against the customer's default
+    // CustomerAddress on the existing findMany() below, without switching
+    // this list query to raw SQL for one admin filter.
     // 1 degree latitude ~= 111km; degrees-per-km for longitude shrinks with
     // cos(latitude), same approximation the platform already documents for
     // "activeCurrencies"-style static presets elsewhere.
@@ -91,8 +92,13 @@ export class AdminCustomersService {
       ...(ipUserIds ? { id: { in: ipUserIds } } : {}),
       ...(nearBox
         ? {
-            latitude: { gte: nearBox.latMin, lte: nearBox.latMax },
-            longitude: { gte: nearBox.lngMin, lte: nearBox.lngMax },
+            savedAddresses: {
+              some: {
+                isDefault: true,
+                latitude: { gte: nearBox.latMin, lte: nearBox.latMax },
+                longitude: { gte: nearBox.lngMin, lte: nearBox.lngMax },
+              },
+            },
           }
         : {}),
       ...(fromDate || toExclusive

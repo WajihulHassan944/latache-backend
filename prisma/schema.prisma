@@ -960,10 +960,12 @@ model FavoriteTasker {
   @@map("FavoriteTaskers")
 }
 
-/// A Customer's persistent saved address (Home, Work, etc.), distinct from
-/// User.latitude/longitude which only tracks the Customer's current/active
-/// location for nearby-Tasker discovery. Saved addresses are never read by
-/// GET /api/taskers - only the explicit PATCH /api/auth/me/location value is.
+/// A Customer's persistent saved address (Home, Work, etc.). GET /api/taskers
+/// falls back to the Customer's default (isDefault) saved address when a
+/// request omits lat/lng; User.latitude/longitude no longer feeds this - that
+/// field is Guest-session-only now (PATCH /guest/location), since the
+/// Customer-facing PATCH /auth/me/location endpoint was removed in favor of
+/// this table as the single source of a Customer's location.
 model CustomerAddress {
   id         String   @id @default(cuid()) @db.VarChar(40)
   customerId Int
