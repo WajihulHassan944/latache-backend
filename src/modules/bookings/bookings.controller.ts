@@ -146,6 +146,24 @@ export class BookingsController {
     return this.bookings.extend(user, params.bookingId, dto);
   }
 
+  @Post(':bookingId/duration-review/approve')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @Roles(UserRole.Customer)
+  @ApiOperation({
+    summary: 'Customer approves extra task time before a duration-exceeded payment is charged',
+    description:
+      'Only usable while payment.status is review_required_duration_exceeded. Raises the authorized ' +
+      'duration to cover the server-computed actual worked time and re-attempts final payment. To reject ' +
+      'the extra time instead, open a booking dispute through POST /bookings/:bookingId/disputes, which ' +
+      'independently holds payment.',
+  })
+  async approveDurationReview(@CurrentUser() user: User, @Param() params: BookingParamDto) {
+    await this.bookings.approveDurationReview(user.id, params.bookingId);
+    const payment = await this.payments.finalizeCompletedBooking(params.bookingId);
+    const booking = await this.bookings.get(user, params.bookingId);
+    return { booking, payment };
+  }
+
   @Patch(':bookingId/billing')
   @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Customer)

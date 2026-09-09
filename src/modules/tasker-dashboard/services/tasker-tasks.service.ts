@@ -147,6 +147,16 @@ export class TaskerTasksService {
         },
         transaction,
       );
+      await this.audit.record(
+        {
+          actorId: taskerId,
+          targetUserId: booking.customerId,
+          action: 'booking_confirmed_by_tasker',
+          entityType: 'booking',
+          entityId: bookingId,
+        },
+        transaction,
+      );
       await this.enqueueBookingUpdate(bookingId, 'confirmed', 'tasker_confirmed', transaction);
       return row;
     });
@@ -194,6 +204,18 @@ export class TaskerTasksService {
           body: 'Your tasker cancelled the booking. Support can assist with the next steps.',
           entityType: 'booking',
           entityId: String(bookingId),
+        },
+        transaction,
+      );
+      await this.audit.record(
+        {
+          actorId: taskerId,
+          targetUserId: booking.customerId,
+          action: 'booking_cancelled_by_tasker',
+          entityType: 'booking',
+          entityId: bookingId,
+          reason: dto.reason,
+          metadata: { previousStatus: booking.status },
         },
         transaction,
       );
@@ -321,6 +343,16 @@ export class TaskerTasksService {
           body: 'Your tasker is at the booking location.',
           entityType: 'booking',
           entityId: String(bookingId),
+        },
+        transaction,
+      );
+      await this.audit.record(
+        {
+          actorId: taskerId,
+          targetUserId: booking.customerId,
+          action: 'booking_tasker_arrived',
+          entityType: 'booking',
+          entityId: bookingId,
         },
         transaction,
       );

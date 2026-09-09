@@ -5,10 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '../../../common/enums/user-role.enum';
+import { validateAvailabilitySlots } from '../../../common/utils/availability.util';
+import { dateOnlyFromDate, dateOnlyToDate, todayDateOnly } from '../../../common/utils/date.util';
+import { rangesOverlap, to12Hour, to24Hour } from '../../../common/utils/time.util';
 import { AuthSessionsRepository } from '../../auth/repositories/auth-sessions.repository';
 import { PrismaService } from '../../../database/prisma.service';
 import type { Prisma, Service } from '../../../generated/prisma/client';
 import type {
+  TaskerAvailabilitySlotView,
   TaskerBusinessProfileView,
   TaskerPersonalProfileView,
   TaskerSkillView,
@@ -18,6 +22,7 @@ import { PlatformSettingsService } from '../../platform-settings/platform-settin
 import type { PlatformCurrencyContext } from '../../platform-settings/platform-settings.types';
 import type {
   ActivateTaskerSkillDto,
+  AddTaskerAvailabilityDto,
   UpdateTaskerBusinessProfileDto,
   UpdateTaskerPersonalProfileDto,
   UpdateTaskerSkillDto,
@@ -211,6 +216,69 @@ export class TaskerProfileService {
     return { deleted: true, serviceId: String(serviceId) };
   }
 
+  async listAvailability(taskerId: number): Promise<TaskerAvailabilitySlotView[]> {
+    await this.requireTasker(taskerId);
+    const slots = await this.prisma.userAvailability.findMany({
+      where: { userId: taskerId, date: { gt: dateOnlyToDate(todayDateOnly()) } },
+      orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+    });
+    return slots.map((slot) => this.availabilityView(slot));
+  }
+
+  async addAvailability(
+    taskerId: number,
+    dto: AddTaskerAvailabilityDto,
+  ): Promise<TaskerAvailabilitySlotView[]> {
+    await this.requireTasker(taskerId);
+    validateAvailabilitySlots(dto.availability);
+
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT "id" FROM "UserAvailabilities" WHERE "userId" = ${taskerId} FOR UPDATE
+      `;
+      const existingSlots = await transaction.userAvailability.findMany({
+        where: { userId: taskerId },
+      });
+      for (const requested of dto.availability) {
+        const conflicting = existingSlots.find(
+          (slot) => dateOnlyFromDate(slot.date) === requested.date && rangesOverlap(slot, requested),
+        );
+        if (conflicting) {
+          throw new ConflictException(
+            `Availability ${requested.date} ${requested.startTime}-${requested.endTime} overlaps an existing slot`,
+          );
+        }
+      }
+      await transaction.userAvailability.createMany({
+        data: dto.availability.map((slot) => ({
+          userId: taskerId,
+          date: dateOnlyToDate(slot.date),
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        })),
+      });
+    });
+
+    return this.listAvailability(taskerId);
+  }
+
+  async deleteAvailability(taskerId: number, slotId: number): Promise<{ deleted: true; id: string }> {
+    await this.requireTasker(taskerId);
+    const slot = await this.prisma.userAvailability.findFirst({
+      where: { id: slotId, userId: taskerId },
+    });
+    if (!slot) throw new NotFoundException('Availability slot not found');
+    if (slot.isBooked) {
+      throw new ConflictException('This slot has a booking and cannot be removed');
+    }
+    const referenced = await this.prisma.booking.findFirst({ where: { availabilityId: slotId } });
+    if (referenced) {
+      throw new ConflictException('This slot has booking history and cannot be removed');
+    }
+    await this.prisma.userAvailability.delete({ where: { id: slotId } });
+    return { deleted: true, id: String(slotId) };
+  }
+
   async deactivateAccount(taskerId: number): Promise<{ deactivated: true }> {
     await this.requireTasker(taskerId);
     const [activeBookings, wallet, activeWithdrawals] = await Promise.all([
@@ -308,6 +376,24 @@ export class TaskerProfileService {
       },
       currency: currency.code,
       currencySymbol: currency.symbol,
+    };
+  }
+
+  private availabilityView(slot: {
+    id: number;
+    date: Date;
+    startTime: string;
+    endTime: string;
+    isBooked: boolean;
+  }): TaskerAvailabilitySlotView {
+    return {
+      id: slot.id.toString(),
+      date: dateOnlyFromDate(slot.date),
+      startTime: to24Hour(slot.startTime),
+      endTime: to24Hour(slot.endTime),
+      startTimeAMPM: to12Hour(slot.startTime),
+      endTimeAMPM: to12Hour(slot.endTime),
+      isBooked: slot.isBooked,
     };
   }
 

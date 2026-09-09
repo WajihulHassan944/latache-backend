@@ -112,6 +112,11 @@ export default () => {
       sweepIntervalMs: asPositiveInteger(process.env.BOOKING_COMPLETION_SWEEP_INTERVAL_MS, 60_000),
       batchSize: asPositiveInteger(process.env.BOOKING_COMPLETION_BATCH_SIZE, 100),
     },
+    bookingExpiration: {
+      pendingMinutes: asPositiveInteger(process.env.BOOKING_PENDING_EXPIRY_MINUTES, 60),
+      sweepIntervalMs: asPositiveInteger(process.env.BOOKING_EXPIRATION_SWEEP_INTERVAL_MS, 60_000),
+      batchSize: asPositiveInteger(process.env.BOOKING_EXPIRATION_BATCH_SIZE, 100),
+    },
     bookingWorkVerification: {
       otpTtlMinutes: asPositiveInteger(process.env.BOOKING_WORK_OTP_TTL_MINUTES, 15),
       otpMaxAttempts: asPositiveInteger(process.env.BOOKING_WORK_OTP_MAX_ATTEMPTS, 5),

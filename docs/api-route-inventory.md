@@ -1,5 +1,13 @@
 # API route inventory — v3.22.0
 
+## v3.34 booking → payment lifecycle hardening
+
+- Added `POST /api/bookings/:bookingId/duration-review/approve` (Customer-only): approves the server-recomputed extra task time that put a booking into `payment.status = review_required_duration_exceeded` and re-attempts final payment. No automatic charge happens while that status stands; rejecting the extra time uses the existing `POST /api/bookings/:bookingId/disputes`.
+- Added a `bookings.expire-pending` BullMQ maintenance job (see `booking-pending-expiration.md`) that cancels a `pending` booking no Tasker confirmed within `BOOKING_PENDING_EXPIRY_MINUTES`. A booking in this state was never charged, so expiration is a plain system-initiated cancellation with no Stripe/wallet/cash involvement.
+- Fixed `POST /api/payments/bookings/:bookingId/retry`: a previously declined off-session charge is now retried by re-confirming the same Stripe PaymentIntent instead of being permanently stuck replaying the original decline under a fixed idempotency key.
+- Added `AdminAuditLog` entries for booking creation, Tasker acceptance/arrival, and Customer/Tasker cancellation, joining the existing dispute/completion/OTP audit trail.
+- Added `GET/POST /api/tasker-dashboard/profile/availability` and `DELETE /api/tasker-dashboard/profile/availability/:id`: an already-approved Tasker can now open new calendar slots or remove an unbooked one without going through `POST /api/taskers/onboarding`, which resets `onboardingStatus`/`taskerProfile.status` back to pending review/approval and previously was the only way to add availability.
+
 ## v3.22 dispute lifecycle hardening
 
 - Added `POST /api/disputes/:disputeId/actions` for participant withdraw, settlement response, appeal and dispute-thread comments.

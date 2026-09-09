@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@n
 import {
   ApiBearerAuth,
   ApiConflictResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -13,9 +14,14 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import type { User } from '../../../generated/prisma/client';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import type { TaskerBusinessProfileView, TaskerSkillView } from '../tasker-dashboard.contracts';
+import type {
+  TaskerAvailabilitySlotView,
+  TaskerBusinessProfileView,
+  TaskerSkillView,
+} from '../tasker-dashboard.contracts';
 import {
   ActivateTaskerSkillDto,
+  AddTaskerAvailabilityDto,
   NumericIdParamDto,
   UpdateTaskerBusinessProfileDto,
   UpdateTaskerSkillDto,
@@ -84,6 +90,42 @@ export class TaskerProfileController {
     @Param() params: NumericIdParamDto,
   ): Promise<{ deleted: true; serviceId: string }> {
     return this.profile.deleteSkill(user.id, params.id);
+  }
+
+  @Get('availability')
+  @ApiOperation({
+    summary: "Get the tasker's own upcoming availability calendar",
+    description:
+      'Returns every future slot on this tasker\'s own calendar, including already-booked ones (isBooked), unlike the public GET /taskers/:id/availability which only exposes open slots.',
+  })
+  availability(@CurrentUser() user: User): Promise<TaskerAvailabilitySlotView[]> {
+    return this.profile.listAvailability(user.id);
+  }
+
+  @Post('availability')
+  @ApiOperation({
+    summary: 'Add new open availability slots to the calendar',
+    description:
+      'Adds slots without touching onboarding/approval status or any existing slot - unlike POST /taskers/onboarding, this does not put the tasker back into pending_review. Use this to open up new hours once already approved and active.',
+  })
+  @ApiConflictResponse({ description: 'A requested slot overlaps an existing slot on the same date.' })
+  addAvailability(
+    @CurrentUser() user: User,
+    @Body() dto: AddTaskerAvailabilityDto,
+  ): Promise<TaskerAvailabilitySlotView[]> {
+    return this.profile.addAvailability(user.id, dto);
+  }
+
+  @Delete('availability/:id')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Availability slot ID.' })
+  @ApiOperation({ summary: 'Remove an open (unbooked) availability slot' })
+  @ApiNotFoundResponse({ description: 'Slot does not exist or does not belong to this tasker.' })
+  @ApiConflictResponse({ description: 'This slot is booked or has booking history and cannot be removed.' })
+  deleteAvailability(
+    @CurrentUser() user: User,
+    @Param() params: NumericIdParamDto,
+  ): Promise<{ deleted: true; id: string }> {
+    return this.profile.deleteAvailability(user.id, params.id);
   }
 
   @Delete()

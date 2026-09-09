@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import Stripe from 'stripe';
 import { normalizePagination } from '../../common/utils/pagination.util';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -2126,15 +2127,33 @@ export class PaymentsService {
         await this.prisma.$transaction((transaction) =>
           this.handleBookingIntent(transaction, intent, 'payment_intent.succeeded'),
         );
+        return { bookingId, status: PAYMENT_STATUS.Paid, paymentIntentId: intent.id };
       }
+      if (['processing', 'requires_action', 'requires_capture', 'requires_confirmation'].includes(intent.status)) {
+        // A prior attempt is still in flight on this same PaymentIntent - poll it, never fork a second charge attempt.
+        return {
+          bookingId,
+          status: this.mapStripeIntentStatus(intent.status),
+          paymentIntentId: intent.id,
+          clientSecret: intent.status === 'requires_action' ? intent.client_secret : undefined,
+        };
+      }
+      // The prior attempt reached a dead end (e.g. a declined card). Re-confirming the SAME
+      // PaymentIntent - rather than creating a new one - is Stripe's documented retry pattern and
+      // is what actually lets retryBookingPayment()'s new payment method (or a resolved decline
+      // reason on the same card) get charged; Stripe's PaymentIntent confirmation is itself a
+      // single-attempt-at-a-time state machine, so a concurrent duplicate confirm call cannot
+      // produce a second charge even though the idempotency key below is attempt-scoped, not fixed.
+      if (intent.status === 'requires_payment_method') {
+        return this.confirmExistingBookingIntent(bookingId, intent.id);
+      }
+      // 'canceled' (nothing in this codebase cancels a booking PaymentIntent today) or any other
+      // status Stripe adds later: report it rather than risk Stripe replaying a stale cached
+      // response for a brand-new PaymentIntent.create() under the same fixed idempotency key.
       return {
         bookingId,
         status: this.mapStripeIntentStatus(intent.status),
         paymentIntentId: intent.id,
-        clientSecret:
-          intent.status === 'requires_action' || intent.status === 'requires_payment_method'
-            ? intent.client_secret
-            : undefined,
       };
     }
 
@@ -2197,7 +2216,7 @@ export class PaymentsService {
 
       return {
         bookingId,
-        status: this.mapStripeIntentStatus(intent.status),
+        status: intent.status === 'succeeded' ? PAYMENT_STATUS.Paid : this.mapStripeIntentStatus(intent.status),
         paymentIntentId: intent.id,
         clientSecret:
           intent.status === 'requires_action' || intent.status === 'requires_payment_method'
@@ -2236,6 +2255,85 @@ export class PaymentsService {
               status: intent.status,
               failureReason: intent.last_payment_error?.message ?? null,
             },
+          });
+        });
+        return {
+          bookingId,
+          status: this.mapStripeIntentStatus(intent.status),
+          paymentIntentId: intent.id,
+          clientSecret: intent.client_secret,
+        };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Retries a booking charge that previously died in requires_payment_method by re-confirming the
+   * SAME PaymentIntent (Stripe's documented recovery pattern) instead of creating a second one.
+   * booking.stripePaymentMethodId is re-read fresh so retryBookingPayment()'s new card is actually
+   * used. The idempotency key is intentionally attempt-scoped (not the fixed per-booking key) so a
+   * genuinely new retry is not served a stale cached decline response; a concurrent duplicate call
+   * still cannot double-charge because Stripe only lets one confirmation succeed per PaymentIntent.
+   */
+  private async confirmExistingBookingIntent(
+    bookingId: number,
+    paymentIntentId: string,
+  ): Promise<PaymentOrchestrationResult> {
+    const booking = await this.prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    if (!booking.stripePaymentMethodId) {
+      await this.prisma.booking.update({
+        where: { id: bookingId },
+        data: { paymentStatus: PAYMENT_STATUS.PaymentMethodRequired },
+      });
+      return { bookingId, status: PAYMENT_STATUS.PaymentMethodRequired };
+    }
+    await this.assertPaymentMethodOwnedByCustomer(booking.customerId, booking.stripePaymentMethodId);
+    const idempotencyKey = `booking-charge:${bookingId}:confirm:${randomUUID()}`;
+
+    try {
+      const intent = await this.stripeProvider.client().paymentIntents.confirm(
+        paymentIntentId,
+        { payment_method: booking.stripePaymentMethodId, off_session: true },
+        { idempotencyKey },
+      );
+      await this.prisma.$transaction(async (transaction) => {
+        await transaction.booking.update({
+          where: { id: bookingId },
+          data: {
+            paymentStatus: this.mapStripeIntentStatus(intent.status),
+            paymentFailureReason: null,
+          },
+        });
+        await transaction.paymentTransaction.update({
+          where: { idempotencyKey: `booking-charge:${bookingId}:v1` },
+          data: { status: intent.status },
+        });
+        if (intent.status === 'succeeded') {
+          await this.handleBookingIntent(transaction, intent, 'payment_intent.succeeded');
+        }
+      });
+      return {
+        bookingId,
+        status: intent.status === 'succeeded' ? PAYMENT_STATUS.Paid : this.mapStripeIntentStatus(intent.status),
+        paymentIntentId: intent.id,
+        clientSecret: intent.status === 'requires_action' ? intent.client_secret : undefined,
+      };
+    } catch (error) {
+      const intent = this.paymentIntentFromStripeError(error);
+      if (intent) {
+        const failureReason = intent.last_payment_error?.message ?? 'Stripe requires payment action';
+        await this.prisma.$transaction(async (transaction) => {
+          await transaction.booking.update({
+            where: { id: bookingId },
+            data: {
+              paymentStatus: this.mapStripeIntentStatus(intent.status),
+              paymentFailureReason: failureReason,
+            },
+          });
+          await transaction.paymentTransaction.update({
+            where: { idempotencyKey: `booking-charge:${bookingId}:v1` },
+            data: { status: intent.status, failureReason },
           });
         });
         return {

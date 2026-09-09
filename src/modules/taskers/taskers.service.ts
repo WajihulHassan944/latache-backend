@@ -7,12 +7,8 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { hasUserRole } from '../../common/utils/user-role.util';
-import {
-  dateOnlyFromDate,
-  dateOnlyToDate,
-  isFutureDate,
-  todayDateOnly,
-} from '../../common/utils/date.util';
+import { dateOnlyFromDate, dateOnlyToDate, todayDateOnly } from '../../common/utils/date.util';
+import { validateAvailabilitySlots } from '../../common/utils/availability.util';
 import { parseTimeToMinutes, rangesOverlap } from '../../common/utils/time.util';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma, type User } from '../../generated/prisma/client';
@@ -22,7 +18,7 @@ import { PublicTaskerReviewsQueryDto } from './dto/public-tasker-reviews-query.d
 import { ReviewsService } from '../reviews/reviews.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { UploadsService } from '../uploads/uploads.service';
-import { AvailabilitySlotDto, SubmitOnboardingDto } from './dto/submit-onboarding.dto';
+import { SubmitOnboardingDto } from './dto/submit-onboarding.dto';
 import { TaskersRepository } from './taskers.repository';
 
 @Injectable()
@@ -37,7 +33,7 @@ export class TaskersService {
 
   async submitOnboarding(user: User, dto: SubmitOnboardingDto) {
     const userId = user.id;
-    this.validateAvailability(dto.availability);
+    validateAvailabilitySlots(dto.availability);
     const requestedSlugs = dto.services.map((service) => service.slug);
     const duplicates = requestedSlugs.filter(
       (slug, index) => requestedSlugs.indexOf(slug) !== index,
@@ -360,38 +356,5 @@ export class TaskersService {
     const availability = await this.repository.getAvailability(id);
     if (!availability) throw new NotFoundException('Tasker not found');
     return availability;
-  }
-
-  private validateAvailability(slots: AvailabilitySlotDto[]): void {
-    const invalidDates = slots.filter((slot) => !isFutureDate(slot.date));
-    if (invalidDates.length) {
-      throw new BadRequestException(
-        `Availability date(s) must be after today: ${invalidDates
-          .map((slot) => slot.date)
-          .join(', ')}`,
-      );
-    }
-
-    for (const slot of slots) {
-      const start = parseTimeToMinutes(slot.startTime);
-      const end = parseTimeToMinutes(slot.endTime);
-      if (start === null || end === null || start >= end) {
-        throw new BadRequestException(
-          `Availability endTime must be after startTime for ${slot.date}`,
-        );
-      }
-    }
-
-    const byDate = new Map<string, AvailabilitySlotDto[]>();
-    for (const slot of slots) {
-      const values = byDate.get(slot.date) ?? [];
-      for (const existing of values) {
-        if (rangesOverlap(existing, slot)) {
-          throw new BadRequestException(`Availability slots overlap on ${slot.date}`);
-        }
-      }
-      values.push(slot);
-      byDate.set(slot.date, values);
-    }
   }
 }

@@ -293,6 +293,17 @@ export class BookingsService {
           },
           transaction,
         );
+        await this.audit.record(
+          {
+            actorId: customerId,
+            targetUserId: context.tasker.id,
+            action: 'booking_created',
+            entityType: 'booking',
+            entityId: created.id,
+            metadata: { paymentSource, serviceId: context.service.id, date: dto.date, time: context.slot.startTime },
+          },
+          transaction,
+        );
         await this.enqueueBookingUpdate(created.id, 'pending', 'booking_created', transaction);
         return created;
       });
@@ -400,6 +411,18 @@ export class BookingsService {
           body: 'The customer cancelled this booking.',
           entityType: 'booking',
           entityId: String(bookingId),
+        },
+        transaction,
+      );
+      await this.audit.record(
+        {
+          actorId: customerId,
+          targetUserId: booking.taskerId,
+          action: 'booking_cancelled_by_customer',
+          entityType: 'booking',
+          entityId: bookingId,
+          reason: dto.reason,
+          metadata: { previousStatus: booking.status },
         },
         transaction,
       );
@@ -535,6 +558,179 @@ export class BookingsService {
       extensionMinutes: row.extensionMinutes,
       authorizedDurationMinutes: row.estimatedDurationMinutes + row.extensionMinutes,
     };
+  }
+
+  /**
+   * Approves the extra task time that pushed a booking past its authorized
+   * duration. finalizeCompletedBooking() refuses to charge while paymentStatus
+   * is review_required_duration_exceeded; this raises extensionMinutes to
+   * cover the actually-worked time (server-computed from the persisted timer,
+   * never client input) and clears the hold so a subsequent finalize attempt
+   * can proceed. The customer can instead file a dispute through the existing
+   * booking-dispute endpoint, which independently holds payment.
+   */
+  async approveDurationReview(customerId: number, bookingId: number) {
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findFirst({ where: { id: bookingId, customerId } });
+      if (!booking) throw new NotFoundException('Booking not found');
+      if (booking.status !== 'completed') {
+        throw new ConflictException('Duration review is available only for a completed booking');
+      }
+      if (booking.paymentStatus !== PAYMENT_STATUS.ReviewRequiredDurationExceeded) {
+        throw new ConflictException('This booking does not have a pending duration review');
+      }
+      const session = await transaction.taskWorkSession.findUnique({ where: { bookingId } });
+      if (!session?.stoppedAt) {
+        throw new ConflictException('A stopped task timer is required to review duration');
+      }
+      const elapsedSeconds = Math.max(
+        0,
+        Math.floor((session.stoppedAt.getTime() - session.startedAt.getTime()) / 1000) -
+          session.accumulatedPausedSecs,
+      );
+      const actualMinutes = Math.max(1, Math.ceil(elapsedSeconds / 60));
+      const authorizedMinutesBefore = booking.estimatedDurationMinutes + booking.extensionMinutes;
+      const requiredExtensionMinutes = Math.max(0, actualMinutes - booking.estimatedDurationMinutes);
+      const extensionMinutes = Math.max(booking.extensionMinutes, requiredExtensionMinutes);
+
+      const row = await transaction.booking.update({
+        where: { id: bookingId },
+        data: {
+          extensionMinutes,
+          paymentStatus: PAYMENT_STATUS.Ready,
+          paymentFailureReason: null,
+        },
+      });
+      await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'payments',
+          type: 'duration_review_approved',
+          title: 'Extra task time approved',
+          body: 'The customer approved the additional task time. Final payment processing can now continue.',
+          entityType: 'booking',
+          entityId: String(bookingId),
+        },
+        transaction,
+      );
+      await this.audit.record(
+        {
+          actorId: customerId,
+          targetUserId: booking.taskerId,
+          action: 'booking_duration_review_approved',
+          entityType: 'booking',
+          entityId: bookingId,
+          metadata: {
+            actualMinutes,
+            authorizedMinutesBefore,
+            authorizedMinutesAfter: booking.estimatedDurationMinutes + extensionMinutes,
+          },
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(bookingId, row.status, 'duration_review_approved', transaction, {
+        extensionMinutes,
+      });
+      return row;
+    });
+    return this.serialize(
+      await this.prisma.booking.findUniqueOrThrow({ where: { id: updated.id }, include: BOOKING_INCLUDE }),
+      customerId,
+    );
+  }
+
+  /**
+   * A pending booking that no Tasker confirms or rejects must not remain
+   * pending forever. Nothing is ever charged for a pending booking (book()
+   * never creates a Stripe/wallet charge), so expiring one is a plain
+   * system-initiated cancellation - no refund/charge reversal is ever needed.
+   * Mirrors autoCompleteDueBookings(): a locked per-row transaction re-checks
+   * status so a Tasker confirming at the same moment always wins the race.
+   */
+  async expireDuePendingBookings(): Promise<{ examined: number; expired: number }> {
+    const pendingMinutes = this.config.get<number>('bookingExpiration.pendingMinutes', 60);
+    const batchSize = this.config.get<number>('bookingExpiration.batchSize', 100);
+    const cutoff = new Date(Date.now() - pendingMinutes * 60_000);
+    const candidates = await this.prisma.booking.findMany({
+      where: { status: 'pending', createdAt: { lte: cutoff } },
+      select: { id: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: batchSize,
+    });
+
+    let expired = 0;
+    for (const candidate of candidates) {
+      if (await this.expireOnePendingBooking(candidate.id, pendingMinutes)) expired += 1;
+    }
+    return { examined: candidates.length, expired };
+  }
+
+  private async expireOnePendingBooking(bookingId: number, pendingMinutes: number): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findUnique({ where: { id: bookingId } });
+      // Already confirmed/cancelled by the Tasker or Customer in the same
+      // instant the sweep picked it up - the row lock above serializes with
+      // TaskerTasksService.confirm()/cancel() so this read is authoritative.
+      if (!booking || booking.status !== 'pending') return false;
+
+      await transaction.userAvailability.updateMany({
+        where: { id: booking.availabilityId },
+        data: { isBooked: false },
+      });
+      await this.referrals.releaseCustomerDiscountReservation(
+        transaction,
+        bookingId,
+        'Booking automatically expired: no Tasker response within the configured window',
+      );
+      await transaction.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          cancelledByRole: 'system',
+          cancellationReason: `Automatically expired after ${pendingMinutes} minutes without a Tasker response`,
+        },
+      });
+      await this.notifications.create(
+        booking.customerId,
+        {
+          category: 'tasks',
+          type: 'booking_expired_no_response',
+          title: 'Booking request expired',
+          body: 'No Tasker responded to your booking request in time, so it was automatically cancelled. You were not charged.',
+          entityType: 'booking',
+          entityId: String(bookingId),
+        },
+        transaction,
+      );
+      await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'tasks',
+          type: 'booking_expired_no_response',
+          title: 'Booking request expired',
+          body: 'A pending booking request expired because it was not confirmed in time.',
+          entityType: 'booking',
+          entityId: String(bookingId),
+        },
+        transaction,
+      );
+      await this.audit.record(
+        {
+          targetUserId: booking.taskerId,
+          action: 'booking_expired_no_response',
+          entityType: 'booking',
+          entityId: bookingId,
+          reason: 'Configured pending-response window elapsed without Tasker confirmation',
+          metadata: { customerId: booking.customerId, pendingMinutes },
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(bookingId, 'cancelled', 'booking_expired_no_response', transaction);
+      return true;
+    });
   }
 
   async completeByCustomer(customerId: number, bookingId: number): Promise<void> {

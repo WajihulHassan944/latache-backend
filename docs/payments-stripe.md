@@ -45,6 +45,28 @@ Tasker stops timer
 
 Tasker earning excludes Latache platform fee and donation amount. It is not withdrawable until the configured clearance timestamp. Outstanding cash platform payables are offset before the release remainder becomes available.
 
+## Duration-exceeded review
+
+If the actual worked time (persisted timer minus paused time) exceeds `estimatedDurationMinutes + extensionMinutes`, `finalizeCompletedBooking()` never charges automatically. The booking is left `completed` with `paymentStatus = review_required_duration_exceeded`; no Stripe charge, wallet debit, or Tasker earning is created while it stays in this state.
+
+```text
+POST /api/bookings/:bookingId/duration-review/approve
+```
+
+Customer-only. Re-reads the persisted work session (never a client-supplied duration), raises `extensionMinutes` to cover the actual worked time, resets `paymentStatus` to `ready`, and immediately re-attempts `finalizeCompletedBooking()`. To reject the extra time instead, the customer opens a dispute through the existing `POST /api/bookings/:bookingId/disputes`, which independently holds payment via `on_hold_dispute`.
+
+## Retrying a failed booking charge
+
+```text
+POST /api/payments/bookings/:bookingId/retry
+```
+
+A synchronously declined off-session charge leaves the booking's PaymentIntent in `requires_payment_method`. Retrying — with the same card once the decline reason is resolved, or with a new `paymentMethodId` — re-confirms that *same* PaymentIntent (`stripe.paymentIntents.confirm`) rather than creating a second one, which is Stripe's documented recovery pattern for a failed off-session attempt. The per-booking idempotency key used for the original `PaymentIntent.create` call stays fixed and is never reused for retries, so a retry is never served a stale cached decline response; a concurrent duplicate retry cannot double-charge because Stripe only allows one confirmation to succeed per PaymentIntent.
+
+## Pending-booking expiration
+
+A booking a Tasker never confirms or rejects does not stay `pending` forever. See `booking-pending-expiration.md`.
+
 ## Stripe webhook
 
 ```text

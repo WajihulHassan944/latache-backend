@@ -8498,6 +8498,114 @@
           }
         },
         {
+          "id": "721ff389-89fd-4aaf-9557-c7758f43c94d",
+          "name": "Customer approves extra task time before a duration-exceeded payment is charged",
+          "request": {
+            "name": "Customer approves extra task time before a duration-exceeded payment is charged",
+            "description": {
+              "content": "Only usable while payment.status is review_required_duration_exceeded. Raises the authorized duration to cover the server-computed actual worked time (never a client-supplied value) and re-attempts final payment. To reject the extra time instead, open a booking dispute through POST /bookings/:bookingId/disputes, which independently holds payment.",
+              "type": "text/plain"
+            },
+            "url": {
+              "path": [
+                "api",
+                "bookings",
+                ":bookingId",
+                "duration-review",
+                "approve"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "type": "any",
+                  "value": "<number>",
+                  "key": "bookingId",
+                  "disabled": false,
+                  "description": {
+                    "content": "(Required) Booking ID.",
+                    "type": "text/plain"
+                  }
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {}
+          },
+          "response": [
+            {
+              "id": "7944db2a-5618-4190-9c68-3684e1f045c1",
+              "name": "201",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "bookings",
+                    ":bookingId",
+                    "duration-review",
+                    "approve"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": [
+                    {
+                      "disabled": false,
+                      "description": {
+                        "content": "(Required) Booking ID.",
+                        "type": "text/plain"
+                      },
+                      "type": "any",
+                      "value": "<number>",
+                      "key": "bookingId"
+                    }
+                  ]
+                },
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "POST",
+                "body": {}
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}",
+              "cookie": [],
+              "_postman_previewlanguage": "json"
+            }
+          ],
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
           "id": "ad82f7e8-106e-4f2e-96a1-3f2728b79330",
           "name": "Update tip/donation before final payment succeeds",
           "request": {
@@ -15892,6 +16000,427 @@
                       "type": "any",
                       "value": "<number>",
                       "key": "id"
+                    }
+                  ]
+                },
+                "header": [
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "DELETE",
+                "body": {}
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            }
+          ],
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "id": "18ab8d54-f654-44de-93aa-4ed5f9bbe659",
+          "name": "Get the tasker's own upcoming availability calendar",
+          "request": {
+            "name": "Get the tasker's own upcoming availability calendar",
+            "description": {},
+            "url": {
+              "path": [
+                "api",
+                "tasker-dashboard",
+                "profile",
+                "availability"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "GET",
+            "body": {}
+          },
+          "response": [
+            {
+              "id": "f04b07e3-81cb-4412-8efe-10d699b085c3",
+              "name": "200",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "tasker-dashboard",
+                    "profile",
+                    "availability"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": []
+                },
+                "header": [
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "GET",
+                "body": {}
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}",
+              "cookie": [],
+              "_postman_previewlanguage": "json"
+            }
+          ],
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "id": "742a8207-99db-4e1f-b6a4-7e1d4948bf5e",
+          "name": "Add new open availability slots to the calendar",
+          "request": {
+            "name": "Add new open availability slots to the calendar",
+            "description": {},
+            "url": {
+              "path": [
+                "api",
+                "tasker-dashboard",
+                "profile",
+                "availability"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"availability\": [\n    {\n      \"date\": \"<string>\",\n      \"startTime\": \"<string>\",\n      \"endTime\": \"<string>\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "headerFamily": "json",
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "id": "d623debf-1c74-475c-95ec-0781ce11f38c",
+              "name": "201",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "tasker-dashboard",
+                    "profile",
+                    "availability"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": []
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "POST",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"availability\": [\n    {\n      \"date\": \"<string>\",\n      \"startTime\": \"<string>\",\n      \"endTime\": \"<string>\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}",
+              "cookie": [],
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "id": "9a56ec00-4604-42ea-abc7-6739e294def3",
+              "name": "A requested slot overlaps an existing slot on the same date.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "tasker-dashboard",
+                    "profile",
+                    "availability"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": []
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "POST",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"availability\": [\n    {\n      \"date\": \"<string>\",\n      \"startTime\": \"<string>\",\n      \"endTime\": \"<string>\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}",
+              "cookie": [],
+              "_postman_previewlanguage": "json"
+            }
+          ],
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "id": "211bf05b-dfac-4c74-955d-abf376bc226d",
+          "name": "Remove an open (unbooked) availability slot",
+          "request": {
+            "name": "Remove an open (unbooked) availability slot",
+            "description": {},
+            "url": {
+              "path": [
+                "api",
+                "tasker-dashboard",
+                "profile",
+                "availability",
+                ":id"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "type": "any",
+                  "value": "<number>",
+                  "key": "id",
+                  "disabled": false,
+                  "description": {
+                    "content": "(Required) Availability slot ID.",
+                    "type": "text/plain"
+                  }
+                }
+              ]
+            },
+            "header": [],
+            "method": "DELETE",
+            "body": {}
+          },
+          "response": [
+            {
+              "id": "4b3d80d2-04ea-4802-8b2a-a28b27558fe8",
+              "name": "200",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "tasker-dashboard",
+                    "profile",
+                    "availability",
+                    ":id"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": [
+                    {
+                      "type": "any",
+                      "value": "<number>",
+                      "key": "id",
+                      "disabled": false,
+                      "description": {
+                        "content": "(Required) Availability slot ID.",
+                        "type": "text/plain"
+                      }
+                    }
+                  ]
+                },
+                "header": [
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "DELETE",
+                "body": {}
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "id": "9c55d72c-8c7b-44f3-b799-a2f54b4415a4",
+              "name": "Slot does not exist or does not belong to this tasker.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "tasker-dashboard",
+                    "profile",
+                    "availability",
+                    ":id"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": [
+                    {
+                      "type": "any",
+                      "value": "<number>",
+                      "key": "id",
+                      "disabled": false,
+                      "description": {
+                        "content": "(Required) Availability slot ID.",
+                        "type": "text/plain"
+                      }
+                    }
+                  ]
+                },
+                "header": [
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "DELETE",
+                "body": {}
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "id": "e721974f-a514-4e29-9908-4155754aa316",
+              "name": "This slot is booked or has booking history and cannot be removed.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "tasker-dashboard",
+                    "profile",
+                    "availability",
+                    ":id"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": [
+                    {
+                      "type": "any",
+                      "value": "<number>",
+                      "key": "id",
+                      "disabled": false,
+                      "description": {
+                        "content": "(Required) Availability slot ID.",
+                        "type": "text/plain"
+                      }
                     }
                   ]
                 },

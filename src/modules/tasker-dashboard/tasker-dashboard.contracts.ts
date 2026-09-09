@@ -139,6 +139,16 @@ export interface TaskerPersonalProfileView {
   profilePicture: string;
 }
 
+export interface TaskerAvailabilitySlotView {
+  id: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  startTimeAMPM: string;
+  endTimeAMPM: string;
+  isBooked: boolean;
+}
+
 export interface TaskerBusinessProfileView {
   yearsOfExperience: number | null;
   isProfilePublic: boolean;

@@ -1,3 +1,11 @@
+# 3.34.0
+
+- Added a BullMQ `bookings.expire-pending` maintenance job that automatically cancels a `pending` booking no Tasker confirmed within `BOOKING_PENDING_EXPIRY_MINUTES` (default 60). A pending booking was never charged, so this is a plain system-initiated cancellation: no Stripe/wallet/cash interaction, notifications sent to both participants, and the held availability slot is released.
+- Added `POST /api/bookings/:bookingId/duration-review/approve` so a Customer can approve the server-recomputed extra task time that put a booking's payment on hold (`review_required_duration_exceeded`) and let final payment proceed. No automatic charge is ever made while that hold stands.
+- Fixed `POST /api/payments/bookings/:bookingId/retry`: retrying a synchronously declined off-session Stripe charge (optionally with a new saved card) now re-confirms the same PaymentIntent instead of being permanently stuck replaying the original decline under a fixed idempotency key.
+- Added `AdminAuditLog` entries for booking creation, Tasker acceptance/arrival, and Customer/Tasker cancellation.
+- Added `GET/POST /api/tasker-dashboard/profile/availability` and `DELETE /api/tasker-dashboard/profile/availability/:id` so an already-approved Tasker can open new calendar slots or remove an unbooked one directly. Previously the only way to add availability was `POST /api/taskers/onboarding`, which also resets `onboardingStatus`/`taskerProfile.status` back to `pending_review`/`pending_approval` - so a Tasker who had booked through all of their existing slots had no way to open more hours without being pulled out of the active marketplace pending re-approval.
+
 # 3.33.0
 
 - Added Firebase Cloud Messaging (FCM) push notification delivery for web, Android, and iOS clients.
