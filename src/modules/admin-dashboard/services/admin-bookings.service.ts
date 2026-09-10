@@ -395,8 +395,9 @@ export class AdminBookingsService {
   }
 
   async action(actor: User, id: number, dto: AdminBookingActionDto) {
+    if (dto.action === 'reassign') return this.reassign(actor, id, dto);
     if (dto.action !== 'cancel') throw new ConflictException('Unsupported booking action');
-    const reason = dto.reason.trim();
+    const reason = (dto.reason ?? '').trim();
     if (reason.length < 5)
       throw new ConflictException('A meaningful cancellation reason is required');
 
@@ -506,6 +507,146 @@ export class AdminBookingsService {
       status: updated.status,
       cancelledAt: updated.cancelledAt?.toISOString() ?? null,
       cancellationReason: updated.cancellationReason,
+    };
+  }
+
+  private async reassign(actor: User, id: number, dto: AdminBookingActionDto) {
+    if (!dto.newTaskerId) throw new ConflictException('newTaskerId is required to reassign a booking');
+    const newTaskerId = dto.newTaskerId;
+    const reason = dto.reason?.trim() || 'Administrative reassignment';
+
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${id} FOR UPDATE`;
+      const booking = await transaction.booking.findUnique({
+        where: { id },
+        include: {
+          complaints: {
+            where: { status: { in: [...ACTIVE_DISPUTE_STATUSES] } },
+            select: { id: true },
+          },
+        },
+      });
+      if (!booking) throw new NotFoundException('Booking not found');
+      if (booking.complaints.length > 0) {
+        throw new ConflictException('Resolve active booking disputes before reassigning this booking');
+      }
+      if (!['pending', 'confirmed', 'en_route', 'arrived'].includes(booking.status)) {
+        throw new ConflictException(
+          'Only pending, accepted, en-route, or arrived bookings can be reassigned',
+        );
+      }
+      if (
+        [PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded, PAYMENT_STATUS.Refunded].includes(
+          booking.paymentStatus as never,
+        )
+      ) {
+        throw new ConflictException(
+          'A settled booking must be handled through dispute/refund resolution, not direct reassignment',
+        );
+      }
+      if (newTaskerId === booking.taskerId) {
+        throw new ConflictException('newTaskerId must be different from the current tasker');
+      }
+
+      const newTasker = await transaction.user.findFirst({
+        where: {
+          id: newTaskerId,
+          roles: { has: UserRole.Tasker },
+          accountStatus: 'active',
+          deletedAt: null,
+          onboardingStatus: 'approved',
+          taskerProfile: { is: { status: 'active' } },
+        },
+        select: { id: true },
+      });
+      if (!newTasker) {
+        throw new ConflictException('newTaskerId must be an active, approved tasker');
+      }
+
+      const previousTaskerId = booking.taskerId;
+
+      const row = await transaction.booking.update({
+        where: { id },
+        data: {
+          taskerId: newTaskerId,
+          status: 'pending',
+          confirmedAt: null,
+          enRouteAt: null,
+          arrivedAt: null,
+        },
+      });
+      await transaction.userAvailability.updateMany({
+        where: { id: booking.availabilityId },
+        data: { isBooked: false },
+      });
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'booking_admin_reassigned',
+          entityType: 'booking',
+          entityId: id,
+          reason,
+          metadata: { previousTaskerId, newTaskerId, previousStatus: booking.status },
+        },
+        transaction,
+      );
+      await this.notifications.create(
+        previousTaskerId,
+        {
+          category: 'tasks',
+          type: 'booking_reassigned',
+          title: 'Booking reassigned',
+          body: `This booking has been reassigned to another tasker by Latache. ${reason}`,
+          entityType: 'booking',
+          entityId: String(id),
+        },
+        transaction,
+      );
+      await this.notifications.create(
+        newTaskerId,
+        {
+          category: 'tasks',
+          type: 'booking_reassigned',
+          title: 'New booking assigned to you',
+          body: `Latache assigned you a booking. Please review and confirm it. ${reason}`,
+          entityType: 'booking',
+          entityId: String(id),
+        },
+        transaction,
+      );
+      await this.notifications.create(
+        booking.customerId,
+        {
+          category: 'tasks',
+          type: 'booking_reassigned',
+          title: 'Your tasker has changed',
+          body: `We reassigned your booking to a new tasker. ${reason}`,
+          entityType: 'booking',
+          entityId: String(id),
+        },
+        transaction,
+      );
+      await this.realtime.enqueueBooking(
+        id,
+        'booking:updated',
+        {
+          bookingId: id,
+          status: 'pending',
+          source: 'admin',
+          taskerId: newTaskerId,
+          previousTaskerId,
+          reassignReason: reason,
+        },
+        transaction,
+      );
+      return row;
+    });
+
+    return {
+      bookingId: String(updated.id),
+      displayId: bookingDisplayId(updated.id),
+      status: updated.status,
+      taskerId: String(updated.taskerId),
     };
   }
 

@@ -4,6 +4,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsIn,
   IsInt,
   IsOptional,
@@ -17,6 +18,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CloudinaryAssetRefDto } from '../../tasker-dashboard/dto/tasker-dashboard.dto';
+import { normalizeEmail } from '../../auth/dto/common-auth.dto';
 import {
   SUPPORT_ADMIN_VIEWS,
   SUPPORT_CATEGORIES,
@@ -98,6 +100,35 @@ export class CreateSupportTicketDto {
   @ValidateNested({ each: true })
   @Type(() => CloudinaryAssetRefDto)
   attachments?: CloudinaryAssetRefDto[];
+}
+
+export class CreateAppealDto {
+  @ApiProperty({ example: 'tasker@example.com' })
+  @Transform(normalizeEmail)
+  @IsEmail()
+  @MaxLength(254)
+  email!: string;
+
+  @ApiProperty({ example: 'CurrentPassword123!' })
+  @IsString()
+  @Length(1, 128)
+  password!: string;
+
+  @ApiPropertyOptional({ example: 'Appeal: suspension over a false complaint' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(3, 200)
+  subject?: string;
+
+  @ApiProperty({
+    example:
+      'I was suspended after a customer complaint, but I believe this was a misunderstanding. Please review my case.',
+  })
+  @Transform(trim)
+  @IsString()
+  @Length(10, 5000)
+  message!: string;
 }
 
 export class ListOwnSupportTicketsQueryDto {

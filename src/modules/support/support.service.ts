@@ -4,7 +4,10 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { compare, hash } from 'bcryptjs';
 import type { SupportTicket, User } from '../../generated/prisma/client';
 import { Prisma } from '../../generated/prisma/client';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -20,6 +23,7 @@ import type {
   AdminSendSupportMessageDto,
   AdminSupportActionDto,
   AdminSupportQueryDto,
+  CreateAppealDto,
   CreateSupportTicketDto,
   ListOwnSupportTicketsQueryDto,
   ListSupportMessagesQueryDto,
@@ -44,6 +48,8 @@ const durationMinutes = (from: Date | null, to: Date | null): number | null => {
 
 @Injectable()
 export class SupportService {
+  private dummyPasswordHash?: Promise<string>;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
@@ -51,7 +57,60 @@ export class SupportService {
     private readonly platformSettings: PlatformSettingsService,
     private readonly realtime: RealtimeOutboxService,
     private readonly uploads: UploadsService,
+    private readonly config: ConfigService,
   ) {}
+
+  /**
+   * For suspended/deactivated accounts, which cannot obtain a session (login
+   * is blocked by AuthRoleService.assertSelectable). Verifies credentials
+   * directly, confirms the account is actually inactive, and opens a
+   * category=appeal ticket without requiring an active session.
+   */
+  async createAppeal(dto: CreateAppealDto): Promise<unknown> {
+    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const passwordMatches = await compare(
+      dto.password,
+      user?.password ?? (await this.getDummyPasswordHash()),
+    );
+    if (!user?.password || !passwordMatches) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+    if (!SUPPORT_USER_ROLES.has(user.role)) {
+      throw new ForbiddenException('Only customer and tasker accounts can submit an appeal');
+    }
+
+    const [customerProfile, taskerProfile] = await Promise.all([
+      this.prisma.customerProfile.findUnique({ where: { userId: user.id } }),
+      this.prisma.taskerProfile.findUnique({ where: { userId: user.id } }),
+    ]);
+    const inactiveStatuses = new Set(['suspended', 'deactivated']);
+    const isInactive =
+      Boolean(user.deletedAt) ||
+      inactiveStatuses.has(user.accountStatus) ||
+      Boolean(customerProfile && inactiveStatuses.has(customerProfile.status)) ||
+      Boolean(taskerProfile && inactiveStatuses.has(taskerProfile.status));
+    if (!isInactive) {
+      throw new ConflictException(
+        'Only suspended or deactivated accounts can submit an appeal. Log in normally instead.',
+      );
+    }
+
+    return this.create(user, {
+      channel: 'ticket',
+      category: 'appeal',
+      subject: dto.subject?.trim() || 'Account suspension/deactivation appeal',
+      priority: 'high',
+      description: dto.message,
+    } as CreateSupportTicketDto);
+  }
+
+  private getDummyPasswordHash(): Promise<string> {
+    if (!this.dummyPasswordHash) {
+      const rounds = this.config.get<number>('auth.bcryptRounds', 12);
+      this.dummyPasswordHash = hash('latache-timing-safety-dummy-password', rounds);
+    }
+    return this.dummyPasswordHash;
+  }
 
   async capabilities() {
     const settings = await this.platformSettings.view('general');

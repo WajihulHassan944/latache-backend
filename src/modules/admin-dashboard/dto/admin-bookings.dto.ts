@@ -115,15 +115,28 @@ export class AdminBookingsQueryDto extends AdminPaginationDto {
 
 export class AdminBookingActionDto {
   @ApiProperty({
-    enum: ['cancel'],
+    enum: ['cancel', 'reassign'],
     description:
       'Admin lifecycle actions are intentionally narrow. Financial dispute outcomes belong to the dispute API.',
   })
-  @IsIn(['cancel'])
-  action!: 'cancel';
+  @IsIn(['cancel', 'reassign'])
+  action!: 'cancel' | 'reassign';
 
-  @ApiProperty({ example: 'Customer and Tasker both confirmed the booking should be cancelled.' })
+  @ApiPropertyOptional({
+    example: 'Customer and Tasker both confirmed the booking should be cancelled.',
+    description: 'Required when action is cancel. Optional context when action is reassign.',
+  })
+  @IsOptional()
   @IsString()
   @MaxLength(1000)
-  reason!: string;
+  reason?: string;
+
+  @ApiPropertyOptional({
+    example: 57,
+    description: 'Required when action is reassign: the tasker to hand this booking to.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  newTaskerId?: number;
 }

@@ -71,6 +71,10 @@ export class AuthRoleService {
         throw new ForbiddenException({
           code: 'TASKER_PROFILE_INACTIVE',
           message: `Tasker access is ${profile.status}.`,
+          profile: {
+            status: profile.status,
+            statusReason: profile.statusReason,
+          },
         });
       }
     }

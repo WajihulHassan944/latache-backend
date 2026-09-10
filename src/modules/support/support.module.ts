@@ -6,6 +6,7 @@ import { PlatformSettingsModule } from '../platform-settings/platform-settings.m
 import { RealtimeModule } from '../realtime/realtime.module';
 import { UploadsModule } from '../uploads/uploads.module';
 import { AdminSupportController } from './admin-support.controller';
+import { SupportAppealsController } from './support-appeals.controller';
 import { SupportController } from './support.controller';
 import { SupportService } from './support.service';
 
@@ -18,7 +19,7 @@ import { SupportService } from './support.service';
     RealtimeModule,
     UploadsModule,
   ],
-  controllers: [SupportController, AdminSupportController],
+  controllers: [SupportController, AdminSupportController, SupportAppealsController],
   providers: [SupportService],
   exports: [SupportService],
 })

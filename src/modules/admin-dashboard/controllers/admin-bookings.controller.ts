@@ -82,7 +82,7 @@ export class AdminBookingsController {
   @ApiOperation({
     summary: 'Perform a safe administrative booking lifecycle action',
     description:
-      'Currently supports only exceptional cancellation of a non-paid booking with no active dispute. Paid/disputed bookings must use Dispute Management so refund/payment invariants cannot be bypassed.',
+      'Supports exceptional cancellation and reassignment of a non-paid, non-disputed booking. Reassignment resets status to pending so the new tasker must actively accept it. Paid/disputed bookings must use Dispute Management so refund/payment invariants cannot be bypassed.',
   })
   @ApiBody({
     type: AdminBookingActionDto,
@@ -92,6 +92,14 @@ export class AdminBookingsController {
         value: {
           action: 'cancel',
           reason: 'Customer and Tasker both confirmed that the booking should be cancelled.',
+        },
+      },
+      reassign: {
+        summary: 'Reassign to a different tasker',
+        value: {
+          action: 'reassign',
+          newTaskerId: 57,
+          reason: 'Original tasker reported a scheduling conflict.',
         },
       },
     },

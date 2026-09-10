@@ -9,6 +9,7 @@ export const SUPPORT_CATEGORIES = [
   'account',
   'verification',
   'elite',
+  'appeal',
   'other',
 ] as const;
 export type SupportCategory = (typeof SUPPORT_CATEGORIES)[number];
