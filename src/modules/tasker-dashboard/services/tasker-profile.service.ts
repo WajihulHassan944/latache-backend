@@ -219,7 +219,7 @@ export class TaskerProfileService {
   async listAvailability(taskerId: number): Promise<TaskerAvailabilitySlotView[]> {
     await this.requireTasker(taskerId);
     const slots = await this.prisma.userAvailability.findMany({
-      where: { userId: taskerId, date: { gt: dateOnlyToDate(todayDateOnly()) } },
+      where: { userId: taskerId, date: { gte: dateOnlyToDate(todayDateOnly()) } },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     });
     return slots.map((slot) => this.availabilityView(slot));

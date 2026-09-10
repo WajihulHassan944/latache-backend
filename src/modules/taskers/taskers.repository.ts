@@ -384,7 +384,7 @@ export class TaskersRepository {
       where: {
         userId: id,
         isBooked: false,
-        date: { gt: dateOnlyToDate(todayDateOnly()) },
+        date: { gte: dateOnlyToDate(todayDateOnly()) },
       },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     });
