@@ -161,6 +161,7 @@ export interface TaskerBusinessProfileView {
     area: string | null;
   };
   skills: TaskerSkillView[];
+  workImages: string[];
 }
 
 export interface PayoutCapabilityView {

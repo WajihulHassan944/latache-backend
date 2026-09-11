@@ -275,6 +275,22 @@ export class UpdateTaskerBusinessProfileDto {
   @Transform(bool)
   @IsBoolean()
   isProfilePublic?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: 6,
+    example: ['https://res.cloudinary.com/demo/image/upload/tasker-work-images/example.webp'],
+    description: 'Cloudinary secure URLs for the tasker card cover photo/gallery, max 6.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    Array.isArray(value) ? value.map((item) => (typeof item === 'string' ? item.trim() : item)) : value,
+  )
+  @IsArray()
+  @ArrayMaxSize(6)
+  @IsUrl({ protocols: ['https'], require_protocol: true }, { each: true })
+  @MaxLength(500, { each: true })
+  workImages?: string[];
 }
 
 export class ActivateTaskerSkillDto {

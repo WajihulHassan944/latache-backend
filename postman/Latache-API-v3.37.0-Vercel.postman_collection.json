@@ -15289,7 +15289,7 @@
             "method": "PATCH",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"yearsOfExperience\": \"<number>\",\n  \"serviceAreaArea\": \"<string>\",\n  \"serviceAreaCity\": \"<string>\",\n  \"serviceAreaLabel\": \"<string>\",\n  \"serviceAreaLat\": \"<number>\",\n  \"serviceAreaLng\": \"<number>\",\n  \"serviceAreaRadiusKm\": \"<number>\",\n  \"isProfilePublic\": \"<boolean>\"\n}",
+              "raw": "{\n  \"yearsOfExperience\": \"<number>\",\n  \"serviceAreaArea\": \"<string>\",\n  \"serviceAreaCity\": \"<string>\",\n  \"serviceAreaLabel\": \"<string>\",\n  \"serviceAreaLat\": \"<number>\",\n  \"serviceAreaLng\": \"<number>\",\n  \"serviceAreaRadiusKm\": \"<number>\",\n  \"isProfilePublic\": \"<boolean>\",\n  \"workImages\": [\n    \"<string>\"\n  ]\n}",
               "options": {
                 "raw": {
                   "headerFamily": "json",
@@ -15337,7 +15337,7 @@
                 "method": "PATCH",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"yearsOfExperience\": \"<number>\",\n  \"serviceAreaArea\": \"<string>\",\n  \"serviceAreaCity\": \"<string>\",\n  \"serviceAreaLabel\": \"<string>\",\n  \"serviceAreaLat\": \"<number>\",\n  \"serviceAreaLng\": \"<number>\",\n  \"serviceAreaRadiusKm\": \"<number>\",\n  \"isProfilePublic\": \"<boolean>\"\n}",
+                  "raw": "{\n  \"yearsOfExperience\": \"<number>\",\n  \"serviceAreaArea\": \"<string>\",\n  \"serviceAreaCity\": \"<string>\",\n  \"serviceAreaLabel\": \"<string>\",\n  \"serviceAreaLat\": \"<number>\",\n  \"serviceAreaLng\": \"<number>\",\n  \"serviceAreaRadiusKm\": \"<number>\",\n  \"isProfilePublic\": \"<boolean>\",\n  \"workImages\": [\n    \"<string>\"\n  ]\n}",
                   "options": {
                     "raw": {
                       "headerFamily": "json",

@@ -101,6 +101,7 @@ export class TaskerProfileService {
           ? { serviceAreaRadiusKm: dto.serviceAreaRadiusKm }
           : {}),
         ...(dto.isProfilePublic !== undefined ? { isProfilePublic: dto.isProfilePublic } : {}),
+        ...(dto.workImages !== undefined ? { workImages: dto.workImages } : {}),
       },
     });
     return this.businessView(updated, await this.listSkills(taskerId));
@@ -435,6 +436,7 @@ export class TaskerProfileService {
       serviceAreaRadiusKm: unknown;
       serviceAreaCity: string | null;
       serviceAreaArea: string | null;
+      workImages: string[] | null;
     },
     skills: TaskerSkillView[],
   ): TaskerBusinessProfileView {
@@ -450,6 +452,7 @@ export class TaskerProfileService {
         area: user.serviceAreaArea,
       },
       skills,
+      workImages: user.workImages ?? [],
     };
   }
 
