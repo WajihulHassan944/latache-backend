@@ -131,6 +131,19 @@ export class CreateAppealDto {
   message!: string;
 }
 
+export class AppealStatusCheckDto {
+  @ApiProperty({ example: 'tasker@example.com' })
+  @Transform(normalizeEmail)
+  @IsEmail()
+  @MaxLength(254)
+  email!: string;
+
+  @ApiProperty({ example: 'CurrentPassword123!' })
+  @IsString()
+  @Length(1, 128)
+  password!: string;
+}
+
 export class ListOwnSupportTicketsQueryDto {
   @ApiPropertyOptional({ enum: SUPPORT_CHANNELS })
   @IsOptional()

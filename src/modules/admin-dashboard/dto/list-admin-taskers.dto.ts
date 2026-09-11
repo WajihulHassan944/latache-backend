@@ -56,10 +56,10 @@ export class ListAdminTaskersDto extends AdminPaginationDto {
   ipAddress?: string;
 
   @ApiPropertyOptional({
-    enum: ['newest', 'oldest', 'rating_desc', 'completed_desc'],
+    enum: ['newest', 'oldest', 'rating_desc', 'completed_desc', 'completion_rate_desc'],
     default: 'newest',
   })
   @IsOptional()
-  @IsIn(['newest', 'oldest', 'rating_desc', 'completed_desc'])
-  sort?: 'newest' | 'oldest' | 'rating_desc' | 'completed_desc' = 'newest';
+  @IsIn(['newest', 'oldest', 'rating_desc', 'completed_desc', 'completion_rate_desc'])
+  sort?: 'newest' | 'oldest' | 'rating_desc' | 'completed_desc' | 'completion_rate_desc' = 'newest';
 }

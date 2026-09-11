@@ -23,6 +23,7 @@ import type {
   AdminSendSupportMessageDto,
   AdminSupportActionDto,
   AdminSupportQueryDto,
+  AppealStatusCheckDto,
   CreateAppealDto,
   CreateSupportTicketDto,
   ListOwnSupportTicketsQueryDto,
@@ -95,6 +96,21 @@ export class SupportService {
       );
     }
 
+    const openAppeal = await this.prisma.supportTicket.findFirst({
+      where: {
+        userId: user.id,
+        requesterRole: user.role,
+        category: 'appeal',
+        status: { in: [...ACTIVE_SUPPORT_STATUSES] },
+      },
+    });
+    if (openAppeal) {
+      throw new ConflictException({
+        code: 'APPEAL_ALREADY_OPEN',
+        message: 'An appeal is already open for this account. Please wait for it to be resolved.',
+      });
+    }
+
     return this.create(user, {
       channel: 'ticket',
       category: 'appeal',
@@ -102,6 +118,35 @@ export class SupportService {
       priority: 'high',
       description: dto.message,
     } as CreateSupportTicketDto);
+  }
+
+  /**
+   * Same mini-login identity proof as createAppeal, so a suspended account
+   * that cannot log in can check on an appeal it already filed without an
+   * enumerable-by-ticket-id lookup.
+   */
+  async appealStatus(dto: AppealStatusCheckDto): Promise<unknown> {
+    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const passwordMatches = await compare(
+      dto.password,
+      user?.password ?? (await this.getDummyPasswordHash()),
+    );
+    if (!user?.password || !passwordMatches) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    const ticket = await this.prisma.supportTicket.findFirst({
+      where: { userId: user.id, requesterRole: user.role, category: 'appeal' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!ticket) throw new NotFoundException('No appeal was found for this account');
+
+    return {
+      ticketId: String(ticket.id),
+      status: ticket.status,
+      resolutionSummary: ticket.resolutionSummary,
+      resolvedAt: ticket.resolvedAt?.toISOString() ?? null,
+    };
   }
 
   private getDummyPasswordHash(): Promise<string> {

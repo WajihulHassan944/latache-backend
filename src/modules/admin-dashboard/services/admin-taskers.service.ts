@@ -7,17 +7,17 @@ import {
 } from '@nestjs/common';
 import { Prisma, type User } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
-import { AccountStatus } from '../../../common/enums/account-status.enum';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { AuthSessionsRepository } from '../../auth/repositories/auth-sessions.repository';
 import { NotificationsService } from '../../notifications/notifications.service';
 import type {
+  AdminTaskerProfileUpdateDto,
   AdminUserModerationDto,
   ListAdminTaskersDto,
   TaskerVerificationActionDto,
 } from '../dto';
-import { fullName, money, pagination } from '../admin-dashboard.utils';
+import { fullName, money, pagination, percentage } from '../admin-dashboard.utils';
 import { AccountDeletionService } from '../../account-deletion/account-deletion.service';
 
 @Injectable()
@@ -72,67 +72,94 @@ export class AdminTaskersService {
         : {}),
     };
 
-    const orderBy: Prisma.UserOrderByWithRelationInput[] =
-      query.sort === 'oldest'
-        ? [{ createdAt: 'asc' }]
-        : query.sort === 'rating_desc'
-          ? [{ rating: 'desc' }, { createdAt: 'desc' }]
-          : query.sort === 'completed_desc'
-            ? [{ completedTasks: 'desc' }, { createdAt: 'desc' }]
-            : [{ createdAt: 'desc' }];
-
-    const [taskers, totalItems] = await Promise.all([
-      this.prisma.user.findMany({
-        where,
+    const select = {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phoneCountryCode: true,
+      phoneNumber: true,
+      profilePicture: true,
+      accountStatus: true,
+      onboardingStatus: true,
+      taskerProfile: {
         select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          phoneCountryCode: true,
-          phoneNumber: true,
-          profilePicture: true,
-          accountStatus: true,
-          onboardingStatus: true,
-          taskerProfile: {
-            select: {
-              status: true,
-              rating: true,
-              reviewsCount: true,
-              reapplyCount: true,
-              lastRejectedAt: true,
-              lastRejectionReason: true,
-              lastRejectionReasonCode: true,
-            },
-          },
-          isVerified: true,
-          isDocVerified: true,
-          isElite: true,
+          status: true,
           rating: true,
           reviewsCount: true,
-          completedTasks: true,
-          yearsOfExperience: true,
-          serviceAreaCity: true,
-          serviceAreaArea: true,
-          submittedAt: true,
-          createdAt: true,
-          _count: { select: { userServices: true, bookingsAsTasker: true } },
+          reapplyCount: true,
+          lastRejectedAt: true,
+          lastRejectionReason: true,
+          lastRejectionReasonCode: true,
         },
-        orderBy,
-        skip,
-        take: limit,
-      }),
-      this.prisma.user.count({ where }),
-    ]);
+      },
+      isVerified: true,
+      isDocVerified: true,
+      isElite: true,
+      rating: true,
+      reviewsCount: true,
+      completedTasks: true,
+      yearsOfExperience: true,
+      serviceAreaCity: true,
+      serviceAreaArea: true,
+      submittedAt: true,
+      createdAt: true,
+      _count: { select: { userServices: true, bookingsAsTasker: true } },
+    } satisfies Prisma.UserSelect;
+
+    let taskers: Array<Prisma.UserGetPayload<{ select: typeof select }>>;
+    let totalItems: number;
+
+    if (query.sort === 'completion_rate_desc') {
+      const [candidates, candidateTotal] = await Promise.all([
+        this.prisma.user.findMany({ where, select: { id: true, createdAt: true } }),
+        this.prisma.user.count({ where }),
+      ]);
+      const rateById = await this.completionRatesFor(candidates.map((candidate) => candidate.id));
+      const orderedIds = candidates
+        .slice()
+        .sort((a, b) => {
+          const diff = (rateById.get(b.id) ?? 0) - (rateById.get(a.id) ?? 0);
+          return diff !== 0 ? diff : b.createdAt.getTime() - a.createdAt.getTime();
+        })
+        .map((candidate) => candidate.id)
+        .slice(skip, skip + limit);
+
+      const rows = orderedIds.length
+        ? await this.prisma.user.findMany({ where: { id: { in: orderedIds } }, select })
+        : [];
+      const rowById = new Map(rows.map((row) => [row.id, row]));
+      taskers = orderedIds
+        .map((id) => rowById.get(id))
+        .filter((row): row is Prisma.UserGetPayload<{ select: typeof select }> => Boolean(row));
+      totalItems = candidateTotal;
+    } else {
+      const orderBy: Prisma.UserOrderByWithRelationInput[] =
+        query.sort === 'oldest'
+          ? [{ createdAt: 'asc' }]
+          : query.sort === 'rating_desc'
+            ? [{ rating: 'desc' }, { createdAt: 'desc' }]
+            : query.sort === 'completed_desc'
+              ? [{ completedTasks: 'desc' }, { createdAt: 'desc' }]
+              : [{ createdAt: 'desc' }];
+
+      [taskers, totalItems] = await Promise.all([
+        this.prisma.user.findMany({ where, select, orderBy, skip, take: limit }),
+        this.prisma.user.count({ where }),
+      ]);
+    }
 
     const ids = taskers.map((tasker) => tasker.id);
-    const earningRows = ids.length
-      ? await this.prisma.taskerWalletLedgerEntry.groupBy({
-          by: ['taskerId'],
-          where: { taskerId: { in: ids }, kind: 'earning', status: 'settled' },
-          _sum: { amount: true },
-        })
-      : [];
+    const [earningRows, completionRates] = await Promise.all([
+      ids.length
+        ? this.prisma.taskerWalletLedgerEntry.groupBy({
+            by: ['taskerId'],
+            where: { taskerId: { in: ids }, kind: 'earning', status: 'settled' },
+            _sum: { amount: true },
+          })
+        : Promise.resolve([]),
+      this.completionRatesFor(ids),
+    ]);
     const earnings = new Map(earningRows.map((row) => [row.taskerId, money(row._sum.amount)]));
 
     return {
@@ -155,6 +182,7 @@ export class AdminTaskersService {
         lastRejectionReason: tasker.taskerProfile?.lastRejectionReason ?? null,
         lastRejectionReasonCode: tasker.taskerProfile?.lastRejectionReasonCode ?? null,
         completedTasks: tasker.completedTasks,
+        completionRate: completionRates.get(tasker.id) ?? 0,
         bookingsCount: tasker._count.bookingsAsTasker,
         serviceCount: tasker._count.userServices,
         totalSettledEarnings: earnings.get(tasker.id) ?? 0,
@@ -165,6 +193,28 @@ export class AdminTaskersService {
       })),
       pagination: { page, limit, totalItems, totalPages: Math.ceil(totalItems / limit) },
     };
+  }
+
+  private async completionRatesFor(ids: number[]): Promise<Map<number, number>> {
+    if (!ids.length) return new Map();
+    const rows = await this.prisma.booking.groupBy({
+      by: ['taskerId', 'status'],
+      where: { taskerId: { in: ids }, status: { in: ['completed', 'cancelled'] } },
+      _count: { _all: true },
+    });
+    const counts = new Map<number, { completed: number; cancelled: number }>();
+    for (const row of rows) {
+      const entry = counts.get(row.taskerId) ?? { completed: 0, cancelled: 0 };
+      if (row.status === 'completed') entry.completed = row._count._all;
+      else if (row.status === 'cancelled') entry.cancelled = row._count._all;
+      counts.set(row.taskerId, entry);
+    }
+    return new Map(
+      ids.map((id) => {
+        const entry = counts.get(id) ?? { completed: 0, cancelled: 0 };
+        return [id, percentage(entry.completed, entry.completed + entry.cancelled)];
+      }),
+    );
   }
 
   async details(taskerId: number) {
@@ -200,33 +250,7 @@ export class AdminTaskersService {
     ]);
 
     return {
-      tasker: {
-        id: String(tasker.id),
-        taskerId: `TSK-${String(tasker.id).padStart(5, '0')}`,
-        firstName: tasker.firstName ?? '',
-        lastName: tasker.lastName ?? '',
-        name: fullName(tasker.firstName, tasker.lastName),
-        email: tasker.email,
-        phoneCountryCode: tasker.phoneCountryCode ?? '',
-        phoneNumber: tasker.phoneNumber ?? '',
-        profilePicture: tasker.profilePicture ?? '',
-        bio: tasker.bio ?? '',
-        accountStatus: tasker.taskerProfile?.status ?? tasker.accountStatus,
-        onboardingStatus: tasker.onboardingStatus,
-        isVerified: tasker.isVerified,
-        isDocVerified: tasker.isDocVerified,
-        isElite: tasker.isElite,
-        rating: Number(tasker.taskerProfile?.rating ?? tasker.rating),
-        reviewsCount: tasker.taskerProfile?.reviewsCount ?? tasker.reviewsCount,
-        reapplyCount: tasker.taskerProfile?.reapplyCount ?? 0,
-        lastRejectedAt: tasker.taskerProfile?.lastRejectedAt?.toISOString() ?? null,
-        lastRejectionReason: tasker.taskerProfile?.lastRejectionReason ?? null,
-        lastRejectionReasonCode: tasker.taskerProfile?.lastRejectionReasonCode ?? null,
-        completedTasks: tasker.completedTasks,
-        yearsOfExperience: tasker.yearsOfExperience,
-        submittedAt: tasker.submittedAt?.toISOString() ?? null,
-        joinedAt: tasker.createdAt.toISOString(),
-      },
+      tasker: this.mapTaskerRow(tasker),
       identity: {
         idType: tasker.idType,
         document: tasker.identityDocument,
@@ -486,6 +510,83 @@ export class AdminTaskersService {
       onboardingStatus: tasker.onboardingStatus,
       action: dto.action,
       sessionsRevoked: dto.action !== 'reactivate',
+    };
+  }
+
+  async updateProfile(actor: User, taskerId: number, dto: AdminTaskerProfileUpdateDto) {
+    if (
+      dto.firstName === undefined &&
+      dto.lastName === undefined &&
+      dto.phoneCountryCode === undefined &&
+      dto.phoneNumber === undefined
+    ) {
+      throw new BadRequestException('At least one field must be provided');
+    }
+
+    const tasker = await this.prisma.user.findFirst({
+      where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null },
+    });
+    if (!tasker) throw new NotFoundException('Tasker not found');
+
+    const data: Prisma.UserUpdateInput = {
+      ...(dto.firstName === undefined ? {} : { firstName: dto.firstName }),
+      ...(dto.lastName === undefined ? {} : { lastName: dto.lastName }),
+      ...(dto.phoneCountryCode === undefined ? {} : { phoneCountryCode: dto.phoneCountryCode }),
+      ...(dto.phoneNumber === undefined ? {} : { phoneNumber: dto.phoneNumber }),
+    };
+
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      const changed = await transaction.user.update({
+        where: { id: taskerId },
+        data,
+        include: { taskerProfile: true },
+      });
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          targetUserId: taskerId,
+          action: 'tasker_profile_updated',
+          entityType: 'tasker',
+          entityId: taskerId,
+          metadata: { fields: Object.keys(data) },
+        },
+        transaction,
+      );
+      return changed;
+    });
+
+    return { user: this.mapTaskerRow(updated) };
+  }
+
+  private mapTaskerRow(
+    tasker: Prisma.UserGetPayload<{ include: { taskerProfile: true } }>,
+  ) {
+    return {
+      id: String(tasker.id),
+      taskerId: `TSK-${String(tasker.id).padStart(5, '0')}`,
+      firstName: tasker.firstName ?? '',
+      lastName: tasker.lastName ?? '',
+      name: fullName(tasker.firstName, tasker.lastName),
+      email: tasker.email,
+      phoneCountryCode: tasker.phoneCountryCode ?? '',
+      phoneNumber: tasker.phoneNumber ?? '',
+      profilePicture: tasker.profilePicture ?? '',
+      bio: tasker.bio ?? '',
+      accountStatus: tasker.taskerProfile?.status ?? tasker.accountStatus,
+      onboardingStatus: tasker.onboardingStatus,
+      isVerified: tasker.isVerified,
+      isDocVerified: tasker.isDocVerified,
+      isElite: tasker.isElite,
+      rating: Number(tasker.taskerProfile?.rating ?? tasker.rating),
+      reviewsCount: tasker.taskerProfile?.reviewsCount ?? tasker.reviewsCount,
+      reapplyCount: tasker.taskerProfile?.reapplyCount ?? 0,
+      lastRejectedAt: tasker.taskerProfile?.lastRejectedAt?.toISOString() ?? null,
+      lastRejectionReason: tasker.taskerProfile?.lastRejectionReason ?? null,
+      lastRejectionReasonCode: tasker.taskerProfile?.lastRejectionReasonCode ?? null,
+      completedTasks: tasker.completedTasks,
+      yearsOfExperience: tasker.yearsOfExperience,
+      submittedAt: tasker.submittedAt?.toISOString() ?? null,
+      joinedAt: tasker.createdAt.toISOString(),
     };
   }
 

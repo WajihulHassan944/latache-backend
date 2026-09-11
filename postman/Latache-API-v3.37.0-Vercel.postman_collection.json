@@ -23419,6 +23419,380 @@
           "protocolProfileBehavior": {
             "disableBodyPruning": true
           }
+        },
+        {
+          "id": "e3b131fa-1060-4f3d-b78b-dea439984473",
+          "name": "Submit a suspension/deactivation appeal without an active session",
+          "request": {
+            "name": "Submit a suspension/deactivation appeal without an active session",
+            "description": {
+              "content": "For Customer/Tasker accounts that cannot log in because their profile is suspended or deactivated (login is blocked before a session is issued). Verifies email/password, confirms the account is actually suspended or deactivated, then opens a category=appeal support ticket on the account's behalf. Rejected with 409 APPEAL_ALREADY_OPEN if the account already has an unresolved appeal ticket.",
+              "type": "text/plain"
+            },
+            "url": {
+              "path": [
+                "api",
+                "support",
+                "appeals"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tasker@example.com\",\n  \"password\": \"CurrentPassword123!\",\n  \"subject\": \"Appeal: suspension over a false complaint\",\n  \"message\": \"I was suspended after a customer complaint, but I believe this was a misunderstanding. Please review my case.\"\n}",
+              "options": {
+                "raw": {
+                  "headerFamily": "json",
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "id": "6da1df5c-ee09-4c4d-95d4-91df7d586636",
+              "name": "201",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "support",
+                    "appeals"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": []
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "method": "POST",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"tasker@example.com\",\n  \"password\": \"CurrentPassword123!\",\n  \"subject\": \"Appeal: suspension over a false complaint\",\n  \"message\": \"I was suspended after a customer complaint, but I believe this was a misunderstanding. Please review my case.\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "id": "bd3186ea-1b22-478d-88fb-a7195d6c0d21",
+              "name": "Email/password did not match an existing account.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "support",
+                    "appeals"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": []
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "method": "POST",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"tasker@example.com\",\n  \"password\": \"CurrentPassword123!\",\n  \"subject\": \"Appeal: suspension over a false complaint\",\n  \"message\": \"I was suspended after a customer complaint, but I believe this was a misunderstanding. Please review my case.\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "id": "1f24dfb7-7ef6-46b3-b38f-1ef2d2a10e6d",
+              "name": "Account is not suspended/deactivated, or an appeal is already open (code: APPEAL_ALREADY_OPEN).",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "support",
+                    "appeals"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": []
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "method": "POST",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"tasker@example.com\",\n  \"password\": \"CurrentPassword123!\",\n  \"subject\": \"Appeal: suspension over a false complaint\",\n  \"message\": \"I was suspended after a customer complaint, but I believe this was a misunderstanding. Please review my case.\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            }
+          ],
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "id": "ae8421c8-d3a8-4977-843b-dc6942782dce",
+          "name": "Check the status of a previously filed suspension/deactivation appeal",
+          "request": {
+            "name": "Check the status of a previously filed suspension/deactivation appeal",
+            "description": {
+              "content": "Same mini-login identity-proof pattern as POST /support/appeals, so a still-suspended account that cannot log in can check what happened to its appeal. Returns the most recent category=appeal ticket for the account.",
+              "type": "text/plain"
+            },
+            "url": {
+              "path": [
+                "api",
+                "support",
+                "appeals",
+                "status"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tasker@example.com\",\n  \"password\": \"CurrentPassword123!\"\n}",
+              "options": {
+                "raw": {
+                  "headerFamily": "json",
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "id": "d8848898-8790-4372-95d8-a0d28c3f210c",
+              "name": "201",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "support",
+                    "appeals",
+                    "status"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": []
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "method": "POST",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"tasker@example.com\",\n  \"password\": \"CurrentPassword123!\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "id": "503e82e9-e242-4248-874c-fe1f13c5264b",
+              "name": "Email/password did not match an existing account.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "support",
+                    "appeals",
+                    "status"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": []
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "method": "POST",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"tasker@example.com\",\n  \"password\": \"CurrentPassword123!\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "id": "8629b398-afad-43e8-bea8-55b0548e1431",
+              "name": "No appeal ticket exists for this account.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "support",
+                    "appeals",
+                    "status"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": []
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "method": "POST",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"tasker@example.com\",\n  \"password\": \"CurrentPassword123!\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            }
+          ],
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
         }
       ]
     },
@@ -34213,7 +34587,7 @@
                 {
                   "disabled": false,
                   "description": {
-                    "content": " (This can only be one of newest,oldest,rating_desc,completed_desc)",
+                    "content": " (This can only be one of newest,oldest,rating_desc,completed_desc,completion_rate_desc)",
                     "type": "text/plain"
                   },
                   "key": "sort",
@@ -34324,7 +34698,7 @@
                     {
                       "disabled": false,
                       "description": {
-                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc)",
+                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc,completion_rate_desc)",
                         "type": "text/plain"
                       },
                       "key": "sort",
@@ -34450,7 +34824,7 @@
                     {
                       "disabled": false,
                       "description": {
-                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc)",
+                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc,completion_rate_desc)",
                         "type": "text/plain"
                       },
                       "key": "sort",
@@ -34576,7 +34950,7 @@
                     {
                       "disabled": false,
                       "description": {
-                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc)",
+                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc,completion_rate_desc)",
                         "type": "text/plain"
                       },
                       "key": "sort",
@@ -34714,7 +35088,7 @@
                 {
                   "disabled": false,
                   "description": {
-                    "content": " (This can only be one of newest,oldest,rating_desc,completed_desc)",
+                    "content": " (This can only be one of newest,oldest,rating_desc,completed_desc,completion_rate_desc)",
                     "type": "text/plain"
                   },
                   "key": "sort",
@@ -34826,7 +35200,7 @@
                     {
                       "disabled": false,
                       "description": {
-                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc)",
+                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc,completion_rate_desc)",
                         "type": "text/plain"
                       },
                       "key": "sort",
@@ -34953,7 +35327,7 @@
                     {
                       "disabled": false,
                       "description": {
-                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc)",
+                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc,completion_rate_desc)",
                         "type": "text/plain"
                       },
                       "key": "sort",
@@ -35080,7 +35454,7 @@
                     {
                       "disabled": false,
                       "description": {
-                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc)",
+                        "content": " (This can only be one of newest,oldest,rating_desc,completed_desc,completion_rate_desc)",
                         "type": "text/plain"
                       },
                       "key": "sort",
@@ -36676,6 +37050,370 @@
               },
               "status": "Forbidden",
               "code": 403,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            }
+          ],
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "id": "ba9000bb-93c2-4e9e-b1c4-7b8b58012878",
+          "name": "Correct a Tasker's name/phone",
+          "request": {
+            "name": "Correct a Tasker's name/phone",
+            "description": {
+              "content": "Partial update of admin-editable profile fields. Email is excluded and never admin-editable here. Not a moderation action — no re-verification and no session changes.",
+              "type": "text/plain"
+            },
+            "url": {
+              "path": [
+                "api",
+                "admin",
+                "taskers",
+                ":id",
+                "profile"
+              ],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "query": [],
+              "variable": [
+                {
+                  "type": "any",
+                  "value": "<number>",
+                  "key": "id",
+                  "disabled": false,
+                  "description": {
+                    "content": "(Required) Tasker user ID.",
+                    "type": "text/plain"
+                  }
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Sarah\",\n  \"lastName\": \"Ahmed\",\n  \"phoneCountryCode\": \"+212\",\n  \"phoneNumber\": \"612345678\"\n}",
+              "options": {
+                "raw": {
+                  "headerFamily": "json",
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "id": "cb3acdef-f6bd-414f-8c60-d3c526d6b7e5",
+              "name": "Updated Tasker profile fields.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "admin",
+                    "taskers",
+                    ":id",
+                    "profile"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": [
+                    {
+                      "type": "any",
+                      "value": "<number>",
+                      "key": "id",
+                      "disabled": false,
+                      "description": {
+                        "content": "(Required) Tasker user ID.",
+                        "type": "text/plain"
+                      }
+                    }
+                  ]
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "PATCH",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Sarah\",\n  \"lastName\": \"Ahmed\",\n  \"phoneCountryCode\": \"+212\",\n  \"phoneNumber\": \"612345678\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "id": "aaf40000-38e2-4468-94b4-28eab5e7b157",
+              "name": "No field provided, or a field failed validation.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "admin",
+                    "taskers",
+                    ":id",
+                    "profile"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": [
+                    {
+                      "type": "any",
+                      "value": "<number>",
+                      "key": "id",
+                      "disabled": false,
+                      "description": {
+                        "content": "(Required) Tasker user ID.",
+                        "type": "text/plain"
+                      }
+                    }
+                  ]
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "PATCH",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Sarah\",\n  \"lastName\": \"Ahmed\",\n  \"phoneCountryCode\": \"+212\",\n  \"phoneNumber\": \"612345678\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "id": "d9fc9580-7e78-499e-b8e5-afd66b549226",
+              "name": "A valid active administrator session is required.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "admin",
+                    "taskers",
+                    ":id",
+                    "profile"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": [
+                    {
+                      "type": "any",
+                      "value": "<number>",
+                      "key": "id",
+                      "disabled": false,
+                      "description": {
+                        "content": "(Required) Tasker user ID.",
+                        "type": "text/plain"
+                      }
+                    }
+                  ]
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "PATCH",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Sarah\",\n  \"lastName\": \"Ahmed\",\n  \"phoneCountryCode\": \"+212\",\n  \"phoneNumber\": \"612345678\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "id": "e14332ed-b2a2-4d06-9c7a-7f558a7ad379",
+              "name": "The administrator lacks the required permission.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "admin",
+                    "taskers",
+                    ":id",
+                    "profile"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": [
+                    {
+                      "type": "any",
+                      "value": "<number>",
+                      "key": "id",
+                      "disabled": false,
+                      "description": {
+                        "content": "(Required) Tasker user ID.",
+                        "type": "text/plain"
+                      }
+                    }
+                  ]
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "PATCH",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Sarah\",\n  \"lastName\": \"Ahmed\",\n  \"phoneCountryCode\": \"+212\",\n  \"phoneNumber\": \"612345678\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [],
+              "cookie": [],
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "id": "d1454342-120e-4248-8d5f-c5d2958b5183",
+              "name": "Tasker not found.",
+              "originalRequest": {
+                "url": {
+                  "path": [
+                    "api",
+                    "admin",
+                    "taskers",
+                    ":id",
+                    "profile"
+                  ],
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "query": [],
+                  "variable": [
+                    {
+                      "type": "any",
+                      "value": "<number>",
+                      "key": "id",
+                      "disabled": false,
+                      "description": {
+                        "content": "(Required) Tasker user ID.",
+                        "type": "text/plain"
+                      }
+                    }
+                  ]
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "description": {
+                      "content": "Added as a part of security scheme: bearer",
+                      "type": "text/plain"
+                    },
+                    "key": "Authorization",
+                    "value": "Bearer <token>"
+                  }
+                ],
+                "method": "PATCH",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstName\": \"Sarah\",\n  \"lastName\": \"Ahmed\",\n  \"phoneCountryCode\": \"+212\",\n  \"phoneNumber\": \"612345678\"\n}",
+                  "options": {
+                    "raw": {
+                      "headerFamily": "json",
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
               "header": [],
               "cookie": [],
               "_postman_previewlanguage": "text"

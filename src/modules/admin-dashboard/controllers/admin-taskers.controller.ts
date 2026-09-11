@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
   ApiForbiddenResponse,
@@ -28,6 +29,7 @@ import type { User } from '../../../generated/prisma/client';
 import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import {
   AdminDateRangeQueryDto,
+  AdminTaskerProfileUpdateDto,
   AdminUserModerationDto,
   ListAdminTaskersDto,
   TaskerVerificationActionDto,
@@ -145,5 +147,24 @@ export class AdminTaskersController {
     @Body() dto: AdminUserModerationDto,
   ) {
     return this.taskers.moderate(actor, id, dto);
+  }
+
+  @Patch(':id/profile')
+  @Permissions('taskers.manage')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Tasker user ID.', example: 58 })
+  @ApiOperation({
+    summary: "Correct a Tasker's name/phone",
+    description:
+      'Partial update of admin-editable profile fields. Email is excluded and never admin-editable here. Not a moderation action — no re-verification and no session changes.',
+  })
+  @ApiOkResponse({ description: 'Updated Tasker profile fields.' })
+  @ApiBadRequestResponse({ description: 'No field provided, or a field failed validation.' })
+  @ApiNotFoundResponse({ description: 'Tasker not found.' })
+  updateProfile(
+    @CurrentUser() actor: User,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AdminTaskerProfileUpdateDto,
+  ) {
+    return this.taskers.updateProfile(actor, id, dto);
   }
 }
