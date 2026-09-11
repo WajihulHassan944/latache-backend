@@ -137,10 +137,10 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td style="padding:18px 24px 10px;text-align:center;direction:ltr">
-                    <a href="https://latache-web.vercel.app" aria-label="Facebook" style="display:inline-block;width:34px;height:34px;margin:0 4px;border-radius:50%;background:#6a2a13;color:#fff;font-size:17px;font-weight:bold;line-height:34px;text-decoration:none">f</a>
-                    <a href="https://latache-web.vercel.app" aria-label="X" style="display:inline-block;width:34px;height:34px;margin:0 4px;border-radius:50%;background:#6a2a13;color:#fff;font-size:14px;line-height:34px;text-decoration:none">X</a>
-                    <a href="https://latache-web.vercel.app" aria-label="Instagram" style="display:inline-block;width:34px;height:34px;margin:0 4px;border-radius:50%;background:#6a2a13;color:#fff;font-size:15px;line-height:34px;text-decoration:none">◎</a>
-                    <a href="https://latache-web.vercel.app" aria-label="LinkedIn" style="display:inline-block;width:34px;height:34px;margin:0 4px;border-radius:50%;background:#6a2a13;color:#fff;font-size:13px;font-weight:bold;line-height:34px;text-decoration:none">in</a>
+                    <a href="https://www.facebook.com/latache" aria-label="Facebook" style="display:inline-block;width:34px;height:34px;margin:0 4px;border-radius:50%;background:#6a2a13;color:#fff;font-size:17px;font-weight:bold;line-height:34px;text-decoration:none">f</a>
+                    <a href="https://x.com/latache" aria-label="X" style="display:inline-block;width:34px;height:34px;margin:0 4px;border-radius:50%;background:#6a2a13;color:#fff;font-size:14px;line-height:34px;text-decoration:none">X</a>
+                    <a href="https://www.instagram.com/latache" aria-label="Instagram" style="display:inline-block;width:34px;height:34px;margin:0 4px;border-radius:50%;background:#6a2a13;color:#fff;font-size:15px;line-height:34px;text-decoration:none">◎</a>
+                    <a href="https://www.linkedin.com/company/latache" aria-label="LinkedIn" style="display:inline-block;width:34px;height:34px;margin:0 4px;border-radius:50%;background:#6a2a13;color:#fff;font-size:13px;font-weight:bold;line-height:34px;text-decoration:none">in</a>
                   </td>
                 </tr>
                 <tr>
