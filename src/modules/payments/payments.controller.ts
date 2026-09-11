@@ -113,7 +113,12 @@ export class PaymentsController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: CreateWalletTopupDto,
   ): Promise<WalletTopupIntentView> {
-    return this.payments.createWalletTopup(user.id, dto.amount, idempotencyKey ?? '');
+    return this.payments.createWalletTopup(
+      user.id,
+      dto.amount,
+      idempotencyKey ?? '',
+      dto.stripePaymentMethodId,
+    );
   }
 
   @Post('wallet/withdrawals')

@@ -27,6 +27,17 @@ export class CreateWalletTopupDto {
   @Min(1)
   @Max(100000)
   amount!: number;
+
+  @ApiPropertyOptional({
+    example: 'pm_123',
+    description:
+      'A Stripe PaymentMethod already attached to the authenticated Stripe Customer, used to let a customer with multiple saved cards choose which one funds this top-up. Falls back to automatic payment method selection when omitted.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(3, 255)
+  stripePaymentMethodId?: string;
 }
 
 export class CreateWalletWithdrawalDto {

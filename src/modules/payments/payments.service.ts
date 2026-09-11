@@ -268,6 +268,7 @@ export class PaymentsService {
     customerId: number,
     amountInput: number,
     idempotencyKey: string,
+    stripePaymentMethodId?: string,
   ): Promise<WalletTopupIntentView> {
     const amount = roundMoney(amountInput);
     const currency = await this.platformSettings.currencyContext();
@@ -316,12 +317,17 @@ export class PaymentsService {
     }
 
     const stripeCustomerId = await this.ensureStripeCustomer(customerId);
+    if (stripePaymentMethodId) {
+      await this.assertStripePaymentMethodOwnership(stripeCustomerId, stripePaymentMethodId);
+    }
     const intent = await this.stripeProvider.client().paymentIntents.create(
       {
         amount: toMinorUnits(amount),
         currency: currency.code.toLowerCase(),
         customer: stripeCustomerId,
-        automatic_payment_methods: { enabled: true },
+        ...(stripePaymentMethodId
+          ? { payment_method: stripePaymentMethodId }
+          : { automatic_payment_methods: { enabled: true } }),
         metadata: {
           kind: PAYMENT_TRANSACTION_KIND.WalletTopup,
           latacheCustomerId: String(customerId),
