@@ -124,3 +124,67 @@ describe('MailService', () => {
     ).rejects.toThrow('Email delivery is temporarily unavailable');
   });
 });
+
+describe('MailService — Brevo provider', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function buildBrevoService() {
+    const transporter: MailTransporter = {
+      sendMail: jest.fn(),
+      verify: jest.fn(),
+      close: jest.fn(),
+    };
+    const values: Record<string, unknown> = {
+      'mail.provider': 'brevo',
+      'mail.brevoApiKey': 'brevo-test-key',
+      'mail.brevoFrom': 'Latache <no-reply@example.com>',
+      'auth.otpExpiresInMinutes': 5,
+    };
+    const config = {
+      get: jest.fn().mockImplementation((key: string, fallback: unknown) => (key in values ? values[key] : fallback)),
+      getOrThrow: jest.fn().mockImplementation((key: string) => values[key]),
+    } as unknown as ConfigService;
+    return new MailService(transporter, config);
+  }
+
+  it('sends via the Brevo API with the sender parsed from "Name <email>" and the recipient mapped', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ messageId: 'brevo-1' }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const service = buildBrevoService();
+
+    await service.sendVerificationEmail({ to: 'a@example.com', name: 'A', otp: 123456 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.brevo.com/v3/smtp/email',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'api-key': 'brevo-test-key' }),
+      }),
+    );
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(options.body as string);
+    expect(body.sender).toEqual({ name: 'Latache', email: 'no-reply@example.com' });
+    expect(body.to).toEqual([{ email: 'a@example.com' }]);
+    expect(body.htmlContent).toContain('123456');
+  });
+
+  it('maps a non-2xx Brevo response into the standard service-unavailable error', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: jest.fn().mockResolvedValue('{"message":"Unauthorized"}'),
+    }) as unknown as typeof fetch;
+    const service = buildBrevoService();
+
+    await expect(
+      service.sendVerificationEmail({ to: 'a@example.com', name: 'A', otp: 123456 }),
+    ).rejects.toThrow('Email delivery is temporarily unavailable');
+  });
+});

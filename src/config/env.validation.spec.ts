@@ -83,4 +83,45 @@ describe('validateEnvironment', () => {
       }),
     ).toThrow(/REDIS_URL/);
   });
+
+  it('accepts MAIL_PROVIDER=brevo with a key and from address', () => {
+    expect(
+      validateEnvironment({
+        ...valid(),
+        MAIL_PROVIDER: 'brevo',
+        BREVO_API_KEY: 'xkeysib-test',
+        BREVO_FROM: 'Latache <no-reply@latache.local>',
+      }),
+    ).toMatchObject({ MAIL_PROVIDER: 'brevo' });
+  });
+
+  it('requires BREVO_API_KEY when MAIL_PROVIDER=brevo', () => {
+    expect(() =>
+      validateEnvironment({
+        ...valid(),
+        MAIL_PROVIDER: 'brevo',
+      }),
+    ).toThrow(/BREVO_API_KEY is required/);
+  });
+
+  it('requires BREVO_FROM or SMTP_FROM when MAIL_PROVIDER=brevo', () => {
+    const withoutSmtpFrom: Record<string, string | undefined> = { ...valid() };
+    withoutSmtpFrom.SMTP_FROM = undefined;
+    expect(() =>
+      validateEnvironment({
+        ...withoutSmtpFrom,
+        MAIL_PROVIDER: 'brevo',
+        BREVO_API_KEY: 'xkeysib-test',
+      }),
+    ).toThrow(/BREVO_FROM or SMTP_FROM is required/);
+  });
+
+  it('rejects an unrecognized MAIL_PROVIDER', () => {
+    expect(() =>
+      validateEnvironment({
+        ...valid(),
+        MAIL_PROVIDER: 'mailgun',
+      }),
+    ).toThrow(/MAIL_PROVIDER must be one of smtp, resend, or brevo/);
+  });
 });

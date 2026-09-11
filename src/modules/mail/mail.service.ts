@@ -28,7 +28,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    if (this.isResendEnabled()) return;
+    if (this.isResendEnabled() || this.isBrevoEnabled()) return;
     if (!this.config.get<boolean>('mail.verifyOnBootstrap', false)) return;
     try {
       await this.transporter.verify();
@@ -141,6 +141,10 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
         await this.sendWithResend(params);
         return;
       }
+      if (this.isBrevoEnabled()) {
+        await this.sendWithBrevo(params);
+        return;
+      }
 
       const delivery = await this.transporter.sendMail({
         from: this.config.getOrThrow<string>('mail.from'),
@@ -217,6 +221,63 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
         messageId: payload.id ?? 'unknown',
       }),
     );
+  }
+
+  private isBrevoEnabled(): boolean {
+    return (
+      this.config.get<string>('mail.provider', 'smtp') === 'brevo' &&
+      Boolean(this.config.get<string>('mail.brevoApiKey'))
+    );
+  }
+
+  private async sendWithBrevo(params: {
+    to: string;
+    subject: string;
+    html: string;
+    text: string;
+  }): Promise<void> {
+    const apiKey = this.config.getOrThrow<string>('mail.brevoApiKey');
+    const from = this.config.get<string>('mail.brevoFrom') ?? this.config.getOrThrow<string>('mail.from');
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': apiKey,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Latache-Backend/3.33.0',
+      },
+      body: JSON.stringify({
+        sender: this.parseMailbox(from),
+        to: [{ email: params.to }],
+        subject: params.subject,
+        htmlContent: params.html,
+        textContent: params.text,
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`BREVO_EMAIL_FAILED_${response.status}:${detail.slice(0, 500)}`);
+    }
+
+    const payload = (await response.json()) as { messageId?: string };
+    const requestedRecipient = this.normalizeRecipient(params.to);
+    this.logger.log(
+      JSON.stringify({
+        event: 'email_delivery_accepted',
+        provider: 'brevo',
+        recipientDomain: requestedRecipient.split('@')[1] ?? 'unknown',
+        messageId: payload.messageId ?? 'unknown',
+      }),
+    );
+  }
+
+  private parseMailbox(value: string): { name?: string; email: string } {
+    const match = /^(.*)<([^<>]+)>\s*$/.exec(value.trim());
+    if (!match) return { email: value.trim() };
+    const name = (match[1] ?? '').trim().replace(/^"|"$/g, '');
+    const email = (match[2] ?? '').trim();
+    return name ? { name, email } : { email };
   }
 
   private normalizeRecipient(recipient: string | MailRecipientAddress): string {

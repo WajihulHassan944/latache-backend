@@ -273,12 +273,15 @@ export default () => {
     },
     mail: {
       provider: (
-        process.env.MAIL_PROVIDER ?? (process.env.RESEND_API_KEY ? 'resend' : 'smtp')
+        process.env.MAIL_PROVIDER ??
+        (process.env.RESEND_API_KEY ? 'resend' : process.env.BREVO_API_KEY ? 'brevo' : 'smtp')
       )
         .trim()
         .toLowerCase(),
       resendApiKey: process.env.RESEND_API_KEY?.trim(),
       resendFrom: process.env.RESEND_FROM?.trim(),
+      brevoApiKey: process.env.BREVO_API_KEY?.trim(),
+      brevoFrom: process.env.BREVO_FROM?.trim(),
       host: process.env.SMTP_HOST,
       port: asPositiveInteger(process.env.SMTP_PORT, 587),
       secure: asBoolean(process.env.SMTP_SECURE, false),

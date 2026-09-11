@@ -423,7 +423,23 @@ RESEND_FROM=Latache <no-reply@your-verified-domain.com>
 
 For production, create a Resend account, add and verify the domain you will send from, then create an API key with permission to send email. Configure the domain's SPF/DKIM records exactly as Resend provides. Using a verified custom domain is important for deliverability; Resend reduces SMTP/Gmail-specific delivery problems but cannot guarantee that a recipient's provider will never place a message in spam.
 
-If `RESEND_FROM` is omitted, the existing `SMTP_FROM` value is used as the sender address. `RESEND_API_KEY` takes precedence over SMTP for all application email. If no Resend key is configured, the existing SMTP transport remains available.
+If `RESEND_FROM` is omitted, the existing `SMTP_FROM` value is used as the sender address. `RESEND_API_KEY` takes precedence over Brevo/SMTP for all application email. If no Resend key is configured, Brevo (if configured) or SMTP is used instead.
+
+## Brevo email delivery
+
+An alternative to Resend, also reachable via its HTTPS API directly (no new npm package required). Useful to A/B test deliverability against Resend on the same domain.
+
+Set:
+
+```env
+MAIL_PROVIDER=brevo
+BREVO_API_KEY=xkeysib-xxxxxxxxxxxxxxxxx
+BREVO_FROM=Latache <no-reply@your-verified-domain.com>
+```
+
+For production, create a Brevo account, add and verify the domain you will send from (Senders, Domains & Dedicated IPs → Domains), and add the SPF/DKIM records exactly as Brevo provides. Create an API key under SMTP & API → API Keys with transactional-email send permission.
+
+If `BREVO_FROM` is omitted, the existing `SMTP_FROM` value is used as the sender address. Provider precedence is Resend, then Brevo, then SMTP — only one is ever active at a time based on `MAIL_PROVIDER`.
 
 ## Gmail SMTP
 

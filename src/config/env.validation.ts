@@ -709,18 +709,31 @@ export const validateEnvironment = (environment: Environment): Environment => {
     errors.push('REQUEST_BODY_LIMIT must use a value such as 512kb or 1mb');
   }
 
-  const mailProvider = (environment.MAIL_PROVIDER ?? (present(environment.RESEND_API_KEY) ? 'resend' : 'smtp'))
+  const mailProvider = (
+    environment.MAIL_PROVIDER ??
+    (present(environment.RESEND_API_KEY)
+      ? 'resend'
+      : present(environment.BREVO_API_KEY)
+        ? 'brevo'
+        : 'smtp')
+  )
     .toString()
     .trim()
     .toLowerCase();
-  if (!['smtp', 'resend'].includes(mailProvider)) {
-    errors.push('MAIL_PROVIDER must be either smtp or resend');
+  if (!['smtp', 'resend', 'brevo'].includes(mailProvider)) {
+    errors.push('MAIL_PROVIDER must be one of smtp, resend, or brevo');
   }
   if (mailProvider === 'resend' && !present(environment.RESEND_API_KEY)) {
     errors.push('RESEND_API_KEY is required when MAIL_PROVIDER=resend');
   }
   if (mailProvider === 'resend' && !present(environment.RESEND_FROM) && !present(environment.SMTP_FROM)) {
     errors.push('RESEND_FROM or SMTP_FROM is required when MAIL_PROVIDER=resend');
+  }
+  if (mailProvider === 'brevo' && !present(environment.BREVO_API_KEY)) {
+    errors.push('BREVO_API_KEY is required when MAIL_PROVIDER=brevo');
+  }
+  if (mailProvider === 'brevo' && !present(environment.BREVO_FROM) && !present(environment.SMTP_FROM)) {
+    errors.push('BREVO_FROM or SMTP_FROM is required when MAIL_PROVIDER=brevo');
   }
   if (mailProvider === 'smtp' && !present(environment.SMTP_HOST) && nodeEnvironment !== 'test') {
     errors.push('SMTP_HOST is required when MAIL_PROVIDER=smtp');
@@ -738,11 +751,19 @@ export const validateEnvironment = (environment: Environment): Environment => {
     for (const key of required) {
       if (!present(environment[key])) errors.push(`${key} is required`);
     }
-    if (!present(environment.RESEND_API_KEY) && !present(environment.SMTP_HOST)) {
-      errors.push('Either RESEND_API_KEY (Resend) or SMTP_HOST (SMTP) is required');
+    if (
+      !present(environment.RESEND_API_KEY) &&
+      !present(environment.BREVO_API_KEY) &&
+      !present(environment.SMTP_HOST)
+    ) {
+      errors.push('Either RESEND_API_KEY (Resend), BREVO_API_KEY (Brevo), or SMTP_HOST (SMTP) is required');
     }
-    if (!present(environment.RESEND_FROM) && !present(environment.SMTP_FROM)) {
-      errors.push('Either RESEND_FROM or SMTP_FROM is required for email delivery');
+    if (
+      !present(environment.RESEND_FROM) &&
+      !present(environment.BREVO_FROM) &&
+      !present(environment.SMTP_FROM)
+    ) {
+      errors.push('Either RESEND_FROM, BREVO_FROM, or SMTP_FROM is required for email delivery');
     }
   }
 
@@ -791,6 +812,9 @@ export const validateEnvironment = (environment: Environment): Environment => {
   }
   if (present(environment.SMTP_FROM) && !EMAIL_FROM_PATTERN.test(environment.SMTP_FROM as string)) {
     errors.push('SMTP_FROM must be an email address or a Name <email> mailbox');
+  }
+  if (present(environment.BREVO_FROM) && !EMAIL_FROM_PATTERN.test(environment.BREVO_FROM as string)) {
+    errors.push('BREVO_FROM must be an email address or a Name <email> mailbox');
   }
 
   if (present(environment.APP_BASE_URL) && !isHttpUrl(environment.APP_BASE_URL as string)) {
