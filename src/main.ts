@@ -9,6 +9,7 @@ import {
   json,
   static as expressStatic,
   urlencoded,
+  type Express,
   type NextFunction,
   type Request,
   type Response,
@@ -19,6 +20,10 @@ import { AppModule } from './app.module';
 import { RealtimeIoAdapter } from './modules/realtime/realtime-io.adapter';
 import { RedisService } from './infrastructure/redis/redis.service';
 import { buildAllowedOrigins, normalizeHttpOrigin } from './common/utils/cors.util';
+import { buildLandingPageHtml } from './common/pages/landing-page.html';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const appVersion = (require(join(process.cwd(), 'package.json')) as { version: string }).version;
 
 // Railway/Gmail SMTP may resolve an unreachable IPv6 address. Prefer IPv4 process-wide.
 setDefaultResultOrder('ipv4first');
@@ -98,11 +103,14 @@ async function bootstrap(): Promise<void> {
     next();
   });
 
-  const express = app.getHttpAdapter().getInstance() as {
-    set(setting: string, value: boolean | string): void;
-  };
+  const express = app.getHttpAdapter().getInstance() as Express;
   express.set('trust proxy', config.get<boolean>('app.trustProxy', false));
   express.set('etag', 'weak');
+
+  const landingPageHtml = buildLandingPageHtml(appVersion);
+  express.get('/', (_request: Request, response: Response) => {
+    response.type('html').send(landingPageHtml);
+  });
 
   const allowedOrigins = buildAllowedOrigins(
     config.get<string[]>('app.corsOrigins', []),
