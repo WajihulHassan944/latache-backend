@@ -46,6 +46,7 @@ export default () => {
           'http://localhost:3000',
           'http://localhost:3001',
           'https://latache-web.vercel.app',
+          'https://latache-web-git-dev-harisalimughals-projects.vercel.app',
           'https://latache-be-production.up.railway.app',
           ...asStringList(process.env.CORS_ORIGINS),
         ]),
