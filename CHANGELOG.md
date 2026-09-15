@@ -1,3 +1,7 @@
+# 3.36.0
+
+- Added `metadata` to `GET /api/conversations`, `GET /api/conversations/:bookingId`, and `GET /api/conversations/:bookingId/messages`. Every conversation is booking-scoped, so `metadata.type` is always `'booking'` and `metadata.booking` carries the schedule, location, service/serviceOption, and payment details for the underlying booking - previously only a bare `service` and `bookingStatus` were exposed. The discriminant is kept so a future non-booking chat surface (e.g. support) could add a sibling `type` without a breaking change.
+
 # 3.35.0
 
 - **Breaking:** Removed `PATCH /api/auth/me/location`. `GET /api/taskers`'s Customer discovery-search fallback (used only when a request omits lat/lng) now reads the Customer's default saved address (`CustomerAddress` with `isDefault=true`, managed via `/api/addresses`) instead of a separate `User.latitude/longitude` value. The equivalent guest-session endpoint, `PATCH /api/guest/location`, is unchanged - guests have no addresses to fall back to. `Admin - GET /api/admin/customers?nearLat=&nearLng=` now filters on each customer's default saved address for the same reason. `User.latitude/longitude/locationUpdatedAt` remain in the schema for now (historical data only, no longer written).

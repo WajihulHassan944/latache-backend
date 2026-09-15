@@ -13,6 +13,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { RealtimeCallsService } from '../realtime/realtime-calls.service';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import type { ConversationCallListView, ConversationCallView } from '../realtime/realtime.types';
+import { dateOnlyFromDate } from '../../common/utils/date.util';
 import { UploadsService } from '../uploads/uploads.service';
 import type { ConversationAttachmentReference } from '../uploads/uploads.types';
 import {
@@ -26,6 +27,7 @@ import type {
   ConversationCapabilitiesView,
   ConversationListView,
   ConversationMessageView,
+  ConversationMetadataView,
   ConversationReadResultView,
   ConversationUnreadCountView,
   ConversationView,
@@ -104,6 +106,7 @@ export class ConversationsService {
             },
           },
           service: { select: { id: true, name: true, slug: true, icon: true } },
+          serviceOption: { select: { id: true, name: true, slug: true } },
           messages: { orderBy: { createdAt: 'desc' }, take: 1 },
           _count: {
             select: {
@@ -138,6 +141,7 @@ export class ConversationsService {
           null,
         lastMessage: booking.messages[0] ? this.message(booking.messages[0], userId) : null,
         unreadCount: booking._count.messages,
+        metadata: this.metadata(booking),
       })),
     };
   }
@@ -156,6 +160,7 @@ export class ConversationsService {
         null,
       lastMessage: booking.messages[0] ? this.message(booking.messages[0], userId) : null,
       unreadCount: booking._count.messages,
+      metadata: this.metadata(booking),
     };
   }
 
@@ -208,6 +213,7 @@ export class ConversationsService {
       nextCursor: hasMore ? (pageRows.at(-1)?.id ?? null) : null,
       hasMore,
       items: pageRows.reverse().map((row) => this.message(row, userId)),
+      metadata: this.metadata(booking),
     };
   }
 
@@ -412,6 +418,7 @@ export class ConversationsService {
           },
         },
         service: { select: { id: true, name: true, slug: true, icon: true } },
+        serviceOption: { select: { id: true, name: true, slug: true } },
         messages: summary ? { orderBy: { createdAt: 'desc' }, take: 1 } : false,
         ...(summary
           ? {
@@ -480,6 +487,73 @@ export class ConversationsService {
       slug: service.slug ?? '',
       name: service.name ?? '',
       icon: service.icon ?? '',
+    };
+  }
+
+  /** Every conversation is booking-scoped today, so metadata.type is always 'booking'; see ConversationMetadataView. */
+  private metadata(booking: {
+    id: number;
+    status: string;
+    service: { id: number; name: string | null; slug: string | null; icon: string | null };
+    serviceOption: { id: number; name: string; slug: string } | null;
+    bookingDate: Date;
+    startTime: string;
+    endTime: string;
+    estimatedDurationMinutes: number;
+    venueAddress: string;
+    apartmentSuite: string | null;
+    locationLabel: string;
+    locationLat: Prisma.Decimal;
+    locationLng: Prisma.Decimal;
+    locationCity: string | null;
+    locationArea: string | null;
+    hourlyRate: Prisma.Decimal;
+    paymentCurrency: string;
+    totalChargedAmount: Prisma.Decimal | null;
+    paymentStatus: string;
+    createdAt: Date;
+    confirmedAt: Date | null;
+    cancelledAt: Date | null;
+  }): ConversationMetadataView {
+    return {
+      type: 'booking',
+      booking: {
+        id: String(booking.id),
+        status: booking.status,
+        service: this.service(booking.service),
+        serviceOption: booking.serviceOption
+          ? {
+              id: String(booking.serviceOption.id),
+              name: booking.serviceOption.name,
+              slug: booking.serviceOption.slug,
+            }
+          : null,
+        schedule: {
+          date: dateOnlyFromDate(booking.bookingDate),
+          startTime: booking.startTime,
+          endTime: booking.endTime,
+          estimatedDurationMinutes: booking.estimatedDurationMinutes,
+        },
+        location: {
+          label: booking.locationLabel,
+          lat: Number(booking.locationLat),
+          lng: Number(booking.locationLng),
+          city: booking.locationCity,
+          area: booking.locationArea,
+          venueAddress: booking.venueAddress,
+          apartmentSuite: booking.apartmentSuite,
+        },
+        payment: {
+          hourlyRate: Number(booking.hourlyRate),
+          currency: booking.paymentCurrency,
+          totalChargedAmount:
+            booking.totalChargedAmount === null ? null : Number(booking.totalChargedAmount),
+          paymentStatus: booking.paymentStatus,
+        },
+        createdAt: booking.createdAt.toISOString(),
+        confirmedAt: booking.confirmedAt?.toISOString() ?? null,
+        cancelledAt: booking.cancelledAt?.toISOString() ?? null,
+      },
     };
   }
 

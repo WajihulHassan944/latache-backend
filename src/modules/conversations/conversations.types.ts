@@ -35,6 +35,56 @@ export interface ConversationView {
   lastMessageAt: string | null;
   lastMessage: ConversationMessageView | null;
   unreadCount: number;
+  metadata: ConversationMetadataView;
+}
+
+/**
+ * Every conversation in this system is anchored to a booking, so `type` is
+ * always 'booking' today. The discriminant is kept so clients (and any future
+ * non-booking chat surface, e.g. support) can branch on it without a schema
+ * change.
+ */
+export interface ConversationMetadataView {
+  type: 'booking';
+  booking: {
+    id: string;
+    status: string;
+    service: {
+      id: string;
+      slug: string;
+      name: string;
+      icon: string;
+    };
+    serviceOption: {
+      id: string;
+      name: string;
+      slug: string;
+    } | null;
+    schedule: {
+      date: string;
+      startTime: string;
+      endTime: string;
+      estimatedDurationMinutes: number;
+    };
+    location: {
+      label: string | null;
+      lat: number | null;
+      lng: number | null;
+      city: string | null;
+      area: string | null;
+      venueAddress: string;
+      apartmentSuite: string | null;
+    };
+    payment: {
+      hourlyRate: number;
+      currency: string;
+      totalChargedAmount: number | null;
+      paymentStatus: string;
+    };
+    createdAt: string;
+    confirmedAt: string | null;
+    cancelledAt: string | null;
+  };
 }
 
 export interface ConversationListView {
@@ -55,6 +105,7 @@ export interface MessageListView {
   nextCursor: string | null;
   hasMore: boolean;
   items: ConversationMessageView[];
+  metadata: ConversationMetadataView;
 }
 
 export interface ConversationUnreadCountView {
