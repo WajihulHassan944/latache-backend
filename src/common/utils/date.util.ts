@@ -24,6 +24,10 @@ export const todayDateOnly = (now = new Date()): string => now.toISOString().sli
 export const isFutureDate = (date: string, now = new Date()): boolean =>
   isValidDateOnly(date) && date > todayDateOnly(now);
 
+/** Same-day bookings are allowed; only reject dates that have already passed. */
+export const isTodayOrFutureDate = (date: string, now = new Date()): boolean =>
+  isValidDateOnly(date) && date >= todayDateOnly(now);
+
 export const getDayTitle = (date: string, now = new Date()): string => {
   const today = dateOnlyToDate(todayDateOnly(now));
   const target = dateOnlyToDate(date);

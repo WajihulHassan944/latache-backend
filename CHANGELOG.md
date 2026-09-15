@@ -1,3 +1,7 @@
+# 3.37.0
+
+- Allowed same-day bookings. `POST /api/bookings/quote`, `POST /api/bookings`, and `PATCH /api/bookings/:bookingId/reschedule` previously required `date` to be strictly after today; they now accept today as well via the new `isTodayOrFutureDate` (a past date is still rejected). A same-day request still can't select a slot whose start time has already elapsed - `loadQuoteContext` (shared by quote/book) and `reschedule` now reject a matched slot dated today once its `startTime` is at or before the current UTC time, with the same `Requested date/time is unavailable` conflict used for any other unavailable slot. `validateAvailabilitySlots` (Tasker-submitted availability, onboarding and the active-Tasker availability endpoints) is unchanged - a Tasker still can't add a new slot for today, only future dates.
+
 # 3.36.0
 
 - Added `metadata` to `GET /api/conversations`, `GET /api/conversations/:bookingId`, and `GET /api/conversations/:bookingId/messages`. Every conversation is booking-scoped, so `metadata.type` is always `'booking'` and `metadata.booking` carries the schedule, location, service/serviceOption, and payment details for the underlying booking - previously only a bare `service` and `bookingStatus` were exposed. The discriminant is kept so a future non-booking chat surface (e.g. support) could add a sibling `type` without a breaking change.

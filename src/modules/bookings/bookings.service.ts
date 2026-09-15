@@ -8,7 +8,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '../../common/enums/user-role.enum';
-import { dateOnlyFromDate, dateOnlyToDate, isFutureDate } from '../../common/utils/date.util';
+import {
+  dateOnlyFromDate,
+  dateOnlyToDate,
+  isTodayOrFutureDate,
+  todayDateOnly,
+} from '../../common/utils/date.util';
 import { formatLocation } from '../../common/utils/location.util';
 import { normalizePagination } from '../../common/utils/pagination.util';
 import { parseTimeToMinutes } from '../../common/utils/time.util';
@@ -154,7 +159,8 @@ export class BookingsService {
   }
 
   async quote(dto: BookingQuoteDto) {
-    if (!isFutureDate(dto.date)) throw new BadRequestException('date must be after today');
+    if (!isTodayOrFutureDate(dto.date))
+      throw new BadRequestException('date must be today or later');
     const context = await this.loadQuoteContext(
       dto.taskerId,
       dto.serviceSlug,
@@ -181,7 +187,8 @@ export class BookingsService {
     if (customerId === dto.taskerId) {
       throw new ForbiddenException({ code: 'SELF_BOOKING_FORBIDDEN', message: 'A user cannot book their own Tasker profile' });
     }
-    if (!isFutureDate(dto.date)) throw new BadRequestException('date must be after today');
+    if (!isTodayOrFutureDate(dto.date))
+      throw new BadRequestException('date must be today or later');
     // Enforce configured booking-policy limits even when a client skips the quote endpoint.
     // Availability is re-read and locked again inside the booking transaction.
     const preflight = await this.loadQuoteContext(
@@ -433,7 +440,8 @@ export class BookingsService {
   }
 
   async reschedule(customerId: number, bookingId: number, dto: RescheduleBookingDto) {
-    if (!isFutureDate(dto.date)) throw new BadRequestException('date must be after today');
+    if (!isTodayOrFutureDate(dto.date))
+      throw new BadRequestException('date must be today or later');
     const updated = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
       const booking = await transaction.booking.findFirst({ where: { id: bookingId, customerId } });
@@ -449,6 +457,8 @@ export class BookingsService {
       const requested = parseTimeToMinutes(dto.time);
       const slot = slots.find((item) => parseTimeToMinutes(item.startTime) === requested);
       if (!slot || requested === null)
+        throw new ConflictException('Requested date/time is unavailable');
+      if (this.isPastSlotStart(dto.date, slot.startTime))
         throw new ConflictException('Requested date/time is unavailable');
       if (!(await this.repository.claimSlot(slot.id, transaction)))
         throw new ConflictException('Requested slot has already been booked');
@@ -2243,7 +2253,17 @@ export class BookingsService {
     );
     if (!slot || requestedMinutes === null)
       throw new ConflictException('Requested date/time is unavailable');
+    if (this.isPastSlotStart(date, slot.startTime))
+      throw new ConflictException('Requested date/time is unavailable');
     return { tasker, service, option, taskerService, slot };
+  }
+
+  /** Same-day bookings are allowed, but a slot whose start time already elapsed today cannot be booked. */
+  private isPastSlotStart(date: string, startTime: string, now = new Date()): boolean {
+    if (date !== todayDateOnly(now)) return false;
+    const slotMinutes = parseTimeToMinutes(startTime);
+    const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    return slotMinutes === null || slotMinutes <= nowMinutes;
   }
 
   private async quoteView(
