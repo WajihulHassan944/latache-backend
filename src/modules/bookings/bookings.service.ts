@@ -20,7 +20,7 @@ import { parseTimeToMinutes } from '../../common/utils/time.util';
 import { hasUserRole } from '../../common/utils/user-role.util';
 import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
-import { Prisma, type User } from '../../generated/prisma/client';
+import { Prisma, type RescheduleProposal, type User } from '../../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PAYMENT_SOURCE, PAYMENT_STATUS } from '../payments/payments.constants';
 import { PaymentsService } from '../payments/payments.service';
@@ -47,6 +47,10 @@ import {
   UpdateBookingBillingDto,
 } from './dto/booking-actions.dto';
 import { BookTaskerDto } from './dto/book-tasker.dto';
+import {
+  CreateRescheduleProposalDto,
+  RespondRescheduleProposalDto,
+} from './dto/reschedule-proposal.dto';
 
 const BOOKED = ['pending', 'confirmed'];
 const ONGOING = ['en_route', 'arrived', 'in_progress', 'awaiting_customer_approval'];
@@ -498,6 +502,191 @@ export class BookingsService {
       return row;
     });
     return this.serialize(updated, customerId);
+  }
+
+  async createRescheduleProposal(
+    taskerId: number,
+    bookingId: number,
+    dto: CreateRescheduleProposalDto,
+  ) {
+    if (!isTodayOrFutureDate(dto.date))
+      throw new BadRequestException('date must be today or later');
+    const proposal = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findFirst({ where: { id: bookingId, taskerId } });
+      if (!booking) throw new NotFoundException('Booking not found');
+      if (!['pending', 'confirmed'].includes(booking.status)) {
+        throw new ConflictException('Only pending or confirmed bookings can be rescheduled');
+      }
+      const outstanding = await transaction.rescheduleProposal.findFirst({
+        where: { bookingId, status: 'pending' },
+      });
+      if (outstanding) {
+        throw new ConflictException('A pending reschedule proposal already exists for this booking');
+      }
+      const slots = await this.repository.findOpenSlotsForDate(taskerId, dto.date, transaction);
+      const requested = parseTimeToMinutes(dto.time);
+      const slot = slots.find((item) => parseTimeToMinutes(item.startTime) === requested);
+      if (!slot || requested === null)
+        throw new ConflictException('Requested date/time is unavailable');
+      if (this.isPastSlotStart(dto.date, slot.startTime))
+        throw new ConflictException('Requested date/time is unavailable');
+
+      const row = await transaction.rescheduleProposal.create({
+        data: {
+          bookingId,
+          proposedById: taskerId,
+          proposedByRole: UserRole.Tasker,
+          proposedDate: dateOnlyToDate(dto.date),
+          proposedTime: slot.startTime,
+          note: dto.note ?? null,
+          status: 'pending',
+        },
+      });
+      await this.notifications.create(
+        booking.customerId,
+        {
+          category: 'tasks',
+          type: 'reschedule_proposal_created',
+          title: 'New reschedule proposal',
+          body: `Your Tasker proposed moving this booking to ${dto.date} at ${slot.startTime}. Review and respond.`,
+          entityType: 'reschedule_proposal',
+          entityId: row.id,
+          metadata: { bookingId: String(bookingId), proposedDate: dto.date, proposedTime: slot.startTime },
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(bookingId, booking.status, 'reschedule_proposed', transaction, {
+        proposalId: row.id,
+      });
+      return row;
+    });
+    return this.serializeRescheduleProposal(proposal);
+  }
+
+  async getRescheduleProposal(user: User, bookingId: number, proposalId: string) {
+    const proposal = await this.prisma.rescheduleProposal.findFirst({
+      where: {
+        id: proposalId,
+        bookingId,
+        booking: { OR: [{ customerId: user.id }, { taskerId: user.id }] },
+      },
+    });
+    if (!proposal) throw new NotFoundException('Reschedule proposal not found');
+    return this.serializeRescheduleProposal(proposal);
+  }
+
+  async respondRescheduleProposal(
+    customerId: number,
+    bookingId: number,
+    proposalId: string,
+    dto: RespondRescheduleProposalDto,
+  ) {
+    const proposal = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findFirst({ where: { id: bookingId, customerId } });
+      if (!booking) throw new NotFoundException('Booking not found');
+      const existing = await transaction.rescheduleProposal.findFirst({
+        where: { id: proposalId, bookingId },
+      });
+      if (!existing) throw new NotFoundException('Reschedule proposal not found');
+      if (existing.status !== 'pending') {
+        throw new ConflictException('This reschedule proposal has already been responded to');
+      }
+      if (!['pending', 'confirmed'].includes(booking.status)) {
+        throw new ConflictException('Only pending or confirmed bookings can be rescheduled');
+      }
+
+      if (!dto.accept) {
+        const rejected = await transaction.rescheduleProposal.update({
+          where: { id: existing.id },
+          data: { status: 'rejected', respondedAt: new Date() },
+        });
+        await this.notifications.create(
+          booking.taskerId,
+          {
+            category: 'tasks',
+            type: 'reschedule_proposal_rejected',
+            title: 'Reschedule proposal declined',
+            body: 'The customer declined your proposed reschedule.',
+            entityType: 'reschedule_proposal',
+            entityId: rejected.id,
+            metadata: { bookingId: String(bookingId) },
+          },
+          transaction,
+        );
+        return rejected;
+      }
+
+      const proposedDate = dateOnlyFromDate(existing.proposedDate);
+      const slots = await this.repository.findOpenSlotsForDate(
+        booking.taskerId,
+        proposedDate,
+        transaction,
+      );
+      const requested = parseTimeToMinutes(existing.proposedTime);
+      const slot = slots.find((item) => parseTimeToMinutes(item.startTime) === requested);
+      if (!slot || requested === null)
+        throw new ConflictException('Proposed date/time is no longer available');
+      if (this.isPastSlotStart(proposedDate, slot.startTime))
+        throw new ConflictException('Proposed date/time is no longer available');
+      if (!(await this.repository.claimSlot(slot.id, transaction)))
+        throw new ConflictException('Proposed slot has already been booked');
+      await transaction.userAvailability.updateMany({
+        where: { id: booking.availabilityId },
+        data: { isBooked: false },
+      });
+      const start = parseTimeToMinutes(slot.startTime) ?? 0;
+      const end = parseTimeToMinutes(slot.endTime) ?? start;
+      await transaction.booking.update({
+        where: { id: bookingId },
+        data: {
+          availabilityId: slot.id,
+          bookingDate: dateOnlyToDate(proposedDate),
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          estimatedDurationMinutes: Math.max(1, end - start),
+          rescheduledAt: new Date(),
+          status: 'pending',
+          confirmedAt: null,
+        },
+      });
+      const accepted = await transaction.rescheduleProposal.update({
+        where: { id: existing.id },
+        data: { status: 'accepted', respondedAt: new Date() },
+      });
+      await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'tasks',
+          type: 'reschedule_proposal_accepted',
+          title: 'Reschedule proposal accepted',
+          body: `The customer accepted your proposed time of ${proposedDate} at ${slot.startTime}. Please confirm.`,
+          entityType: 'reschedule_proposal',
+          entityId: accepted.id,
+          metadata: { bookingId: String(bookingId) },
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(bookingId, 'pending', 'reschedule_proposal_accepted', transaction, {
+        proposalId: accepted.id,
+      });
+      return accepted;
+    });
+    return this.serializeRescheduleProposal(proposal);
+  }
+
+  private serializeRescheduleProposal(proposal: RescheduleProposal) {
+    return {
+      id: proposal.id,
+      bookingId: String(proposal.bookingId),
+      proposedByRole: proposal.proposedByRole,
+      proposedDate: dateOnlyFromDate(proposal.proposedDate),
+      proposedTime: proposal.proposedTime,
+      note: proposal.note,
+      status: proposal.status,
+      createdAt: proposal.createdAt.toISOString(),
+    };
   }
 
   async extend(user: User, bookingId: number, dto: ExtendBookingDto) {

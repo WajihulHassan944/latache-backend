@@ -155,6 +155,7 @@ model User {
   referralsReceived           Referral[]                  @relation("ReferralReferred")
   referralRewards             ReferralReward[]            @relation("ReferralRewardRecipient")
   convertedGuestSessions      GuestSession[]              @relation("GuestSessionConvertedUser")
+  rescheduleProposalsMade     RescheduleProposal[]        @relation("RescheduleProposalProposedBy")
 
   @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
   @@index([roles], type: Gin, map: "users_roles_gin_idx")
@@ -885,6 +886,7 @@ model Booking {
   supportTickets         SupportTicket[]
   referralQualifications Referral[]
   referralRewards        ReferralReward[]
+  rescheduleProposals    RescheduleProposal[]
 
   @@index([availabilityId], map: "bookings_availability_idx")
   @@index([customerId, bookingDate], map: "bookings_customer_date_idx")
@@ -899,6 +901,27 @@ model Booking {
   @@index([customerId, conversationLastMessageAt, updatedAt], map: "bookings_customer_conversation_activity_idx")
   @@index([taskerId, conversationLastMessageAt, updatedAt], map: "bookings_tasker_conversation_activity_idx")
   @@map("Bookings")
+}
+
+model RescheduleProposal {
+  id             String    @id @default(cuid()) @db.VarChar(40)
+  bookingId      Int
+  proposedById   Int
+  proposedByRole String    @default("tasker") @db.VarChar(24)
+  proposedDate   DateTime  @db.Date
+  proposedTime   String    @db.VarChar(255)
+  note           String?   @db.VarChar(500)
+  status         String    @default("pending") @db.VarChar(32)
+  respondedAt    DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  booking    Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "RescheduleProposals_bookingId_fkey")
+  proposedBy User    @relation("RescheduleProposalProposedBy", fields: [proposedById], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "RescheduleProposals_proposedById_fkey")
+
+  @@index([bookingId, status], map: "reschedule_proposals_booking_status_idx")
+  @@index([proposedById], map: "reschedule_proposals_proposed_by_idx")
+  @@map("RescheduleProposals")
 }
 
 model ServiceOption {

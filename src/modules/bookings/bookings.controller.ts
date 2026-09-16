@@ -33,6 +33,11 @@ import {
   UpdateBookingBillingDto,
 } from './dto/booking-actions.dto';
 import { BookTaskerDto } from './dto/book-tasker.dto';
+import {
+  CreateRescheduleProposalDto,
+  RescheduleProposalParamDto,
+  RespondRescheduleProposalDto,
+} from './dto/reschedule-proposal.dto';
 import { ConfirmCashCollectionDto } from '../tasker-finance/dto/tasker-finance.dto';
 import { WorkOtpDto, WorkProofDto } from './dto/work-verification.dto';
 
@@ -129,6 +134,56 @@ export class BookingsController {
     @Body() dto: RescheduleBookingDto,
   ) {
     return this.bookings.reschedule(user.id, params.bookingId, dto);
+  }
+
+  @Post(':bookingId/reschedule-proposals')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @Roles(UserRole.Tasker)
+  @ApiOperation({
+    summary: 'Tasker proposes moving a pending/confirmed booking to another real open slot',
+    description:
+      'Unlike the direct customer reschedule endpoint, this does not change the booking immediately — the ' +
+      'customer must accept via POST :bookingId/reschedule-proposals/:proposalId/respond before anything ' +
+      'about the booking changes. Only one pending proposal may be outstanding per booking at a time.',
+  })
+  createRescheduleProposal(
+    @CurrentUser() user: User,
+    @Param() params: BookingParamDto,
+    @Body() dto: CreateRescheduleProposalDto,
+  ) {
+    return this.bookings.createRescheduleProposal(user.id, params.bookingId, dto);
+  }
+
+  @Get(':bookingId/reschedule-proposals/:proposalId')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @ApiParam({ name: 'proposalId', required: true, type: String, description: 'Reschedule proposal ID.' })
+  @ApiOperation({ summary: 'Get one reschedule proposal as either booking participant' })
+  getRescheduleProposal(@CurrentUser() user: User, @Param() params: RescheduleProposalParamDto) {
+    return this.bookings.getRescheduleProposal(user, params.bookingId, params.proposalId);
+  }
+
+  @Post(':bookingId/reschedule-proposals/:proposalId/respond')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @ApiParam({ name: 'proposalId', required: true, type: String, description: 'Reschedule proposal ID.' })
+  @Roles(UserRole.Customer)
+  @ApiOperation({
+    summary: 'Customer accepts or rejects a Tasker-proposed reschedule',
+    description:
+      'Accepting re-validates the proposed slot is still open and applies the same slot-claim/date-time-update ' +
+      "logic as the direct reschedule endpoint, resetting the booking to pending for the Tasker's re-confirmation. " +
+      'Rejecting leaves the booking unchanged.',
+  })
+  respondRescheduleProposal(
+    @CurrentUser() user: User,
+    @Param() params: RescheduleProposalParamDto,
+    @Body() dto: RespondRescheduleProposalDto,
+  ) {
+    return this.bookings.respondRescheduleProposal(
+      user.id,
+      params.bookingId,
+      params.proposalId,
+      dto,
+    );
   }
 
   @Post(':bookingId/extend')
