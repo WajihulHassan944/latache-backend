@@ -2663,6 +2663,10 @@ export class BookingsService {
         complaints: booking._count.complaints,
         reviews: booking._count.reviews,
       },
+      cancelledByRole: booking.status === 'cancelled' ? booking.cancelledByRole : null,
+      cancellationReason: booking.status === 'cancelled' ? booking.cancellationReason : null,
+      cancelledAt:
+        booking.status === 'cancelled' ? (booking.cancelledAt?.toISOString() ?? null) : null,
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt.toISOString(),
     };

@@ -14,7 +14,7 @@ Two BullMQ workers sweeping at the same time, or a sweep racing a Tasker's `POST
 
 ## Configuration
 
-- `BOOKING_PENDING_EXPIRY_MINUTES=60` — how long a booking may stay `pending` before it is eligible for expiration.
+- `BOOKING_PENDING_EXPIRY_MINUTES=1440` — how long a booking may stay `pending` before it is eligible for expiration (default 24 hours).
 - `BOOKING_EXPIRATION_SWEEP_INTERVAL_MS=60000` — how often the BullMQ scheduler enqueues the sweep.
 - `BOOKING_EXPIRATION_BATCH_SIZE=100` — maximum bookings examined per sweep tick.
 

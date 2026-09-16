@@ -32,6 +32,6 @@ describe('pending booking expiration', () => {
     const config = read('src/config/configuration.ts');
     expect(config).toContain('bookingExpiration:');
     expect(config).toContain('BOOKING_PENDING_EXPIRY_MINUTES');
-    expect(read('.env.example')).toContain('BOOKING_PENDING_EXPIRY_MINUTES=60');
+    expect(read('.env.example')).toContain('BOOKING_PENDING_EXPIRY_MINUTES=1440');
   });
 });

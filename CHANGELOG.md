@@ -1,3 +1,8 @@
+# 3.38.0
+
+- Raised the default pending-booking auto-expiry window from 60 minutes to 24 hours (`BOOKING_PENDING_EXPIRY_MINUTES` default is now `1440`). A `pending` booking a Tasker hasn't confirmed now has a full day before the `bookings.expire-pending` sweep auto-cancels it; the sweep logic and system-cancellation behavior are unchanged.
+- Added `cancelledByRole`, `cancellationReason`, and `cancelledAt` to the serialized booking object returned by `GET /api/bookings` (all buckets) and `GET /api/bookings/:bookingId`. These were already written to the row on every cancellation path (Customer, Tasker, and system auto-expiry) but were never exposed, so no API consumer could distinguish who/what cancelled a booking. All three are `null` unless `status` is `cancelled`.
+
 # 3.37.0
 
 - Allowed same-day bookings. `POST /api/bookings/quote`, `POST /api/bookings`, and `PATCH /api/bookings/:bookingId/reschedule` previously required `date` to be strictly after today; they now accept today as well via the new `isTodayOrFutureDate` (a past date is still rejected). A same-day request still can't select a slot whose start time has already elapsed - `loadQuoteContext` (shared by quote/book) and `reschedule` now reject a matched slot dated today once its `startTime` is at or before the current UTC time, with the same `Requested date/time is unavailable` conflict used for any other unavailable slot. `validateAvailabilitySlots` (Tasker-submitted availability, onboarding and the active-Tasker availability endpoints) is unchanged - a Tasker still can't add a new slot for today, only future dates.
