@@ -13,7 +13,8 @@ export interface PersonSummaryView {
 export interface ConversationMessageView {
   id: string;
   clientMessageId: string | null;
-  bookingId: string;
+  conversationId: string;
+  bookingId: string | null;
   senderId: string;
   isMine: boolean;
   body: string;
@@ -22,69 +23,75 @@ export interface ConversationMessageView {
   createdAt: string;
 }
 
-export interface ConversationView {
-  bookingId: string;
-  otherParty: PersonSummaryView;
+/**
+ * A booking's context as surfaced inline on a conversation/message thread -
+ * a conversation can span zero, one, or many bookings between the same
+ * customer-tasker pair, so this is never the sole anchor for the thread.
+ */
+export interface BookingSummaryView {
+  id: string;
+  status: string;
   service: {
     id: string;
     slug: string;
     name: string;
     icon: string;
   };
-  bookingStatus: string;
-  lastMessageAt: string | null;
-  lastMessage: ConversationMessageView | null;
-  unreadCount: number;
-  metadata: ConversationMetadataView;
+  serviceOption: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
+  schedule: {
+    date: string;
+    startTime: string;
+    endTime: string;
+    estimatedDurationMinutes: number;
+  };
+  location: {
+    label: string | null;
+    lat: number | null;
+    lng: number | null;
+    city: string | null;
+    area: string | null;
+    venueAddress: string;
+    apartmentSuite: string | null;
+  };
+  payment: {
+    hourlyRate: number;
+    currency: string;
+    totalChargedAmount: number | null;
+    paymentStatus: string;
+  };
+  createdAt: string;
+  confirmedAt: string | null;
+  cancelledAt: string | null;
+  rescheduledAt: string | null;
+  cancelledByRole: 'customer' | 'tasker' | 'system' | null;
+  cancellationReason: string | null;
+  pendingRescheduleProposal: {
+    id: string;
+    proposedByRole: string;
+    proposedDate: string;
+    proposedTime: string;
+    note: string | null;
+    createdAt: string;
+  } | null;
 }
 
 /**
- * Every conversation in this system is anchored to a booking, so `type` is
- * always 'booking' today. The discriminant is kept so clients (and any future
- * non-booking chat surface, e.g. support) can branch on it without a schema
- * change.
+ * `id` is null only for a not-yet-created relationship (GET /conversations/with/:userId
+ * before any message has ever been sent) - the conversation row is created lazily on
+ * first send, not on read.
  */
-export interface ConversationMetadataView {
-  type: 'booking';
-  booking: {
-    id: string;
-    status: string;
-    service: {
-      id: string;
-      slug: string;
-      name: string;
-      icon: string;
-    };
-    serviceOption: {
-      id: string;
-      name: string;
-      slug: string;
-    } | null;
-    schedule: {
-      date: string;
-      startTime: string;
-      endTime: string;
-      estimatedDurationMinutes: number;
-    };
-    location: {
-      label: string | null;
-      lat: number | null;
-      lng: number | null;
-      city: string | null;
-      area: string | null;
-      venueAddress: string;
-      apartmentSuite: string | null;
-    };
-    payment: {
-      hourlyRate: number;
-      currency: string;
-      totalChargedAmount: number | null;
-      paymentStatus: string;
-    };
-    createdAt: string;
-    confirmedAt: string | null;
-    cancelledAt: string | null;
-  };
+export interface ConversationView {
+  id: string | null;
+  otherParty: PersonSummaryView;
+  lastMessageAt: string | null;
+  lastMessage: ConversationMessageView | null;
+  unreadCount: number;
+  activeBooking: BookingSummaryView | null;
+  bookingHistory: BookingSummaryView[];
 }
 
 export interface ConversationListView {
@@ -96,7 +103,7 @@ export interface ConversationListView {
 }
 
 export interface MessageListView {
-  bookingId: string;
+  conversationId: string | null;
   otherParty: PersonSummaryView;
   page: number;
   limit: number;
@@ -105,7 +112,8 @@ export interface MessageListView {
   nextCursor: string | null;
   hasMore: boolean;
   items: ConversationMessageView[];
-  metadata: ConversationMetadataView;
+  activeBooking: BookingSummaryView | null;
+  bookingHistory: BookingSummaryView[];
 }
 
 export interface ConversationUnreadCountView {

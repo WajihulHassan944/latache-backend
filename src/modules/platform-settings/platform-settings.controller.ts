@@ -121,6 +121,14 @@ export class PlatformSettingsController {
           },
         },
       },
+      pendingRequestExpiry: {
+        summary: 'Configure how long a pending booking waits for Tasker confirmation',
+        value: {
+          bookingRules: {
+            pendingRequestExpiryMinutes: 1440,
+          },
+        },
+      },
       localizedGeneral: {
         summary: 'Update English/Arabic/Darija public platform content',
         value: {

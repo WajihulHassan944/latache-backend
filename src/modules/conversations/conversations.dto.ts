@@ -176,6 +176,20 @@ export class BookingConversationParamDto {
   bookingId!: number;
 }
 
+export class ConversationIdParamDto {
+  @Transform(trim)
+  @IsString()
+  @Length(1, 40)
+  conversationId!: string;
+}
+
+export class ConversationUserParamDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  userId!: number;
+}
+
 export class ConversationCallParamDto extends BookingConversationParamDto {
   @Transform(trim)
   @IsString()

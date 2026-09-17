@@ -24,9 +24,12 @@ describe('API consistency and realtime contracts', () => {
 
   it('keeps private conversation rooms separate from admin-visible booking rooms', () => {
     const gateway = read('src/modules/realtime/realtime.gateway.ts');
-    expect(gateway).toContain(
-      'if (participant) await client.join(realtimeRoom.conversation(bookingId));',
-    );
+    // Conversation rooms are joined independently of booking rooms (relationship-scoped chat),
+    // gated by their own participant-only check with no admin bypass.
+    expect(gateway).toContain("@SubscribeMessage('conversation:subscribe')");
+    expect(gateway).toContain('await this.assertConversationReadable(client.data, conversationId);');
+    expect(gateway).toContain('private async assertConversationReadable(');
+    // Booking rooms keep the separate admin-visible-but-not-participant path.
     expect(gateway).toContain("identity.permissions.includes('bookings.read')");
     expect(gateway).toContain('return false;');
   });

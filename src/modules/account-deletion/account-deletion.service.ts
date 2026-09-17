@@ -311,6 +311,11 @@ export class AccountDeletionService {
       : isTasker
         ? { taskerId: userId }
         : { OR: [{ customerId: userId }, { taskerId: userId }] };
+    const conversationSide: Prisma.ConversationWhereInput = isCustomer
+      ? { customerId: userId }
+      : isTasker
+        ? { taskerId: userId }
+        : { OR: [{ customerId: userId }, { taskerId: userId }] };
 
     const [
       bookings,
@@ -364,7 +369,7 @@ export class AccountDeletionService {
       isMarketplace ? Promise.resolve(0) : client.disputeEvidenceRequest.count({ where: { createdById: userId } }),
       isMarketplace ? Promise.resolve(0) : client.disputeResolution.count({ where: { actorId: userId } }),
       client.taskMessage.count({
-        where: isMarketplace ? { senderId: userId, booking: bookingSide } : { senderId: userId },
+        where: isMarketplace ? { senderId: userId, conversation: conversationSide } : { senderId: userId },
       }),
       client.conversationCall.count({
         where: isMarketplace

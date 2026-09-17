@@ -1,4 +1,4 @@
-import { HttpException, Logger } from '@nestjs/common';
+import { HttpException, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -30,6 +30,7 @@ import type {
   CallMediaStatePayload,
   CallSdpPayload,
   ConversationCallView,
+  ConversationSubscriptionPayload,
   ConversationTypingPayload,
   RealtimeEnvelope,
   RealtimeSocketIdentity,
@@ -50,10 +51,15 @@ interface SignalRateBucket {
   namespace: REALTIME_NAMESPACE,
   transports: ['websocket'],
 })
-export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class RealtimeGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(RealtimeGateway.name);
   private readonly signalRate = new Map<string, SignalRateBucket>();
   private readonly typingRate = new Map<string, Map<string, number>>();
+  private readonly userSockets = new Map<number, Set<string>>();
+  private readonly offlineTimers = new Map<number, NodeJS.Timeout>();
+  private heartbeatTimer?: NodeJS.Timeout;
 
   @WebSocketServer()
   server!: Namespace;
@@ -67,6 +73,19 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly roles: AuthRoleService,
     private readonly calls: RealtimeCallsService,
   ) {}
+
+  onModuleInit(): void {
+    if (!this.config.get<boolean>('realtime.enabled', true)) return;
+    const heartbeatMs = this.config.get<number>('realtime.presenceHeartbeatMs', 60_000);
+    this.heartbeatTimer = setInterval(() => void this.heartbeatOnlineUsers(), heartbeatMs);
+    this.heartbeatTimer.unref();
+  }
+
+  onModuleDestroy(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    for (const timer of this.offlineTimers.values()) clearTimeout(timer);
+    this.offlineTimers.clear();
+  }
 
   async handleConnection(client: LatacheSocket): Promise<void> {
     if (!this.config.get<boolean>('realtime.enabled', true)) {
@@ -82,6 +101,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
         client.join(realtimeRoom.userRole(identity.userId, identity.role)),
       ]);
       this.logger.debug(`Realtime socket connected for user ${identity.userId}`);
+      this.trackPresenceConnect(identity.userId, client.id);
     } catch (error) {
       this.logger.warn(
         `Rejected realtime connection: ${error instanceof Error ? error.message : String(error)}`,
@@ -96,6 +116,93 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.typingRate.delete(client.id);
     if (client.data?.userId) {
       this.logger.debug(`Realtime socket disconnected for user ${client.data.userId}`);
+      this.trackPresenceDisconnect(client.data.userId, client.id);
+    }
+  }
+
+  private trackPresenceConnect(userId: number, socketId: string): void {
+    const sockets = this.userSockets.get(userId) ?? new Set<string>();
+    const wasOffline = sockets.size === 0;
+    sockets.add(socketId);
+    this.userSockets.set(userId, sockets);
+    const pendingOffline = this.offlineTimers.get(userId);
+    if (pendingOffline) {
+      clearTimeout(pendingOffline);
+      this.offlineTimers.delete(userId);
+    }
+    if (wasOffline) void this.broadcastPresence(userId, 'online');
+  }
+
+  private trackPresenceDisconnect(userId: number, socketId: string): void {
+    const sockets = this.userSockets.get(userId);
+    if (!sockets) return;
+    sockets.delete(socketId);
+    if (sockets.size > 0) return;
+    this.userSockets.delete(userId);
+    const graceMs = this.config.get<number>('realtime.presenceOfflineGraceMs', 20_000);
+    const timer = setTimeout(() => {
+      this.offlineTimers.delete(userId);
+      void this.broadcastPresence(userId, 'offline');
+    }, graceMs);
+    timer.unref();
+    this.offlineTimers.set(userId, timer);
+  }
+
+  private async broadcastPresence(userId: number, status: 'online' | 'offline'): Promise<void> {
+    try {
+      const counterpartyIds = await this.presenceCounterpartyIds(userId);
+      if (counterpartyIds.length === 0) return;
+      let lastSeenAt: string | undefined;
+      if (status === 'offline') {
+        const updated = await this.prisma.user.update({
+          where: { id: userId },
+          data: { lastSeenAt: new Date() },
+          select: { lastSeenAt: true },
+        });
+        lastSeenAt = updated.lastSeenAt.toISOString();
+      }
+      const payload =
+        status === 'online'
+          ? { userId: String(userId), status: 'online' as const }
+          : { userId: String(userId), status: 'offline' as const, lastSeenAt: lastSeenAt! };
+      for (const counterpartyId of counterpartyIds) {
+        this.server.to(realtimeRoom.user(counterpartyId)).emit(`presence:${status}`, payload);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Presence broadcast failed for user ${userId}`,
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
+      );
+    }
+  }
+
+  private async presenceCounterpartyIds(userId: number): Promise<number[]> {
+    const bookings = await this.prisma.booking.findMany({
+      where: { OR: [{ customerId: userId }, { taskerId: userId }] },
+      select: { customerId: true, taskerId: true },
+      distinct: ['customerId', 'taskerId'],
+    });
+    const ids = new Set<number>();
+    for (const booking of bookings) {
+      if (booking.customerId !== userId) ids.add(booking.customerId);
+      if (booking.taskerId !== userId) ids.add(booking.taskerId);
+    }
+    return [...ids];
+  }
+
+  private async heartbeatOnlineUsers(): Promise<void> {
+    const userIds = [...this.userSockets.keys()];
+    if (userIds.length === 0) return;
+    try {
+      await this.prisma.user.updateMany({
+        where: { id: { in: userIds } },
+        data: { lastSeenAt: new Date() },
+      });
+    } catch (error) {
+      this.logger.error(
+        'Presence heartbeat failed',
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
+      );
     }
   }
 
@@ -108,12 +215,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   async subscribeBooking(
     @ConnectedSocket() client: LatacheSocket,
     @MessageBody() payload: BookingSubscriptionPayload,
-  ): Promise<{ subscribed: true; bookingId: number; conversation: boolean }> {
+  ): Promise<{ subscribed: true; bookingId: number }> {
     const bookingId = this.requirePositiveId(payload?.bookingId, 'bookingId');
-    const participant = await this.assertBookingReadable(client.data, bookingId);
+    await this.assertBookingReadable(client.data, bookingId);
     await client.join(realtimeRoom.booking(bookingId));
-    if (participant) await client.join(realtimeRoom.conversation(bookingId));
-    return { subscribed: true, bookingId, conversation: participant };
+    return { subscribed: true, bookingId };
   }
 
   @SubscribeMessage('booking:unsubscribe')
@@ -122,11 +228,29 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     @MessageBody() payload: BookingSubscriptionPayload,
   ): Promise<{ subscribed: false; bookingId: number }> {
     const bookingId = this.requirePositiveId(payload?.bookingId, 'bookingId');
-    await Promise.all([
-      client.leave(realtimeRoom.booking(bookingId)),
-      client.leave(realtimeRoom.conversation(bookingId)),
-    ]);
+    await client.leave(realtimeRoom.booking(bookingId));
     return { subscribed: false, bookingId };
+  }
+
+  @SubscribeMessage('conversation:subscribe')
+  async subscribeConversation(
+    @ConnectedSocket() client: LatacheSocket,
+    @MessageBody() payload: ConversationSubscriptionPayload,
+  ): Promise<{ subscribed: true; conversationId: string }> {
+    const conversationId = this.requireString(payload?.conversationId, 'conversationId', 1, 40);
+    await this.assertConversationReadable(client.data, conversationId);
+    await client.join(realtimeRoom.conversation(conversationId));
+    return { subscribed: true, conversationId };
+  }
+
+  @SubscribeMessage('conversation:unsubscribe')
+  async unsubscribeConversation(
+    @ConnectedSocket() client: LatacheSocket,
+    @MessageBody() payload: ConversationSubscriptionPayload,
+  ): Promise<{ subscribed: false; conversationId: string }> {
+    const conversationId = this.requireString(payload?.conversationId, 'conversationId', 1, 40);
+    await client.leave(realtimeRoom.conversation(conversationId));
+    return { subscribed: false, conversationId };
   }
 
   @SubscribeMessage('support:subscribe')
@@ -159,15 +283,15 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     @ConnectedSocket() client: LatacheSocket,
     @MessageBody() payload: ConversationTypingPayload,
   ): Promise<{ accepted: true }> {
-    const bookingId = this.requirePositiveId(payload?.bookingId, 'bookingId');
+    const conversationId = this.requireString(payload?.conversationId, 'conversationId', 1, 40);
     if (typeof payload?.isTyping !== 'boolean') throw new WsException('isTyping must be a boolean');
-    const room = realtimeRoom.conversation(bookingId);
+    const room = realtimeRoom.conversation(conversationId);
     if (!client.rooms.has(room)) {
       throw new WsException('Subscribe to this conversation before sending typing events');
     }
     if (!this.acceptTyping(client.id, room)) return { accepted: true };
     client.to(room).emit('conversation:typing', {
-      bookingId,
+      conversationId,
       userId: client.data.userId,
       isTyping: payload.isTyping,
     });
@@ -493,6 +617,23 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       if (exists) return false;
     }
     throw new WsException('Booking is not accessible');
+  }
+
+  private async assertConversationReadable(
+    identity: RealtimeSocketIdentity,
+    conversationId: string,
+  ): Promise<void> {
+    const participant = await this.prisma.conversation.count({
+      where: {
+        id: conversationId,
+        ...(identity.role === UserRole.Customer
+          ? { customerId: identity.userId }
+          : identity.role === UserRole.Tasker
+            ? { taskerId: identity.userId }
+            : { customerId: -1 }),
+      },
+    });
+    if (!participant) throw new WsException('Conversation is not accessible');
   }
 
   private async assertSupportReadable(

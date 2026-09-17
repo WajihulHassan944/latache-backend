@@ -9,6 +9,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   BookingConversationParamDto,
   ConversationCallParamDto,
+  ConversationIdParamDto,
+  ConversationUserParamDto,
   ListConversationCallsQueryDto,
   ListConversationsQueryDto,
   ListMessagesQueryDto,
@@ -48,9 +50,9 @@ export class ConversationsController {
 
   @Get()
   @ApiOperation({
-    summary: 'List booking conversations for the authenticated customer or tasker',
+    summary: 'List conversation relationships for the authenticated customer or tasker',
     description:
-      'The same endpoint is used by both roles. Only bookings involving the authenticated identity are visible.',
+      'One row per customer-tasker relationship, not per booking. A relationship persists across every booking between the same pair and is never closed by a booking status - activeBooking/bookingHistory surface the relevant job context inline.',
   })
   list(
     @CurrentUser() user: User,
@@ -60,54 +62,94 @@ export class ConversationsController {
   }
 
   @Get('unread-count')
-  @ApiOperation({ summary: 'Get total unread booking-chat messages for the current participant' })
+  @ApiOperation({ summary: 'Get total unread chat messages for the current participant' })
   unreadCount(@CurrentUser() user: User): Promise<ConversationUnreadCountView> {
     return this.conversations.unreadCount(user);
   }
 
-  @Get(':bookingId/messages')
-  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
-  @ApiOperation({ summary: 'List messages for one owned booking conversation' })
-  messages(
+  @Get('with/:userId')
+  @ApiParam({ name: 'userId', required: true, type: Number, description: "The other party's user ID." })
+  @ApiOperation({
+    summary: 'Get the conversation relationship with one other user',
+    description:
+      "Resolves by the counterparty's user ID rather than a conversation ID - no prior booking or prior contact required. Returns an empty relationship (id: null) if no message has ever been sent between this pair; the row is created lazily on first send, not on read.",
+  })
+  summaryWithUser(
     @CurrentUser() user: User,
-    @Param() params: BookingConversationParamDto,
-    @Query() query: ListMessagesQueryDto,
-  ): Promise<MessageListView> {
-    return this.conversations.messages(user, params.bookingId, query);
+    @Param() params: ConversationUserParamDto,
+  ): Promise<ConversationView> {
+    return this.conversations.summaryWithUser(user, params.userId);
   }
 
-  @Post(':bookingId/messages')
-  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @Get('with/:userId/messages')
+  @ApiParam({ name: 'userId', required: true, type: Number, description: "The other party's user ID." })
+  @ApiOperation({ summary: 'List messages with one other user, by their user ID' })
+  messagesWithUser(
+    @CurrentUser() user: User,
+    @Param() params: ConversationUserParamDto,
+    @Query() query: ListMessagesQueryDto,
+  ): Promise<MessageListView> {
+    return this.conversations.messagesWithUser(user, params.userId, query);
+  }
+
+  @Post('with/:userId/messages')
+  @ApiParam({ name: 'userId', required: true, type: Number, description: "The other party's user ID." })
   @ApiOperation({
-    summary: 'Send text and/or verified Cloudinary attachments',
+    summary: 'Send a message to one other user, auto-creating the relationship on first send',
+    description:
+      'Any customer may message any tasker (and vice versa) with no prior booking or contact required. Auto-creates the Conversation row for this pair on first send if none exists yet. Same body shape as sending into an existing conversation.',
+  })
+  sendToUser(
+    @CurrentUser() user: User,
+    @Param() params: ConversationUserParamDto,
+    @Body() dto: SendMessageDto,
+  ): Promise<ConversationMessageView> {
+    return this.conversations.sendToUser(user, params.userId, dto);
+  }
+
+  @Get(':conversationId/messages')
+  @ApiParam({ name: 'conversationId', required: true, type: String, description: 'Conversation ID.' })
+  @ApiOperation({ summary: 'List messages for one owned conversation' })
+  messages(
+    @CurrentUser() user: User,
+    @Param() params: ConversationIdParamDto,
+    @Query() query: ListMessagesQueryDto,
+  ): Promise<MessageListView> {
+    return this.conversations.messagesByConversationId(user, params.conversationId, query);
+  }
+
+  @Post(':conversationId/messages')
+  @ApiParam({ name: 'conversationId', required: true, type: String, description: 'Conversation ID.' })
+  @ApiOperation({
+    summary: 'Send text and/or verified Cloudinary attachments into an existing conversation',
     description:
       'Supports one or multiple image/document attachments. Upload them first through the shared Uploads API using folder=conversation-attachments. The server revalidates ownership, Cloudinary existence, MIME type, per-file size, total message size, and duplicate references before persisting the message. Supply a stable clientMessageId for retry-safe mobile/offline delivery.',
   })
   send(
     @CurrentUser() user: User,
-    @Param() params: BookingConversationParamDto,
+    @Param() params: ConversationIdParamDto,
     @Body() dto: SendMessageDto,
   ): Promise<ConversationMessageView> {
-    return this.conversations.send(user, params.bookingId, dto);
+    return this.conversations.sendMessage(user, params.conversationId, dto);
   }
 
-  @Post(':bookingId/read')
-  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
-  @ApiOperation({ summary: 'Mark messages from the other booking participant as read' })
+  @Post(':conversationId/read')
+  @ApiParam({ name: 'conversationId', required: true, type: String, description: 'Conversation ID.' })
+  @ApiOperation({ summary: 'Mark messages from the other participant as read' })
   markRead(
     @CurrentUser() user: User,
-    @Param() params: BookingConversationParamDto,
+    @Param() params: ConversationIdParamDto,
     @Body() dto: MarkConversationReadDto,
   ): Promise<ConversationReadResultView> {
-    return this.conversations.markRead(user, params.bookingId, dto);
+    return this.conversations.markRead(user, params.conversationId, dto);
   }
 
   @Get(':bookingId/calls')
   @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({
-    summary: 'List persisted voice/video call history for a booking conversation',
+    summary: 'List persisted voice/video call history for a booking',
     description:
-      'Call lifecycle mutations and WebRTC signaling use the authenticated /realtime Socket.IO namespace. This REST endpoint is the reconnect/history source of truth.',
+      'Calls remain booking-scoped - unaffected by the relationship-scoped chat change. Call lifecycle mutations and WebRTC signaling use the authenticated /realtime Socket.IO namespace. This REST endpoint is the reconnect/history source of truth.',
   })
   @ApiOkResponse({
     schema: {
@@ -150,13 +192,13 @@ export class ConversationsController {
     return this.conversations.getCall(user, params.bookingId, params.callId);
   }
 
-  @Get(':bookingId')
-  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
-  @ApiOperation({ summary: 'Get one booking conversation summary' })
+  @Get(':conversationId')
+  @ApiParam({ name: 'conversationId', required: true, type: String, description: 'Conversation ID.' })
+  @ApiOperation({ summary: 'Get one conversation relationship summary' })
   summary(
     @CurrentUser() user: User,
-    @Param() params: BookingConversationParamDto,
+    @Param() params: ConversationIdParamDto,
   ): Promise<ConversationView> {
-    return this.conversations.summary(user, params.bookingId);
+    return this.conversations.summaryByConversationId(user, params.conversationId);
   }
 }

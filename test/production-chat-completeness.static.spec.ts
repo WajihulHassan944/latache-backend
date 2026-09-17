@@ -4,13 +4,11 @@ import { resolve } from 'node:path';
 const read = (path: string): string => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('production chat completeness static contract', () => {
-  it('keeps private booking chat participant-only across REST and realtime', () => {
+  it('keeps private relationship-scoped chat participant-only across REST and realtime', () => {
     const controller = read('src/modules/conversations/conversations.controller.ts');
     const gateway = read('src/modules/realtime/realtime.gateway.ts');
     expect(controller).toContain('@Roles(UserRole.Customer, UserRole.Tasker)');
-    expect(gateway).toContain(
-      'if (participant) await client.join(realtimeRoom.conversation(bookingId));',
-    );
+    expect(gateway).toContain('private async assertConversationReadable(');
     expect(gateway).toContain('return false;');
   });
 
@@ -18,10 +16,10 @@ describe('production chat completeness static contract', () => {
     const schema = read('prisma/schema.prisma');
     const conversations = read('src/modules/conversations/conversations.service.ts');
     const support = read('src/modules/support/support.service.ts');
-    // Renamed/rescoped by 20260819130000_multi_role_identity_profiles from
-    // (senderId, clientMessageId) to (senderId, bookingId, clientMessageId),
-    // so retry-safe dedup is scoped per booking.
-    expect(schema).toContain('task_messages_sender_booking_client_message_unique');
+    // Rescoped by 20260917081000_relationship_scoped_chat from
+    // (senderId, bookingId, clientMessageId) to (senderId, conversationId, clientMessageId),
+    // so retry-safe dedup is scoped per relationship, not per booking.
+    expect(schema).toContain('task_messages_sender_conversation_client_message_unique');
     // Renamed/rescoped by 20260819130000_multi_role_identity_profiles to
     // include requesterRole, so a customer and tasker ticket from the same
     // multi-role identity can reuse the same client request ID.
@@ -35,7 +33,9 @@ describe('production chat completeness static contract', () => {
     expect(support).toContain('CLIENT_MESSAGE_ID_REUSED');
     expect(support).toContain("hasPrismaErrorCode(error, 'P2002')");
     expect(support).toContain('FOR UPDATE');
-    expect(conversations).toContain('"conversationLastMessageAt" <');
+    // lastMessageAt now lives on the relationship-level Conversation, not the Booking, but keeps
+    // the same monotonic guard against out-of-order concurrent writes.
+    expect(conversations).toContain('"lastMessageAt" IS NULL OR "lastMessageAt" <');
   });
 
   it('supports unread totals, cursor history, and bounded read receipts for both chat families', () => {

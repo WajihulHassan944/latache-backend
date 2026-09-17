@@ -209,6 +209,18 @@ export class BookingRulesSettingsDto {
   @Min(1)
   @Max(168)
   completionApprovalHours?: number;
+  @ApiPropertyOptional({
+    example: 1440,
+    default: 1440,
+    description:
+      'Minutes a pending booking request waits for Tasker confirmation before it is automatically cancelled.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(15)
+  @Max(10080)
+  pendingRequestExpiryMinutes?: number;
 }
 
 export class ServiceRadiusSettingsDto {

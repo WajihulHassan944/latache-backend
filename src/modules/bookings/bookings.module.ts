@@ -12,6 +12,7 @@ import { BookingsRepository } from './bookings.repository';
 import { BookingsService } from './bookings.service';
 import { BookingWorkVerificationService } from './booking-work-verification.service';
 import { AdminAuditModule } from '../admin-audit/admin-audit.module';
+import { ConversationsModule } from '../conversations/conversations.module';
 import { DisputesModule } from '../disputes/disputes.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { UploadsModule } from '../uploads/uploads.module';
@@ -26,6 +27,7 @@ import { UploadsModule } from '../uploads/uploads.module';
     PlatformSettingsModule,
     RealtimeModule,
     AdminAuditModule,
+    ConversationsModule,
     DisputesModule,
     ReferralsModule,
     UploadsModule,

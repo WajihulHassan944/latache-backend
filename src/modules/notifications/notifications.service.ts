@@ -214,6 +214,14 @@ export class NotificationsService {
       if (booking?.customerId === userId) return UserRole.Customer;
       if (booking?.taskerId === userId) return UserRole.Tasker;
     }
+    if (input.entityType === 'conversation' && entityId) {
+      const conversation = await client.conversation.findUnique({
+        where: { id: entityId },
+        select: { customerId: true, taskerId: true },
+      });
+      if (conversation?.customerId === userId) return UserRole.Customer;
+      if (conversation?.taskerId === userId) return UserRole.Tasker;
+    }
     if (input.entityType === 'dispute' && entityId) {
       const complaint = await client.taskComplaint.findUnique({
         where: { id: entityId },

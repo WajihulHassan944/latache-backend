@@ -147,6 +147,7 @@ export interface TaskerAvailabilitySlotView {
   startTimeAMPM: string;
   endTimeAMPM: string;
   isBooked: boolean;
+  bookingStatus: string | null;
 }
 
 export interface TaskerBusinessProfileView {

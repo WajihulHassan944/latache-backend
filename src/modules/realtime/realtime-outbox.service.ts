@@ -48,12 +48,12 @@ export class RealtimeOutboxService {
   }
 
   enqueueConversation(
-    bookingId: number,
+    conversationId: string,
     eventName: string,
     payload: Prisma.InputJsonValue,
     transaction?: Prisma.TransactionClient,
   ) {
-    return this.enqueue(realtimeRoom.conversation(bookingId), eventName, payload, transaction);
+    return this.enqueue(realtimeRoom.conversation(conversationId), eventName, payload, transaction);
   }
 
   enqueueSupportPublic(

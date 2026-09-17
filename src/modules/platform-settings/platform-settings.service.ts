@@ -477,6 +477,18 @@ export class PlatformSettingsService {
     };
   }
 
+  async bookingPendingExpiryPolicy(transaction?: Prisma.TransactionClient): Promise<{
+    pendingMinutes: number;
+  }> {
+    const section = await this.section<BookingRulesSettingsDto>('bookingRules', transaction);
+    return {
+      pendingMinutes: Number(
+        section.pendingRequestExpiryMinutes ??
+          this.config.get<number>('bookingExpiration.pendingMinutes', 1_440),
+      ),
+    };
+  }
+
   async assertBookingRules(input: {
     bookingDate: Date;
     startTime: string;
@@ -596,6 +608,7 @@ export class PlatformSettingsService {
         emergencyBookingEnabled: false,
         groupBookingEnabled: false,
         completionApprovalHours: this.config.get<number>('bookingCompletion.approvalHours', 24),
+        pendingRequestExpiryMinutes: this.config.get<number>('bookingExpiration.pendingMinutes', 1_440),
       },
       serviceRadius: {
         enforcementEnabled: true,

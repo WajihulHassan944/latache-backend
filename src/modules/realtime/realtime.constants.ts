@@ -5,7 +5,7 @@ export const realtimeRoom = {
   user: (userId: number): string => `user:${userId}`,
   userRole: (userId: number, role: string): string => `user:${userId}:role:${role}`,
   booking: (bookingId: number): string => `booking:${bookingId}`,
-  conversation: (bookingId: number): string => `conversation:${bookingId}`,
+  conversation: (conversationId: string): string => `conversation:${conversationId}`,
   supportPublic: (ticketId: number): string => `support:${ticketId}:public`,
   supportAdmins: (ticketId: number): string => `support:${ticketId}:admins`,
 };
@@ -34,11 +34,15 @@ export const REALTIME_SERVER_EVENTS = [
   'call:error',
   'auth:session_invalid',
   'realtime:error',
+  'presence:online',
+  'presence:offline',
 ] as const;
 
 export const REALTIME_CLIENT_EVENTS = [
   'booking:subscribe',
   'booking:unsubscribe',
+  'conversation:subscribe',
+  'conversation:unsubscribe',
   'support:subscribe',
   'support:unsubscribe',
   'conversation:typing',

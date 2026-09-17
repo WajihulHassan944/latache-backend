@@ -222,6 +222,13 @@ export class TaskerProfileService {
     const slots = await this.prisma.userAvailability.findMany({
       where: { userId: taskerId, date: { gte: dateOnlyToDate(todayDateOnly()) } },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+      include: {
+        bookings: {
+          where: { status: { not: 'cancelled' } },
+          select: { status: true },
+          take: 1,
+        },
+      },
     });
     return slots.map((slot) => this.availabilityView(slot));
   }
@@ -386,6 +393,7 @@ export class TaskerProfileService {
     startTime: string;
     endTime: string;
     isBooked: boolean;
+    bookings?: { status: string }[];
   }): TaskerAvailabilitySlotView {
     return {
       id: slot.id.toString(),
@@ -395,6 +403,7 @@ export class TaskerProfileService {
       startTimeAMPM: to12Hour(slot.startTime),
       endTimeAMPM: to12Hour(slot.endTime),
       isBooked: slot.isBooked,
+      bookingStatus: slot.isBooked ? (slot.bookings?.[0]?.status ?? null) : null,
     };
   }
 

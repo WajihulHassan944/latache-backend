@@ -141,6 +141,11 @@ export default () => {
         process.env.REALTIME_LOCATION_MIN_WRITE_INTERVAL_MS,
         1_000,
       ),
+      presenceHeartbeatMs: asPositiveInteger(process.env.REALTIME_PRESENCE_HEARTBEAT_MS, 60_000),
+      presenceOfflineGraceMs: asPositiveInteger(
+        process.env.REALTIME_PRESENCE_OFFLINE_GRACE_MS,
+        20_000,
+      ),
     },
     chat: {
       attachmentMaxFiles: asPositiveInteger(process.env.CHAT_ATTACHMENT_MAX_FILES, 5),

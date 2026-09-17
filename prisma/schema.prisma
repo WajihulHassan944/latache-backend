@@ -39,6 +39,7 @@ model User {
   inheritsRolePermissions      Boolean   @default(true)
   mustChangePassword           Boolean   @default(false)
   lastLoginAt                  DateTime? @db.Timestamptz(6)
+  lastSeenAt                   DateTime  @default(now()) @db.Timestamptz(6)
   loginFailedAttempts          Int       @default(0)
   loginLockedUntil             DateTime? @db.Timestamptz(6)
   lastFailedLoginAt            DateTime? @db.Timestamptz(6)
@@ -93,6 +94,8 @@ model User {
   availability                UserAvailability[]
   bookingsAsCustomer          Booking[]                   @relation("CustomerBookings")
   bookingsAsTasker            Booking[]                   @relation("TaskerBookings")
+  conversationsAsCustomer     Conversation[]              @relation("ConversationCustomer")
+  conversationsAsTasker       Conversation[]              @relation("ConversationTasker")
   createdBy                   User?                       @relation("AdminCreator", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
   createdAdmins               User[]                      @relation("AdminCreator")
   rbacRole                    RbacRole?                   @relation(fields: [rbacRoleId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Users_rbacRoleId_fkey")
@@ -861,11 +864,13 @@ model Booking {
   paymentFailureReason      String?   @db.VarChar(1000)
   paidAt                    DateTime? @db.Timestamptz(6)
   conversationLastMessageAt DateTime? @db.Timestamptz(6)
+  conversationId            String
   createdAt                 DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt                 DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   customer               User                        @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_customerId_fkey")
   tasker                 User                        @relation("TaskerBookings", fields: [taskerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_taskerId_fkey")
+  conversation            Conversation                @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_conversationId_fkey")
   service                Service                     @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_serviceId_fkey")
   serviceOption          ServiceOption?              @relation(fields: [serviceOptionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Bookings_serviceOptionId_fkey")
   availability           UserAvailability            @relation(fields: [availabilityId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_availabilityId_fkey")
@@ -900,6 +905,7 @@ model Booking {
   @@index([serviceId, status, bookingDate], map: "bookings_service_status_date_idx")
   @@index([customerId, conversationLastMessageAt, updatedAt], map: "bookings_customer_conversation_activity_idx")
   @@index([taskerId, conversationLastMessageAt, updatedAt], map: "bookings_tasker_conversation_activity_idx")
+  @@index([conversationId, bookingDate], map: "bookings_conversation_date_idx")
   @@map("Bookings")
 }
 
@@ -1460,9 +1466,29 @@ model StripeChargeback {
   @@map("StripeChargebacks")
 }
 
+model Conversation {
+  id            String    @id @default(cuid()) @db.VarChar(40)
+  customerId    Int
+  taskerId      Int
+  lastMessageAt DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  customer User          @relation("ConversationCustomer", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Conversations_customerId_fkey")
+  tasker   User          @relation("ConversationTasker", fields: [taskerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Conversations_taskerId_fkey")
+  messages TaskMessage[]
+  bookings Booking[]
+
+  @@unique([customerId, taskerId], map: "conversations_customer_tasker_unique")
+  @@index([customerId, lastMessageAt], map: "conversations_customer_activity_idx")
+  @@index([taskerId, lastMessageAt], map: "conversations_tasker_activity_idx")
+  @@map("Conversations")
+}
+
 model TaskMessage {
   id              String    @id @default(cuid()) @db.VarChar(40)
-  bookingId       Int
+  conversationId  String
+  bookingId       Int?
   senderId        Int
   clientMessageId String?   @db.VarChar(80)
   body            String?   @db.Text
@@ -1470,13 +1496,14 @@ model TaskMessage {
   readAt          DateTime? @db.Timestamptz(6)
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
 
-  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "TaskMessages_bookingId_fkey")
-  sender  User    @relation("TaskMessageSender", fields: [senderId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskMessages_senderId_fkey")
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "TaskMessages_conversationId_fkey")
+  booking      Booking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "TaskMessages_bookingId_fkey")
+  sender       User         @relation("TaskMessageSender", fields: [senderId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskMessages_senderId_fkey")
 
-  @@unique([senderId, bookingId, clientMessageId], map: "task_messages_sender_booking_client_message_unique")
-  @@index([bookingId, createdAt], map: "task_messages_booking_created_idx")
-  @@index([bookingId, createdAt, id], map: "task_messages_booking_cursor_idx")
-  @@index([bookingId, readAt, senderId, createdAt], map: "task_messages_booking_unread_idx")
+  @@unique([senderId, conversationId, clientMessageId], map: "task_messages_sender_conversation_client_message_unique")
+  @@index([conversationId, createdAt], map: "task_messages_conversation_created_idx")
+  @@index([conversationId, createdAt, id], map: "task_messages_conversation_cursor_idx")
+  @@index([conversationId, readAt, senderId, createdAt], map: "task_messages_conversation_unread_idx")
   @@index([senderId, createdAt], map: "task_messages_sender_created_idx")
   @@map("TaskMessages")
 }

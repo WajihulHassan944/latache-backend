@@ -21,7 +21,11 @@ export interface SupportSubscriptionPayload {
   ticketId: number;
 }
 
-export interface ConversationTypingPayload extends BookingSubscriptionPayload {
+export interface ConversationSubscriptionPayload {
+  conversationId: string;
+}
+
+export interface ConversationTypingPayload extends ConversationSubscriptionPayload {
   isTyping: boolean;
 }
 

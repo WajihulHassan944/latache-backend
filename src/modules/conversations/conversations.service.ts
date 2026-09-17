@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -24,16 +25,79 @@ import {
   SendMessageDto,
 } from './conversations.dto';
 import type {
+  BookingSummaryView,
   ConversationCapabilitiesView,
   ConversationListView,
   ConversationMessageView,
-  ConversationMetadataView,
   ConversationReadResultView,
   ConversationUnreadCountView,
   ConversationView,
   MessageListView,
   PersonSummaryView,
 } from './conversations.types';
+
+const ACTIVE_BOOKING_STATUSES = [
+  'pending',
+  'confirmed',
+  'en_route',
+  'arrived',
+  'in_progress',
+  'awaiting_customer_approval',
+];
+
+const PERSON_SELECT = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  profilePicture: true,
+  phoneCountryCode: true,
+  phoneNumber: true,
+} as const;
+
+type PersonRow = {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  profilePicture: string | null;
+  phoneCountryCode: string | null;
+  phoneNumber: string | null;
+};
+
+type BookingSummaryRow = {
+  id: number;
+  status: string;
+  service: { id: number; name: string | null; slug: string | null; icon: string | null };
+  serviceOption: { id: number; name: string; slug: string } | null;
+  bookingDate: Date;
+  startTime: string;
+  endTime: string;
+  estimatedDurationMinutes: number;
+  venueAddress: string;
+  apartmentSuite: string | null;
+  locationLabel: string;
+  locationLat: Prisma.Decimal;
+  locationLng: Prisma.Decimal;
+  locationCity: string | null;
+  locationArea: string | null;
+  hourlyRate: Prisma.Decimal;
+  paymentCurrency: string;
+  totalChargedAmount: Prisma.Decimal | null;
+  paymentStatus: string;
+  createdAt: Date;
+  confirmedAt: Date | null;
+  cancelledAt: Date | null;
+  rescheduledAt: Date | null;
+  cancelledByRole: string | null;
+  cancellationReason: string | null;
+  rescheduleProposals: {
+    id: string;
+    proposedByRole: string;
+    proposedDate: Date;
+    proposedTime: string;
+    note: string | null;
+    createdAt: Date;
+  }[];
+};
 
 @Injectable()
 export class ConversationsService {
@@ -58,109 +122,79 @@ export class ConversationsService {
     };
   }
 
+  /** Find-or-create the single Conversation for a (customerId, taskerId) pair. Booking creation
+   * resolves/creates through this so every booking always belongs to a conversation. */
+  async findOrCreateConversation(
+    customerId: number,
+    taskerId: number,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<{ id: string }> {
+    const client = transaction ?? this.prisma;
+    const existing = await client.conversation.findUnique({
+      where: { customerId_taskerId: { customerId, taskerId } },
+      select: { id: true },
+    });
+    if (existing) return existing;
+    try {
+      return await client.conversation.create({ data: { customerId, taskerId }, select: { id: true } });
+    } catch (error) {
+      if (hasPrismaErrorCode(error, 'P2002')) {
+        const raced = await client.conversation.findUnique({
+          where: { customerId_taskerId: { customerId, taskerId } },
+          select: { id: true },
+        });
+        if (raced) return raced;
+      }
+      throw error;
+    }
+  }
+
   async list(user: User, query: ListConversationsQueryDto): Promise<ConversationListView> {
     const userId = user.id;
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
     const search = query.search?.trim();
-    const where: Prisma.BookingWhereInput = {
-      ...this.participantBookingWhere(userId, user.role),
+    const where: Prisma.ConversationWhereInput = {
+      ...this.participantConversationWhere(userId, user.role),
       ...(search
         ? {
-            AND: [
-              {
-                OR: [
-                  { customer: { firstName: { contains: search, mode: 'insensitive' } } },
-                  { customer: { lastName: { contains: search, mode: 'insensitive' } } },
-                  { tasker: { firstName: { contains: search, mode: 'insensitive' } } },
-                  { tasker: { lastName: { contains: search, mode: 'insensitive' } } },
-                  { service: { name: { contains: search, mode: 'insensitive' } } },
-                ],
-              },
+            OR: [
+              { customer: { firstName: { contains: search, mode: 'insensitive' } } },
+              { customer: { lastName: { contains: search, mode: 'insensitive' } } },
+              { tasker: { firstName: { contains: search, mode: 'insensitive' } } },
+              { tasker: { lastName: { contains: search, mode: 'insensitive' } } },
             ],
           }
         : {}),
     };
 
-    const [bookings, totalItems] = await Promise.all([
-      this.prisma.booking.findMany({
+    const [conversations, totalItems] = await Promise.all([
+      this.prisma.conversation.findMany({
         where,
         include: {
-          customer: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profilePicture: true,
-              phoneCountryCode: true,
-              phoneNumber: true,
-            },
-          },
-          tasker: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profilePicture: true,
-              phoneCountryCode: true,
-              phoneNumber: true,
-            },
-          },
-          service: { select: { id: true, name: true, slug: true, icon: true } },
-          serviceOption: { select: { id: true, name: true, slug: true } },
+          customer: { select: PERSON_SELECT },
+          tasker: { select: PERSON_SELECT },
           messages: { orderBy: { createdAt: 'desc' }, take: 1 },
-          _count: {
-            select: {
-              messages: { where: { senderId: { not: userId }, readAt: null } },
-            },
-          },
+          _count: { select: { messages: { where: { senderId: { not: userId }, readAt: null } } } },
         },
         orderBy: [
-          { conversationLastMessageAt: { sort: 'desc', nulls: 'last' } },
+          { lastMessageAt: { sort: 'desc', nulls: 'last' } },
           { updatedAt: 'desc' },
           { id: 'desc' },
         ],
         skip: offset,
         take: limit,
       }),
-      this.prisma.booking.count({ where }),
+      this.prisma.conversation.count({ where }),
     ]);
+
+    const buckets = await this.loadBookingBuckets(conversations.map((row) => row.id));
 
     return {
       page,
       limit,
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
-      items: bookings.map((booking) => ({
-        bookingId: String(booking.id),
-        otherParty: this.otherParty(booking, userId),
-        service: this.service(booking.service),
-        bookingStatus: booking.status,
-        lastMessageAt:
-          booking.conversationLastMessageAt?.toISOString() ??
-          booking.messages[0]?.createdAt.toISOString() ??
-          null,
-        lastMessage: booking.messages[0] ? this.message(booking.messages[0], userId) : null,
-        unreadCount: booking._count.messages,
-        metadata: this.metadata(booking),
-      })),
-    };
-  }
-
-  async summary(user: User, bookingId: number): Promise<ConversationView> {
-    const userId = user.id;
-    const booking = await this.requireParticipantBooking(user, bookingId, true);
-    return {
-      bookingId: String(booking.id),
-      otherParty: this.otherParty(booking, userId),
-      service: this.service(booking.service),
-      bookingStatus: booking.status,
-      lastMessageAt:
-        booking.conversationLastMessageAt?.toISOString() ??
-        booking.messages[0]?.createdAt.toISOString() ??
-        null,
-      lastMessage: booking.messages[0] ? this.message(booking.messages[0], userId) : null,
-      unreadCount: booking._count.messages,
-      metadata: this.metadata(booking),
+      items: conversations.map((row) => this.conversationView(row, userId, buckets.get(row.id))),
     };
   }
 
@@ -171,41 +205,65 @@ export class ConversationsService {
         where: {
           senderId: { not: userId },
           readAt: null,
-          booking: this.participantBookingWhere(userId, user.role),
+          conversation: this.participantConversationWhere(userId, user.role),
         },
       }),
     };
   }
 
-  async messages(
+  async summaryByConversationId(user: User, conversationId: string): Promise<ConversationView> {
+    const conversation = await this.requireParticipantConversation(user, conversationId, true);
+    const buckets = await this.loadBookingBuckets([conversationId]);
+    return this.conversationView(conversation, user.id, buckets.get(conversationId));
+  }
+
+  async summaryWithUser(user: User, otherUserId: number): Promise<ConversationView> {
+    const pair = await this.resolveOtherUserRole(user, otherUserId);
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { customerId_taskerId: pair },
+      include: {
+        customer: { select: PERSON_SELECT },
+        tasker: { select: PERSON_SELECT },
+        messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+        _count: { select: { messages: { where: { senderId: { not: user.id }, readAt: null } } } },
+      },
+    });
+    if (!conversation) return this.emptyConversationView(user, pair, otherUserId);
+    const buckets = await this.loadBookingBuckets([conversation.id]);
+    return this.conversationView(conversation, user.id, buckets.get(conversation.id));
+  }
+
+  async messagesByConversationId(
     user: User,
-    bookingId: number,
+    conversationId: string,
     query: ListMessagesQueryDto,
   ): Promise<MessageListView> {
     const userId = user.id;
-    const booking = await this.requireParticipantBooking(user, bookingId, false);
+    const conversation = await this.requireParticipantConversation(user, conversationId, false);
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 50);
     if (query.cursor) {
       const cursorOwned = await this.prisma.taskMessage.count({
-        where: { id: query.cursor, bookingId },
+        where: { id: query.cursor, conversationId },
       });
       if (cursorOwned === 0) throw new BadRequestException('Message cursor is invalid');
     }
     const [rows, totalItems] = await Promise.all([
       this.prisma.taskMessage.findMany({
-        where: { bookingId },
+        where: { conversationId },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : { skip: offset }),
         take: query.cursor ? limit + 1 : limit,
       }),
-      this.prisma.taskMessage.count({ where: { bookingId } }),
+      this.prisma.taskMessage.count({ where: { conversationId } }),
     ]);
     const hasMore = query.cursor ? rows.length > limit : offset + rows.length < totalItems;
     const pageRows = rows.slice(0, limit);
+    const buckets = await this.loadBookingBuckets([conversationId]);
+    const bucket = buckets.get(conversationId);
 
     return {
-      bookingId: String(bookingId),
-      otherParty: this.otherParty(booking, userId),
+      conversationId,
+      otherParty: this.otherParty(conversation, userId),
       page,
       limit,
       totalItems,
@@ -213,8 +271,36 @@ export class ConversationsService {
       nextCursor: hasMore ? (pageRows.at(-1)?.id ?? null) : null,
       hasMore,
       items: pageRows.reverse().map((row) => this.message(row, userId)),
-      metadata: this.metadata(booking),
+      activeBooking: bucket?.activeBooking ? this.bookingSummary(bucket.activeBooking) : null,
+      bookingHistory: (bucket?.bookingHistory ?? []).map((row) => this.bookingSummary(row)),
     };
+  }
+
+  async messagesWithUser(
+    user: User,
+    otherUserId: number,
+    query: ListMessagesQueryDto,
+  ): Promise<MessageListView> {
+    const pair = await this.resolveOtherUserRole(user, otherUserId);
+    const conversation = await this.prisma.conversation.findUnique({ where: { customerId_taskerId: pair } });
+    if (!conversation) {
+      const { page, limit } = normalizePagination(query.page, query.limit, 50);
+      const other = await this.prisma.user.findUniqueOrThrow({ where: { id: otherUserId }, select: PERSON_SELECT });
+      return {
+        conversationId: null,
+        otherParty: this.personSummary(other, user.id === pair.customerId ? 'tasker' : 'customer'),
+        page,
+        limit,
+        totalItems: 0,
+        totalPages: 0,
+        nextCursor: null,
+        hasMore: false,
+        items: [],
+        activeBooking: null,
+        bookingHistory: [],
+      };
+    }
+    return this.messagesByConversationId(user, conversation.id, query);
   }
 
   listCalls(
@@ -229,7 +315,13 @@ export class ConversationsService {
     return this.calls.get(user.id, bookingId, callId, user.role as UserRole);
   }
 
-  async send(user: User, bookingId: number, dto: SendMessageDto): Promise<ConversationMessageView> {
+  async sendToUser(user: User, otherUserId: number, dto: SendMessageDto): Promise<ConversationMessageView> {
+    const pair = await this.resolveOtherUserRole(user, otherUserId);
+    const conversation = await this.findOrCreateConversation(pair.customerId, pair.taskerId);
+    return this.sendMessage(user, conversation.id, dto);
+  }
+
+  async sendMessage(user: User, conversationId: string, dto: SendMessageDto): Promise<ConversationMessageView> {
     const body = dto.body?.trim() || null;
     const hasBody = Boolean(body);
     const attachmentRequests = dto.attachments ?? [];
@@ -237,26 +329,32 @@ export class ConversationsService {
       throw new BadRequestException('A message body or at least one attachment is required');
     }
 
-    const booking = await this.requireParticipantBooking(user, bookingId, false);
+    const conversation = await this.requireParticipantConversation(user, conversationId, false);
     if (dto.clientMessageId) {
       const existing = await this.prisma.taskMessage.findFirst({
-        where: { senderId: user.id, bookingId, clientMessageId: dto.clientMessageId },
+        where: { senderId: user.id, conversationId, clientMessageId: dto.clientMessageId },
       });
       if (existing) {
-        this.assertConversationRetryMatches(existing, bookingId, body, attachmentRequests);
+        this.assertConversationRetryMatches(existing, conversationId, body, attachmentRequests);
         return this.message(existing, user.id);
       }
     }
 
     const attachments = await this.uploads.verifyConversationAttachments(user, attachmentRequests);
-    const recipientId = booking.customerId === user.id ? booking.taskerId : booking.customerId;
-    const senderRole = booking.customerId === user.id ? 'customer' : 'tasker';
+    const recipientId = conversation.customerId === user.id ? conversation.taskerId : conversation.customerId;
+    const senderRole = conversation.customerId === user.id ? 'customer' : 'tasker';
 
     try {
       const created = await this.prisma.$transaction(async (transaction) => {
+        const activeBooking = await transaction.booking.findFirst({
+          where: { conversationId, status: { in: ACTIVE_BOOKING_STATUSES } },
+          orderBy: [{ bookingDate: 'desc' }, { id: 'desc' }],
+          select: { id: true },
+        });
         const message = await transaction.taskMessage.create({
           data: {
-            bookingId,
+            conversationId,
+            bookingId: activeBooking?.id ?? null,
             senderId: user.id,
             clientMessageId: dto.clientMessageId ?? null,
             body,
@@ -267,14 +365,13 @@ export class ConversationsService {
           },
         });
         await transaction.$executeRaw`
-          UPDATE "Bookings"
-          SET "conversationLastMessageAt" = CASE
-            WHEN "conversationLastMessageAt" IS NULL
-              OR "conversationLastMessageAt" < ${message.createdAt}
+          UPDATE "Conversations"
+          SET "lastMessageAt" = CASE
+            WHEN "lastMessageAt" IS NULL OR "lastMessageAt" < ${message.createdAt}
             THEN ${message.createdAt}
-            ELSE "conversationLastMessageAt"
+            ELSE "lastMessageAt"
           END
-          WHERE "id" = ${bookingId}
+          WHERE "id" = ${conversationId}
         `;
         await this.notifications.create(
           recipientId,
@@ -285,8 +382,8 @@ export class ConversationsService {
             body:
               body?.slice(0, 220) ||
               `${attachments.length} attachment${attachments.length === 1 ? '' : 's'} received.`,
-            entityType: 'booking',
-            entityId: String(bookingId),
+            entityType: 'conversation',
+            entityId: conversationId,
             metadata: {
               messageId: message.id,
               ...(dto.clientMessageId ? { clientMessageId: dto.clientMessageId } : {}),
@@ -301,12 +398,13 @@ export class ConversationsService {
           transaction,
         );
         await this.realtime.enqueueConversation(
-          bookingId,
+          conversationId,
           'conversation:message',
           {
             id: message.id,
             clientMessageId: message.clientMessageId,
-            bookingId: String(message.bookingId),
+            conversationId,
+            bookingId: message.bookingId !== null ? String(message.bookingId) : null,
             senderId: String(message.senderId),
             body: message.body ?? '',
             attachments: attachments as unknown as Prisma.InputJsonArray,
@@ -322,10 +420,10 @@ export class ConversationsService {
     } catch (error) {
       if (dto.clientMessageId && hasPrismaErrorCode(error, 'P2002')) {
         const existing = await this.prisma.taskMessage.findFirst({
-          where: { senderId: user.id, bookingId, clientMessageId: dto.clientMessageId },
+          where: { senderId: user.id, conversationId, clientMessageId: dto.clientMessageId },
         });
         if (existing) {
-          this.assertConversationRetryMatches(existing, bookingId, body, attachmentRequests);
+          this.assertConversationRetryMatches(existing, conversationId, body, attachmentRequests);
           return this.message(existing, user.id);
         }
       }
@@ -335,15 +433,15 @@ export class ConversationsService {
 
   async markRead(
     user: User,
-    bookingId: number,
+    conversationId: string,
     dto: MarkConversationReadDto,
   ): Promise<ConversationReadResultView> {
     const userId = user.id;
-    await this.requireParticipantBooking(user, bookingId, false);
+    await this.requireParticipantConversation(user, conversationId, false);
     return this.prisma.$transaction(async (transaction) => {
       const boundary = dto.throughMessageId
         ? await transaction.taskMessage.findFirst({
-            where: { id: dto.throughMessageId, bookingId },
+            where: { id: dto.throughMessageId, conversationId },
             select: { id: true, createdAt: true },
           })
         : null;
@@ -353,7 +451,7 @@ export class ConversationsService {
       const readAt = new Date();
       const result = await transaction.taskMessage.updateMany({
         where: {
-          bookingId,
+          conversationId,
           senderId: { not: userId },
           readAt: null,
           ...(boundary
@@ -369,10 +467,10 @@ export class ConversationsService {
       });
       if (result.count > 0) {
         await this.realtime.enqueueConversation(
-          bookingId,
+          conversationId,
           'conversation:read',
           {
-            bookingId: String(bookingId),
+            conversationId,
             readerId: String(userId),
             updated: result.count,
             readAt: readAt.toISOString(),
@@ -389,99 +487,167 @@ export class ConversationsService {
     });
   }
 
-  private async requireParticipantBooking(user: Pick<User, 'id' | 'role'>, bookingId: number, summary: boolean) {
+  private async requireParticipantConversation(
+    user: Pick<User, 'id' | 'role'>,
+    conversationId: string,
+    summary: boolean,
+  ) {
     const userId = user.id;
-    const booking = await this.prisma.booking.findFirst({
+    const conversation = await this.prisma.conversation.findFirst({
       where: {
-        id: bookingId,
-        ...this.participantBookingWhere(userId, user.role as UserRole),
+        id: conversationId,
+        ...this.participantConversationWhere(userId, user.role as UserRole),
       },
       include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            profilePicture: true,
-            phoneCountryCode: true,
-            phoneNumber: true,
-          },
-        },
-        tasker: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            profilePicture: true,
-            phoneCountryCode: true,
-            phoneNumber: true,
-          },
-        },
-        service: { select: { id: true, name: true, slug: true, icon: true } },
-        serviceOption: { select: { id: true, name: true, slug: true } },
+        customer: { select: PERSON_SELECT },
+        tasker: { select: PERSON_SELECT },
         messages: summary ? { orderBy: { createdAt: 'desc' }, take: 1 } : false,
         ...(summary
-          ? {
-              _count: {
-                select: {
-                  messages: { where: { senderId: { not: userId }, readAt: null } },
-                },
-              },
-            }
+          ? { _count: { select: { messages: { where: { senderId: { not: userId }, readAt: null } } } } }
           : {}),
       },
     });
-    if (!booking) throw new NotFoundException('Conversation not found');
-    return booking;
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    return conversation;
   }
 
-  private participantBookingWhere(userId: number, role: UserRole | string): Prisma.BookingWhereInput {
+  /** Resolves which side of the (customerId, taskerId) pair the caller and the target user are on.
+   * The caller's own active role decides their side; the target must hold the complementary role. */
+  private async resolveOtherUserRole(
+    user: Pick<User, 'id' | 'role'>,
+    otherUserId: number,
+  ): Promise<{ customerId: number; taskerId: number }> {
+    if (otherUserId === user.id) {
+      throw new BadRequestException('Cannot start a conversation with yourself');
+    }
+    const role = user.role as UserRole;
+    const requiredOtherRole =
+      role === UserRole.Customer ? UserRole.Tasker : role === UserRole.Tasker ? UserRole.Customer : null;
+    if (!requiredOtherRole) {
+      throw new ForbiddenException('Only customers and taskers can use conversations');
+    }
+    const other = await this.prisma.user.findFirst({
+      where: { id: otherUserId, deletedAt: null, roles: { has: requiredOtherRole }, accountStatus: 'active' },
+      select: { id: true },
+    });
+    if (!other) throw new NotFoundException('User not found');
+    return role === UserRole.Customer
+      ? { customerId: user.id, taskerId: otherUserId }
+      : { customerId: otherUserId, taskerId: user.id };
+  }
+
+  private async emptyConversationView(
+    user: Pick<User, 'id'>,
+    pair: { customerId: number; taskerId: number },
+    otherUserId: number,
+  ): Promise<ConversationView> {
+    const other = await this.prisma.user.findUniqueOrThrow({ where: { id: otherUserId }, select: PERSON_SELECT });
+    return {
+      id: null,
+      otherParty: this.personSummary(other, user.id === pair.customerId ? 'tasker' : 'customer'),
+      lastMessageAt: null,
+      lastMessage: null,
+      unreadCount: 0,
+      activeBooking: null,
+      bookingHistory: [],
+    };
+  }
+
+  private participantConversationWhere(userId: number, role: UserRole | string): Prisma.ConversationWhereInput {
     if (role === UserRole.Customer) return { customerId: userId };
     if (role === UserRole.Tasker) return { taskerId: userId };
-    return { id: -1 };
+    return { customerId: -1 };
   }
 
-  private otherParty(
-    booking: {
+  /** One query across every listed conversation, bucketed in-memory into the single most-recent
+   * active booking (if any) plus every other booking as history, most recent first. */
+  private async loadBookingBuckets(
+    conversationIds: string[],
+  ): Promise<Map<string, { activeBooking: BookingSummaryRow | null; bookingHistory: BookingSummaryRow[] }>> {
+    const map = new Map<string, { activeBooking: BookingSummaryRow | null; bookingHistory: BookingSummaryRow[] }>();
+    if (conversationIds.length === 0) return map;
+    const bookings = await this.prisma.booking.findMany({
+      where: { conversationId: { in: conversationIds } },
+      include: {
+        service: { select: { id: true, name: true, slug: true, icon: true } },
+        serviceOption: { select: { id: true, name: true, slug: true } },
+        rescheduleProposals: {
+          where: { status: 'pending' },
+          take: 1,
+          select: { id: true, proposedByRole: true, proposedDate: true, proposedTime: true, note: true, createdAt: true },
+        },
+      },
+      orderBy: [{ bookingDate: 'desc' }, { id: 'desc' }],
+    });
+    for (const booking of bookings) {
+      const bucket = map.get(booking.conversationId) ?? { activeBooking: null, bookingHistory: [] };
+      if (!bucket.activeBooking && ACTIVE_BOOKING_STATUSES.includes(booking.status)) {
+        bucket.activeBooking = booking;
+      } else {
+        bucket.bookingHistory.push(booking);
+      }
+      map.set(booking.conversationId, bucket);
+    }
+    return map;
+  }
+
+  private conversationView(
+    conversation: {
+      id: string;
       customerId: number;
       taskerId: number;
-      customer: {
-        id: number;
-        firstName: string | null;
-        lastName: string | null;
-        profilePicture: string | null;
-        phoneCountryCode: string | null;
-        phoneNumber: string | null;
-      };
-      tasker: {
-        id: number;
-        firstName: string | null;
-        lastName: string | null;
-        profilePicture: string | null;
-        phoneCountryCode: string | null;
-        phoneNumber: string | null;
-      };
+      customer: PersonRow;
+      tasker: PersonRow;
+      lastMessageAt: Date | null;
+      messages: {
+        id: string;
+        conversationId: string;
+        bookingId: number | null;
+        senderId: number;
+        clientMessageId: string | null;
+        body: string | null;
+        attachments: unknown;
+        readAt: Date | null;
+        createdAt: Date;
+      }[];
+      _count: { messages: number };
     },
     userId: number,
-  ): PersonSummaryView {
-    const isCustomer = booking.customerId === userId;
-    const person = isCustomer ? booking.tasker : booking.customer;
+    buckets: { activeBooking: BookingSummaryRow | null; bookingHistory: BookingSummaryRow[] } | undefined,
+  ): ConversationView {
+    return {
+      id: conversation.id,
+      otherParty: this.otherParty(conversation, userId),
+      lastMessageAt:
+        conversation.lastMessageAt?.toISOString() ?? conversation.messages[0]?.createdAt.toISOString() ?? null,
+      lastMessage: conversation.messages[0] ? this.message(conversation.messages[0], userId) : null,
+      unreadCount: conversation._count.messages,
+      activeBooking: buckets?.activeBooking ? this.bookingSummary(buckets.activeBooking) : null,
+      bookingHistory: (buckets?.bookingHistory ?? []).map((row) => this.bookingSummary(row)),
+    };
+  }
+
+  private personSummary(person: PersonRow, role: 'customer' | 'tasker'): PersonSummaryView {
     return {
       id: String(person.id),
       name: `${person.firstName ?? ''} ${person.lastName ?? ''}`.trim(),
       avatar: person.profilePicture ?? '',
-      role: isCustomer ? 'tasker' : 'customer',
+      role,
       phoneCountryCode: person.phoneCountryCode ?? '',
       phoneNumber: person.phoneNumber ?? '',
     };
   }
 
-  private service(service: {
-    id: number;
-    name: string | null;
-    slug: string | null;
-    icon: string | null;
-  }) {
+  private otherParty(
+    entity: { customerId: number; taskerId: number; customer: PersonRow; tasker: PersonRow },
+    userId: number,
+  ): PersonSummaryView {
+    const isCustomer = entity.customerId === userId;
+    const person = isCustomer ? entity.tasker : entity.customer;
+    return this.personSummary(person, isCustomer ? 'tasker' : 'customer');
+  }
+
+  private service(service: { id: number; name: string | null; slug: string | null; icon: string | null }) {
     return {
       id: String(service.id),
       slug: service.slug ?? '',
@@ -490,77 +656,60 @@ export class ConversationsService {
     };
   }
 
-  /** Every conversation is booking-scoped today, so metadata.type is always 'booking'; see ConversationMetadataView. */
-  private metadata(booking: {
-    id: number;
-    status: string;
-    service: { id: number; name: string | null; slug: string | null; icon: string | null };
-    serviceOption: { id: number; name: string; slug: string } | null;
-    bookingDate: Date;
-    startTime: string;
-    endTime: string;
-    estimatedDurationMinutes: number;
-    venueAddress: string;
-    apartmentSuite: string | null;
-    locationLabel: string;
-    locationLat: Prisma.Decimal;
-    locationLng: Prisma.Decimal;
-    locationCity: string | null;
-    locationArea: string | null;
-    hourlyRate: Prisma.Decimal;
-    paymentCurrency: string;
-    totalChargedAmount: Prisma.Decimal | null;
-    paymentStatus: string;
-    createdAt: Date;
-    confirmedAt: Date | null;
-    cancelledAt: Date | null;
-  }): ConversationMetadataView {
+  private bookingSummary(booking: BookingSummaryRow): BookingSummaryView {
     return {
-      type: 'booking',
-      booking: {
-        id: String(booking.id),
-        status: booking.status,
-        service: this.service(booking.service),
-        serviceOption: booking.serviceOption
-          ? {
-              id: String(booking.serviceOption.id),
-              name: booking.serviceOption.name,
-              slug: booking.serviceOption.slug,
-            }
-          : null,
-        schedule: {
-          date: dateOnlyFromDate(booking.bookingDate),
-          startTime: booking.startTime,
-          endTime: booking.endTime,
-          estimatedDurationMinutes: booking.estimatedDurationMinutes,
-        },
-        location: {
-          label: booking.locationLabel,
-          lat: Number(booking.locationLat),
-          lng: Number(booking.locationLng),
-          city: booking.locationCity,
-          area: booking.locationArea,
-          venueAddress: booking.venueAddress,
-          apartmentSuite: booking.apartmentSuite,
-        },
-        payment: {
-          hourlyRate: Number(booking.hourlyRate),
-          currency: booking.paymentCurrency,
-          totalChargedAmount:
-            booking.totalChargedAmount === null ? null : Number(booking.totalChargedAmount),
-          paymentStatus: booking.paymentStatus,
-        },
-        createdAt: booking.createdAt.toISOString(),
-        confirmedAt: booking.confirmedAt?.toISOString() ?? null,
-        cancelledAt: booking.cancelledAt?.toISOString() ?? null,
+      id: String(booking.id),
+      status: booking.status,
+      service: this.service(booking.service),
+      serviceOption: booking.serviceOption
+        ? { id: String(booking.serviceOption.id), name: booking.serviceOption.name, slug: booking.serviceOption.slug }
+        : null,
+      schedule: {
+        date: dateOnlyFromDate(booking.bookingDate),
+        startTime: booking.startTime,
+        endTime: booking.endTime,
+        estimatedDurationMinutes: booking.estimatedDurationMinutes,
       },
+      location: {
+        label: booking.locationLabel,
+        lat: Number(booking.locationLat),
+        lng: Number(booking.locationLng),
+        city: booking.locationCity,
+        area: booking.locationArea,
+        venueAddress: booking.venueAddress,
+        apartmentSuite: booking.apartmentSuite,
+      },
+      payment: {
+        hourlyRate: Number(booking.hourlyRate),
+        currency: booking.paymentCurrency,
+        totalChargedAmount:
+          booking.totalChargedAmount === null ? null : Number(booking.totalChargedAmount),
+        paymentStatus: booking.paymentStatus,
+      },
+      createdAt: booking.createdAt.toISOString(),
+      confirmedAt: booking.confirmedAt?.toISOString() ?? null,
+      cancelledAt: booking.cancelledAt?.toISOString() ?? null,
+      rescheduledAt: booking.rescheduledAt?.toISOString() ?? null,
+      cancelledByRole: booking.status === 'cancelled' ? (booking.cancelledByRole as 'customer' | 'tasker' | 'system' | null) : null,
+      cancellationReason: booking.status === 'cancelled' ? booking.cancellationReason : null,
+      pendingRescheduleProposal: booking.rescheduleProposals[0]
+        ? {
+            id: booking.rescheduleProposals[0].id,
+            proposedByRole: booking.rescheduleProposals[0].proposedByRole,
+            proposedDate: dateOnlyFromDate(booking.rescheduleProposals[0].proposedDate),
+            proposedTime: booking.rescheduleProposals[0].proposedTime,
+            note: booking.rescheduleProposals[0].note,
+            createdAt: booking.rescheduleProposals[0].createdAt.toISOString(),
+          }
+        : null,
     };
   }
 
   private message(
     row: {
       id: string;
-      bookingId: number;
+      conversationId: string;
+      bookingId: number | null;
       senderId: number;
       clientMessageId: string | null;
       body: string | null;
@@ -573,7 +722,8 @@ export class ConversationsService {
     return {
       id: row.id,
       clientMessageId: row.clientMessageId,
-      bookingId: String(row.bookingId),
+      conversationId: row.conversationId,
+      bookingId: row.bookingId !== null ? String(row.bookingId) : null,
       senderId: String(row.senderId),
       isMine: row.senderId === viewerId,
       body: row.body ?? '',
@@ -585,25 +735,25 @@ export class ConversationsService {
 
   private assertConversationRetryMatches(
     existing: {
-      bookingId: number;
+      conversationId: string;
       body: string | null;
       attachments: unknown;
     },
-    bookingId: number,
+    conversationId: string,
     body: string | null,
     attachments: Array<{ publicId: string }>,
   ): void {
     const existingIds = this.attachmentViews(existing.attachments).map((item) => item.publicId);
     const requestedIds = attachments.map((item) => item.publicId);
     if (
-      existing.bookingId !== bookingId ||
+      existing.conversationId !== conversationId ||
       existing.body !== body ||
       existingIds.length !== requestedIds.length ||
       existingIds.some((id, index) => id !== requestedIds[index])
     ) {
       throw new ConflictException({
         code: 'CLIENT_MESSAGE_ID_REUSED',
-        message: 'clientMessageId was already used for a different booking message',
+        message: 'clientMessageId was already used for a different conversation message',
       });
     }
   }
