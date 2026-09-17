@@ -14,6 +14,7 @@ import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { WALLET_ENTRY_KIND } from '../tasker-dashboard/tasker-dashboard.constants';
 import { TaskerFinanceService } from '../tasker-finance/tasker-finance.service';
@@ -73,9 +74,31 @@ export class PaymentsService {
     private readonly taskerFinance: TaskerFinanceService,
     private readonly referrals: ReferralsService,
     private readonly disputes: DisputeLifecycleService,
+    private readonly realtime: RealtimeOutboxService,
   ) {
     this.minimumBillableMinutes = config.get<number>('payments.minimumBillableMinutes', 120);
     this.minimumWalletTopup = config.get<number>('payments.minimumWalletTopup', 5);
+  }
+
+  /**
+   * Payment status changes never alter booking.status (finalization only ever
+   * runs once a booking is already 'completed'), so callers pass the booking's
+   * current lifecycle status straight through. Mirrors BookingsService's
+   * enqueueBookingUpdate so the frontend handles both with the same listener.
+   */
+  private enqueuePaymentUpdate(
+    bookingId: number,
+    status: string,
+    reason: string,
+    transaction?: Prisma.TransactionClient,
+    extra: Record<string, Prisma.InputJsonValue> = {},
+  ) {
+    return this.realtime.enqueueBooking(
+      bookingId,
+      'booking:updated',
+      { bookingId: String(bookingId), status, reason, ...extra },
+      transaction,
+    );
   }
 
   isStripeEnabled(): boolean {
@@ -561,6 +584,9 @@ export class PaymentsService {
         where: { id: bookingId },
         data: { paymentStatus: PAYMENT_STATUS.OnHoldDispute },
       });
+      await this.enqueuePaymentUpdate(bookingId, booking.status, 'payment_on_hold_dispute', undefined, {
+        paymentStatus: PAYMENT_STATUS.OnHoldDispute,
+      });
       return { bookingId, status: PAYMENT_STATUS.OnHoldDispute };
     }
     if (!booking.workSession?.stoppedAt) {
@@ -592,6 +618,9 @@ export class PaymentsService {
         body: 'Review the extra task time before Latache attempts the final payment.',
         entityType: 'booking',
         entityId: String(bookingId),
+      });
+      await this.enqueuePaymentUpdate(bookingId, booking.status, 'duration_review_required', undefined, {
+        paymentStatus: PAYMENT_STATUS.ReviewRequiredDurationExceeded,
       });
       return {
         bookingId,
@@ -657,6 +686,9 @@ export class PaymentsService {
           paymentFailureReason: null,
         },
       });
+      await this.enqueuePaymentUpdate(bookingId, booking.status, 'cash_confirmation_required', undefined, {
+        paymentStatus: PAYMENT_STATUS.CashConfirmationRequired,
+      });
       return { bookingId, status: PAYMENT_STATUS.CashConfirmationRequired };
     }
 
@@ -706,6 +738,9 @@ export class PaymentsService {
           stripePaymentIntentId: null,
           paymentFailureReason: null,
         },
+      });
+      await this.enqueuePaymentUpdate(bookingId, booking.status, 'payment_retry_requested', undefined, {
+        paymentStatus: PAYMENT_STATUS.Ready,
       });
     } else if (booking.stripePaymentIntentId) {
       const intent = await this.stripeProvider
@@ -2054,6 +2089,9 @@ export class PaymentsService {
         },
         transaction,
       );
+      await this.enqueuePaymentUpdate(bookingId, booking.status, 'stripe_payment_failed', transaction, {
+        paymentStatus: PAYMENT_STATUS.Failed,
+      });
       return;
     }
 
@@ -2097,6 +2135,9 @@ export class PaymentsService {
         transaction,
       );
     }
+    await this.enqueuePaymentUpdate(bookingId, booking.status, 'stripe_payment_succeeded', transaction, {
+      paymentStatus: PAYMENT_STATUS.Paid,
+    });
   }
 
   private async createStripeBookingCharge(
@@ -2112,6 +2153,9 @@ export class PaymentsService {
       await this.prisma.booking.update({
         where: { id: bookingId },
         data: { paymentStatus: PAYMENT_STATUS.PaymentMethodRequired },
+      });
+      await this.enqueuePaymentUpdate(bookingId, booking.status, 'payment_method_required', undefined, {
+        paymentStatus: PAYMENT_STATUS.PaymentMethodRequired,
       });
       return { bookingId, status: PAYMENT_STATUS.PaymentMethodRequired };
     }
@@ -2217,6 +2261,10 @@ export class PaymentsService {
         });
         if (intent.status === 'succeeded') {
           await this.handleBookingIntent(transaction, intent, 'payment_intent.succeeded');
+        } else {
+          await this.enqueuePaymentUpdate(bookingId, booking.status, 'stripe_charge_created', transaction, {
+            paymentStatus: this.mapStripeIntentStatus(intent.status),
+          });
         }
       });
 
@@ -2241,6 +2289,9 @@ export class PaymentsService {
               paymentFailureReason:
                 intent.last_payment_error?.message ?? 'Stripe requires payment action',
             },
+          });
+          await this.enqueuePaymentUpdate(bookingId, booking.status, 'stripe_charge_requires_action', transaction, {
+            paymentStatus: this.mapStripeIntentStatus(intent.status),
           });
           await transaction.paymentTransaction.upsert({
             where: { idempotencyKey },
@@ -2292,6 +2343,9 @@ export class PaymentsService {
         where: { id: bookingId },
         data: { paymentStatus: PAYMENT_STATUS.PaymentMethodRequired },
       });
+      await this.enqueuePaymentUpdate(bookingId, booking.status, 'payment_method_required', undefined, {
+        paymentStatus: PAYMENT_STATUS.PaymentMethodRequired,
+      });
       return { bookingId, status: PAYMENT_STATUS.PaymentMethodRequired };
     }
     await this.assertPaymentMethodOwnedByCustomer(booking.customerId, booking.stripePaymentMethodId);
@@ -2317,6 +2371,10 @@ export class PaymentsService {
         });
         if (intent.status === 'succeeded') {
           await this.handleBookingIntent(transaction, intent, 'payment_intent.succeeded');
+        } else {
+          await this.enqueuePaymentUpdate(bookingId, booking.status, 'stripe_charge_reconfirmed', transaction, {
+            paymentStatus: this.mapStripeIntentStatus(intent.status),
+          });
         }
       });
       return {
@@ -2336,6 +2394,9 @@ export class PaymentsService {
               paymentStatus: this.mapStripeIntentStatus(intent.status),
               paymentFailureReason: failureReason,
             },
+          });
+          await this.enqueuePaymentUpdate(bookingId, booking.status, 'stripe_charge_requires_action', transaction, {
+            paymentStatus: this.mapStripeIntentStatus(intent.status),
           });
           await transaction.paymentTransaction.update({
             where: { idempotencyKey: `booking-charge:${bookingId}:v1` },
@@ -2384,6 +2445,9 @@ export class PaymentsService {
             paymentStatus: PAYMENT_STATUS.PaymentMethodRequired,
             paymentFailureReason: 'Customer wallet balance is insufficient',
           },
+        });
+        await this.enqueuePaymentUpdate(bookingId, booking.status, 'wallet_balance_insufficient', transaction, {
+          paymentStatus: PAYMENT_STATUS.PaymentMethodRequired,
         });
         return { bookingId, status: PAYMENT_STATUS.PaymentMethodRequired };
       }
@@ -2456,6 +2520,9 @@ export class PaymentsService {
         },
         transaction,
       );
+      await this.enqueuePaymentUpdate(bookingId, booking.status, 'wallet_payment_succeeded', transaction, {
+        paymentStatus: PAYMENT_STATUS.Paid,
+      });
       return { bookingId, status: PAYMENT_STATUS.Paid };
     });
   }

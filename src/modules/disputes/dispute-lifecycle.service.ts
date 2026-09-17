@@ -5,6 +5,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AdminAuditService } from '../admin-audit/admin-audit.service';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import type { DisputePolicy } from '../platform-settings/platform-settings.types';
 import { UploadsService } from '../uploads/uploads.service';
@@ -40,6 +41,7 @@ export class DisputeLifecycleService {
     private readonly notifications: NotificationsService,
     private readonly mail: MailService,
     private readonly audit: AdminAuditService,
+    private readonly realtime: RealtimeOutboxService,
   ) {}
 
   policy(transaction?: Prisma.TransactionClient): Promise<DisputePolicy> {
@@ -209,6 +211,27 @@ export class DisputeLifecycleService {
       },
       transaction,
     );
+    // Single choke point for every dispute notification (evidence requests/reminders,
+    // comments, settlement proposals, SLA escalations, resolution, ...), including the
+    // ones the maintenance worker fires with no booking-service caller to emit for it.
+    // Harmless no-op for admin recipients, who never join a booking room.
+    const complaint = await transaction.taskComplaint.findUnique({
+      where: { id: complaintId },
+      select: { bookingId: true, booking: { select: { status: true } } },
+    });
+    if (complaint) {
+      await this.realtime.enqueueBooking(
+        complaint.bookingId,
+        'booking:updated',
+        {
+          bookingId: String(complaint.bookingId),
+          status: complaint.booking.status,
+          reason: options.eventType,
+          disputeId: complaintId,
+        },
+        transaction,
+      );
+    }
     const policy = await this.policy(transaction);
     if (policy.emailNotificationsEnabled) {
       await transaction.disputeDelivery.upsert({

@@ -8,6 +8,7 @@ import { normalizePagination } from '../../common/utils/pagination.util';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { WALLET_ENTRY_KIND } from '../tasker-dashboard/tasker-dashboard.constants';
 import {
@@ -34,6 +35,7 @@ export class TaskerFinanceService {
     private readonly prisma: PrismaService,
     private readonly settings: PlatformSettingsService,
     private readonly notifications: NotificationsService,
+    private readonly realtime: RealtimeOutboxService,
   ) {}
 
   async createPendingEarning(input: CreatePendingEarningInput): Promise<void> {
@@ -322,6 +324,29 @@ export class TaskerFinanceService {
             outstandingPlatformPayable: decimal(newOutstanding),
             disputeClearsAt: disputeClearsAt.toISOString(),
           },
+        },
+        transaction,
+      );
+      await this.notifications.create(
+        booking.customerId,
+        {
+          category: 'payments',
+          type: 'booking_cash_payment_confirmed',
+          title: 'Cash payment confirmed',
+          body: `The Tasker confirmed collecting ${booking.paymentCurrency} ${expected.toFixed(2)} cash for your completed task.`,
+          entityType: 'booking',
+          entityId: String(booking.id),
+        },
+        transaction,
+      );
+      await this.realtime.enqueueBooking(
+        booking.id,
+        'booking:updated',
+        {
+          bookingId: String(booking.id),
+          status: booking.status,
+          reason: 'cash_payment_confirmed',
+          paymentStatus: 'cash_confirmed',
         },
         transaction,
       );

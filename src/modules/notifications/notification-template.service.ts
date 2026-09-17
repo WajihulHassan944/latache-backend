@@ -157,6 +157,50 @@ const ARABIC_TEMPLATES: Record<string, LocalizedTemplate> = {
   stripe_chargeback_opened: { title: 'نزاع دفع من Stripe', body: 'أبلغ Stripe عن اعتراض على دفعة مرتبطة بالحجز.' },
   stripe_chargeback_updated: { title: 'تحديث اعتراض Stripe', body: 'تم تحديث حالة اعتراض Stripe المرتبط بالحجز.' },
   stripe_chargeback_closed: { title: 'أغلق اعتراض Stripe', body: 'أبلغ Stripe عن إغلاق اعتراض الدفع المرتبط بالحجز.' },
+  booking_expired_no_response: {
+    title: 'انتهت صلاحية طلب الحجز',
+    body: 'لم يتم الرد على طلب الحجز خلال المهلة المحددة، فتم إلغاؤه تلقائياً.',
+  },
+  booking_reassigned: {
+    title: 'تم إعادة إسناد الحجز',
+    body: 'أعاد فريق Latache إسناد هذا الحجز إلى منفذ آخر.',
+  },
+  front_door_proof_submitted: {
+    title: 'تم إرسال إثبات الوصول',
+    body: 'أرفق المنفذ صورة إثبات الوصول عند الباب. يمكنك الآن إنشاء رمز البدء.',
+  },
+  work_start_code_ready: {
+    title: 'أنشأ العميل رمز بدء العمل',
+    body: 'اطلب من العميل الرمز المكون من ستة أرقام لبدء مؤقت المهمة.',
+  },
+  work_completion_proof_submitted: {
+    title: 'تم إرسال إثبات إتمام العمل',
+    body: 'أرفق المنفذ صورة إتمام العمل. توقف المؤقت القابل للفوترة؛ أنشئ رمز الإكمال بعد التحقق من العمل.',
+  },
+  work_completion_code_ready: {
+    title: 'أنشأ العميل رمز الإكمال',
+    body: 'اطلب من العميل رمز الإكمال المكون من ستة أرقام لإنهاء المهمة.',
+  },
+  task_completion_verified: {
+    title: 'تم التحقق من الإكمال',
+    body: 'تم التحقق من رمز إكمال العميل. يمكن الآن بدء معالجة الدفع النهائي.',
+  },
+  duration_review_approved: {
+    title: 'تمت الموافقة على تمديد المدة',
+    body: 'وافق العميل على الوقت الإضافي وأعيدت محاولة الدفع النهائي.',
+  },
+  reschedule_proposal_created: {
+    title: 'اقتراح جديد لتغيير الموعد',
+    body: 'اقترح المنفذ نقل هذا الحجز إلى موعد جديد. راجع الاقتراح ورد عليه.',
+  },
+  reschedule_proposal_accepted: {
+    title: 'تم قبول اقتراح تغيير الموعد',
+    body: 'وافق العميل على الموعد الذي اقترحته. يرجى تأكيد الحجز.',
+  },
+  reschedule_proposal_rejected: {
+    title: 'تم رفض اقتراح تغيير الموعد',
+    body: 'رفض العميل اقتراحك لتغيير الموعد.',
+  },
 
 };
 
@@ -305,6 +349,50 @@ const DARIJA_TEMPLATES: Record<string, LocalizedTemplate> = {
   stripe_chargeback_opened: { title: 'اعتراض Stripe على الخلصة', body: 'Stripe بلغ على اعتراض فخلصة مرتبطة بالحجز.' },
   stripe_chargeback_updated: { title: 'تحديث اعتراض Stripe', body: 'تبدلات حالة اعتراض Stripe المرتبط بالحجز.' },
   stripe_chargeback_closed: { title: 'تسد اعتراض Stripe', body: 'Stripe بلغ باللي تسد اعتراض الخلصة المرتبط بالحجز.' },
+  booking_expired_no_response: {
+    title: 'سالات صلاحية طلب الحجز',
+    body: 'ماكانش رد على طلب الحجز فالمهلة المحددة، فتلغى بصفة أوتوماتيكية.',
+  },
+  booking_reassigned: {
+    title: 'تبدل المهني ديال الحجز',
+    body: 'فريق Latache عاود سند هاد الحجز لمهني آخر.',
+  },
+  front_door_proof_submitted: {
+    title: 'تصيفط إثبات الوصول',
+    body: 'المهني زاد تصويرة إثبات الوصول حدا الباب. دابا تقدر دير كود البداية.',
+  },
+  work_start_code_ready: {
+    title: 'الزبون دار كود بداية الخدمة',
+    body: 'طلب من الزبون الكود ديال الستة أرقام باش تبدا الخدمة.',
+  },
+  work_completion_proof_submitted: {
+    title: 'تصيفط إثبات إكمال الخدمة',
+    body: 'المهني زاد تصويرة إكمال الخدمة. توقف المؤقت ديال الخلصة؛ دير كود الإكمال من بعد ما تتأكد من الخدمة.',
+  },
+  work_completion_code_ready: {
+    title: 'الزبون دار كود الإكمال',
+    body: 'طلب من الزبون الكود ديال الستة أرقام باش تسالي الخدمة.',
+  },
+  task_completion_verified: {
+    title: 'تأكد الإكمال',
+    body: 'تأكد الكود ديال الزبون ديال الإكمال. دابا يقدر يبدا معالجة الخلصة النهائية.',
+  },
+  duration_review_approved: {
+    title: 'تقبل تمديد المدة',
+    body: 'الزبون وافق على الوقت الزايد وعاودات محاولة الخلصة النهائية.',
+  },
+  reschedule_proposal_created: {
+    title: 'اقتراح جديد باش يتبدل الموعد',
+    body: 'المهني اقترح ينقل هاد الحجز لموعد جديد. راجع الاقتراح ورد عليه.',
+  },
+  reschedule_proposal_accepted: {
+    title: 'تقبل اقتراح تبديل الموعد',
+    body: 'الزبون وافق على الموعد اللي اقترحتي. عافاك أكد الحجز.',
+  },
+  reschedule_proposal_rejected: {
+    title: 'رفض الزبون اقتراح الموعد',
+    body: 'الزبون رفض الاقتراح ديالك باش يتبدل الموعد.',
+  },
 
 };
 

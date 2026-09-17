@@ -5,6 +5,7 @@ import { PlatformSettingsModule } from '../platform-settings/platform-settings.m
 import { TaskerFinanceModule } from '../tasker-finance/tasker-finance.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { DisputesModule } from '../disputes/disputes.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { StripeWebhooksController } from './stripe-webhooks.controller';
@@ -18,6 +19,7 @@ import { StripeService } from './stripe.service';
     TaskerFinanceModule,
     ReferralsModule,
     DisputesModule,
+    RealtimeModule,
   ],
   controllers: [PaymentsController, StripeWebhooksController],
   providers: [StripeService, PaymentsService],

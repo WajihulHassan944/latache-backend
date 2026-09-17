@@ -31,6 +31,7 @@ import { AdminAuditService } from '../admin-audit/admin-audit.service';
 import { DisputeLifecycleService } from '../disputes/dispute-lifecycle.service';
 import { ReferralsService } from '../referrals/services/referrals.service';
 import { AppCacheService, CacheNamespace } from '../../infrastructure/redis/app-cache.service';
+import { ConversationsService } from '../conversations/conversations.service';
 import type { AddComplaintEvidenceDto, FileComplaintDto } from './dto/file-complaint.dto';
 import type {
   ListParticipantDisputesQueryDto,
@@ -158,6 +159,7 @@ export class BookingsService {
     private readonly disputes: DisputeLifecycleService,
     private readonly referrals: ReferralsService,
     private readonly cache: AppCacheService,
+    private readonly conversations: ConversationsService,
   ) {
     this.minimumBillableMinutes = config.get<number>('payments.minimumBillableMinutes', 120);
   }
@@ -257,10 +259,16 @@ export class BookingsService {
         const start = parseTimeToMinutes(context.slot.startTime) ?? 0;
         const end = parseTimeToMinutes(context.slot.endTime) ?? start;
         const estimatedDurationMinutes = Math.max(1, end - start);
+        const conversation = await this.conversations.findOrCreateConversation(
+          customerId,
+          context.tasker.id,
+          transaction,
+        );
         const created = await transaction.booking.create({
           data: {
             customerId,
             taskerId: context.tasker.id,
+            conversationId: conversation.id,
             serviceId: context.service.id,
             serviceOptionId: context.option?.id ?? null,
             availabilityId: context.slot.id,
@@ -615,6 +623,9 @@ export class BookingsService {
           },
           transaction,
         );
+        await this.enqueueBookingUpdate(bookingId, booking.status, 'reschedule_proposal_rejected', transaction, {
+          proposalId: rejected.id,
+        });
         return rejected;
       }
 
@@ -848,7 +859,7 @@ export class BookingsService {
    * status so a Tasker confirming at the same moment always wins the race.
    */
   async expireDuePendingBookings(): Promise<{ examined: number; expired: number }> {
-    const pendingMinutes = this.config.get<number>('bookingExpiration.pendingMinutes', 60);
+    const { pendingMinutes } = await this.platformSettings.bookingPendingExpiryPolicy();
     const batchSize = this.config.get<number>('bookingExpiration.batchSize', 100);
     const cutoff = new Date(Date.now() - pendingMinutes * 60_000);
     const candidates = await this.prisma.booking.findMany({

@@ -3,6 +3,7 @@ import { AdminAuditModule } from '../admin-audit/admin-audit.module';
 import { MailModule } from '../mail/mail.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PlatformSettingsModule } from '../platform-settings/platform-settings.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { UploadsModule } from '../uploads/uploads.module';
 import { DisputeLifecycleService } from './dispute-lifecycle.service';
 
@@ -12,6 +13,7 @@ import { DisputeLifecycleService } from './dispute-lifecycle.service';
     MailModule,
     NotificationsModule,
     PlatformSettingsModule,
+    RealtimeModule,
     UploadsModule,
   ],
   providers: [DisputeLifecycleService],
