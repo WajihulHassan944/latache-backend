@@ -48,7 +48,7 @@ export class NotificationsController {
     @CurrentUser() user: User,
     @Body() dto: RegisterFcmTokenDto,
   ): Promise<{ registered: true }> {
-    return this.fcm.registerToken(user.id, dto);
+    return this.fcm.registerToken(user.id, user.role, dto);
   }
 
   @Delete('push-tokens')

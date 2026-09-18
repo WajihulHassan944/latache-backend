@@ -44,6 +44,7 @@ export class ReviewsService {
         ? { revieweeId: userId, revieweeRole: role }
         : { reviewerId: userId, reviewerRole: role }),
       ...(query.rating ? { rating: query.rating } : {}),
+      ...(query.bookingId ? { bookingId: query.bookingId } : {}),
     };
     const [rows, totalItems, aggregate] = await Promise.all([
       this.prisma.review.findMany({

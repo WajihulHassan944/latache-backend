@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { FcmModule } from '../fcm/fcm.module';
 import { RealtimeCallsService } from './realtime-calls.service';
 import { RealtimeController } from './realtime.controller';
 import { RealtimeDispatcherService } from './realtime-dispatcher.service';
@@ -8,7 +9,7 @@ import { RealtimeOutboxService } from './realtime-outbox.service';
 import { WebRtcConfigService } from './webrtc-config.service';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, FcmModule],
   controllers: [RealtimeController],
   providers: [
     RealtimeGateway,

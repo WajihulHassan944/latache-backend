@@ -19,6 +19,15 @@ export class ListReviewsQueryDto {
   @Max(5)
   rating?: number;
 
+  @ApiPropertyOptional({
+    description: 'Filter to the review for one specific booking, instead of paging through every review.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  bookingId?: number;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)

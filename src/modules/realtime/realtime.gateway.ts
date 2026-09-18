@@ -1,4 +1,4 @@
-import { HttpException, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { HttpException, Logger, type OnModuleDestroy, type OnModuleInit, UseFilters } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -20,6 +20,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuthSessionsRepository } from '../auth/repositories/auth-sessions.repository';
 import { AuthRoleService } from '../auth/services/auth-role.service';
 import { UsersService } from '../users/users.service';
+import { RealtimeAckExceptionFilter } from './realtime-ack.filter';
 import { RealtimeCallsService } from './realtime-calls.service';
 import { REALTIME_NAMESPACE, realtimeRoom } from './realtime.constants';
 import type {
@@ -51,6 +52,7 @@ interface SignalRateBucket {
   namespace: REALTIME_NAMESPACE,
   transports: ['websocket'],
 })
+@UseFilters(RealtimeAckExceptionFilter)
 export class RealtimeGateway
   implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
 {
@@ -368,9 +370,8 @@ export class RealtimeGateway
     @ConnectedSocket() client: LatacheSocket,
     @MessageBody() payload: CallActionPayload,
   ): Promise<ConversationCallView> {
-    return this.callOperation(client, 'call:accept', () =>
-      this.calls.accept(client.data, this.normalizeCallAction(payload)),
-    );
+    const normalized = this.normalizeCallAction(payload);
+    return this.callOperation(client, 'call:accept', () => this.calls.accept(client.data, normalized), normalized.callId);
   }
 
   @SubscribeMessage('call:reject')
@@ -378,9 +379,8 @@ export class RealtimeGateway
     @ConnectedSocket() client: LatacheSocket,
     @MessageBody() payload: CallActionPayload,
   ): Promise<ConversationCallView> {
-    return this.callOperation(client, 'call:reject', () =>
-      this.calls.reject(client.data, this.normalizeCallAction(payload)),
-    );
+    const normalized = this.normalizeCallAction(payload);
+    return this.callOperation(client, 'call:reject', () => this.calls.reject(client.data, normalized), normalized.callId);
   }
 
   @SubscribeMessage('call:cancel')
@@ -388,9 +388,8 @@ export class RealtimeGateway
     @ConnectedSocket() client: LatacheSocket,
     @MessageBody() payload: CallActionPayload,
   ): Promise<ConversationCallView> {
-    return this.callOperation(client, 'call:cancel', () =>
-      this.calls.cancel(client.data, this.normalizeCallAction(payload)),
-    );
+    const normalized = this.normalizeCallAction(payload);
+    return this.callOperation(client, 'call:cancel', () => this.calls.cancel(client.data, normalized), normalized.callId);
   }
 
   @SubscribeMessage('call:end')
@@ -398,9 +397,8 @@ export class RealtimeGateway
     @ConnectedSocket() client: LatacheSocket,
     @MessageBody() payload: CallActionPayload,
   ): Promise<ConversationCallView> {
-    return this.callOperation(client, 'call:end', () =>
-      this.calls.end(client.data, this.normalizeCallAction(payload)),
-    );
+    const normalized = this.normalizeCallAction(payload);
+    return this.callOperation(client, 'call:end', () => this.calls.end(client.data, normalized), normalized.callId);
   }
 
   @SubscribeMessage('call:offer')
@@ -410,8 +408,11 @@ export class RealtimeGateway
   ): Promise<{ forwarded: true; callId: string }> {
     this.assertCallSignalRate(client);
     const normalized = this.normalizeSdp(payload, 'offer');
-    const target = await this.callOperation(client, 'call:signal', () =>
-      this.calls.signalTarget(client.data, normalized.callId),
+    const target = await this.callOperation(
+      client,
+      'call:signal',
+      () => this.calls.signalTarget(client.data, normalized.callId),
+      normalized.callId,
     );
     this.server.to(realtimeRoom.userRole(target.targetUserId, target.targetRole)).emit('call:offer', {
       callId: normalized.callId,
@@ -430,8 +431,11 @@ export class RealtimeGateway
   ): Promise<{ forwarded: true; callId: string }> {
     this.assertCallSignalRate(client);
     const normalized = this.normalizeSdp(payload, 'answer');
-    const target = await this.callOperation(client, 'call:signal', () =>
-      this.calls.signalTarget(client.data, normalized.callId),
+    const target = await this.callOperation(
+      client,
+      'call:signal',
+      () => this.calls.signalTarget(client.data, normalized.callId),
+      normalized.callId,
     );
     this.server.to(realtimeRoom.userRole(target.targetUserId, target.targetRole)).emit('call:answer', {
       callId: normalized.callId,
@@ -450,8 +454,11 @@ export class RealtimeGateway
   ): Promise<{ forwarded: true; callId: string }> {
     this.assertCallSignalRate(client);
     const normalized = this.normalizeIceCandidate(payload);
-    const target = await this.callOperation(client, 'call:signal', () =>
-      this.calls.signalTarget(client.data, normalized.callId),
+    const target = await this.callOperation(
+      client,
+      'call:signal',
+      () => this.calls.signalTarget(client.data, normalized.callId),
+      normalized.callId,
     );
     this.server.to(realtimeRoom.userRole(target.targetUserId, target.targetRole)).emit('call:ice_candidate', {
       callId: normalized.callId,
@@ -760,6 +767,7 @@ export class RealtimeGateway
     client: LatacheSocket,
     action: string,
     operation: () => Promise<T>,
+    callId?: string,
   ): Promise<T> {
     try {
       return await operation();
@@ -767,6 +775,7 @@ export class RealtimeGateway
       const normalized = this.normalizeCallError(error);
       client.emit('call:error', {
         action,
+        ...(callId ? { callId } : {}),
         statusCode: normalized.statusCode,
         message: normalized.message,
         occurredAt: new Date().toISOString(),

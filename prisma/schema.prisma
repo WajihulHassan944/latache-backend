@@ -2005,6 +2005,7 @@ model FcmDeviceToken {
   token      String    @db.VarChar(4096)
   platform   String    @db.VarChar(16)
   deviceId   String?   @db.VarChar(255)
+  role       String?   @db.VarChar(32)
   enabled    Boolean   @default(true)
   lastSeenAt DateTime  @default(now()) @db.Timestamptz(6)
   disabledAt DateTime? @db.Timestamptz(6)

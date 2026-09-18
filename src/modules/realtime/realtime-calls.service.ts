@@ -13,6 +13,7 @@ import { UserRole } from '../../common/enums/user-role.enum';
 import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
+import { FcmService } from '../fcm/fcm.service';
 import { realtimeRoom } from './realtime.constants';
 import type {
   CallActionPayload,
@@ -85,6 +86,7 @@ export class RealtimeCallsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly fcm: FcmService,
   ) {}
 
   capabilities() {
@@ -276,6 +278,14 @@ export class RealtimeCallsService {
           recipientRole,
           'notification:created',
           this.notificationPayload(notification),
+        );
+        await this.fcm.enqueueNotification(
+          recipient.id,
+          notification.id,
+          notification.title,
+          notification.body,
+          recipientRole,
+          transaction,
         );
         await this.enqueueUser(
           transaction,
@@ -530,6 +540,14 @@ export class RealtimeCallsService {
         recipientRole,
         'notification:created',
         this.notificationPayload(notification),
+      );
+      await this.fcm.enqueueNotification(
+        call.recipientId,
+        notification.id,
+        notification.title,
+        notification.body,
+        recipientRole,
+        transaction,
       );
       await this.enqueueState(transaction, call);
     });

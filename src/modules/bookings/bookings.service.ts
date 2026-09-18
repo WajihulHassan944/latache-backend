@@ -97,6 +97,11 @@ const BOOKING_INCLUDE = {
   },
   workSession: true,
   latestLocation: true,
+  rescheduleProposals: {
+    where: { status: 'pending' },
+    take: 1,
+    select: { id: true, proposedByRole: true, proposedDate: true, proposedTime: true, note: true, createdAt: true },
+  },
   _count: { select: { messages: true, complaints: true, reviews: true } },
 } as const;
 
@@ -2678,6 +2683,17 @@ export class BookingsService {
       cancellationReason: booking.status === 'cancelled' ? booking.cancellationReason : null,
       cancelledAt:
         booking.status === 'cancelled' ? (booking.cancelledAt?.toISOString() ?? null) : null,
+      pendingRescheduleProposal: booking.rescheduleProposals[0]
+        ? {
+            id: booking.rescheduleProposals[0].id,
+            proposedByRole: booking.rescheduleProposals[0].proposedByRole,
+            proposedDate: dateOnlyFromDate(booking.rescheduleProposals[0].proposedDate),
+            proposedTime: booking.rescheduleProposals[0].proposedTime,
+            note: booking.rescheduleProposals[0].note,
+            status: 'pending' as const,
+            createdAt: booking.rescheduleProposals[0].createdAt.toISOString(),
+          }
+        : null,
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt.toISOString(),
     };

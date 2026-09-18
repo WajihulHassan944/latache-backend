@@ -485,6 +485,10 @@ export class PaymentsService {
           body: `Your ${wallet.currency} ${amount.toFixed(2)} withdrawal is pending review.`,
           entityType: 'withdrawal',
           entityId: created.id,
+          // 'withdrawal' entityType otherwise resolves to Tasker for every other caller
+          // (tasker payout withdrawals); this is the one customer-wallet withdrawal path,
+          // so it must pin its own audience role explicitly for a dual-role recipient.
+          audienceRole: UserRole.Customer,
         },
         transaction,
       );

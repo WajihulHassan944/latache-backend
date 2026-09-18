@@ -93,6 +93,7 @@ export class NotificationsService {
       notification.id,
       String(payload.title),
       String(payload.body),
+      audienceRole,
       client,
     );
     return notification;

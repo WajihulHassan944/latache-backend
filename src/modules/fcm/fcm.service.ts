@@ -12,6 +12,8 @@ type ClaimedDelivery = {
   notificationId: string;
   title: string;
   body: string;
+  type: string | null;
+  category: string | null;
   entityType: string | null;
   entityId: string | null;
   metadata: unknown;
@@ -30,7 +32,11 @@ export class FcmService {
     return this.config.get<boolean>('fcm.enabled', false);
   }
 
-  async registerToken(userId: number, input: RegisterFcmTokenDto): Promise<{ registered: true }> {
+  async registerToken(
+    userId: number,
+    role: string | null,
+    input: RegisterFcmTokenDto,
+  ): Promise<{ registered: true }> {
     if (!this.isEnabled()) {
       throw new ServiceUnavailableException('Push notifications are not enabled');
     }
@@ -52,14 +58,15 @@ export class FcmService {
       }
       await transaction.$executeRaw(Prisma.sql`
         INSERT INTO "FcmDeviceTokens"
-          ("id", "userId", "tokenHash", "token", "platform", "deviceId", "enabled", "lastSeenAt", "createdAt", "updatedAt")
+          ("id", "userId", "tokenHash", "token", "platform", "deviceId", "role", "enabled", "lastSeenAt", "createdAt", "updatedAt")
         VALUES
-          (${current?.id ?? randomUUID()}, ${userId}, ${tokenHash}, ${token}, ${input.platform}, ${input.deviceId?.trim() || null}, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          (${current?.id ?? randomUUID()}, ${userId}, ${tokenHash}, ${token}, ${input.platform}, ${input.deviceId?.trim() || null}, ${role}, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT ("tokenHash") DO UPDATE SET
           "userId" = EXCLUDED."userId",
           "token" = EXCLUDED."token",
           "platform" = EXCLUDED."platform",
           "deviceId" = EXCLUDED."deviceId",
+          "role" = EXCLUDED."role",
           "enabled" = true,
           "lastSeenAt" = CURRENT_TIMESTAMP,
           "disabledAt" = NULL,
@@ -87,6 +94,7 @@ export class FcmService {
     notificationId: string,
     title: string,
     body: string,
+    audienceRole: string | null = null,
     transaction?: Prisma.TransactionClient,
   ): Promise<number> {
     if (!this.isEnabled()) return 0;
@@ -107,6 +115,11 @@ export class FcmService {
         CURRENT_TIMESTAMP
       FROM "FcmDeviceTokens" t
       WHERE t."userId" = ${userId} AND t."enabled" = true
+        AND (
+          ${audienceRole}::text IS NULL
+          OR t."role" IS NULL
+          OR t."role" = ${audienceRole}
+        )
       ON CONFLICT ("notificationId", "deviceTokenId") DO NOTHING
     `);
     return result;
@@ -141,6 +154,8 @@ export class FcmService {
         d."notificationId" AS "notificationId",
         d."title" AS "title",
         d."body" AS "body",
+        (SELECT n."type" FROM "TaskNotifications" n WHERE n."id" = d."notificationId") AS "type",
+        (SELECT n."category" FROM "TaskNotifications" n WHERE n."id" = d."notificationId") AS "category",
         (SELECT n."entityType" FROM "TaskNotifications" n WHERE n."id" = d."notificationId") AS "entityType",
         (SELECT n."entityId" FROM "TaskNotifications" n WHERE n."id" = d."notificationId") AS "entityId",
         (SELECT n."metadata" FROM "TaskNotifications" n WHERE n."id" = d."notificationId") AS "metadata"
@@ -171,6 +186,7 @@ export class FcmService {
   private async send(delivery: ClaimedDelivery): Promise<'sent' | 'invalid-token'> {
     const projectId = this.config.getOrThrow<string>('fcm.projectId');
     const token = await this.getAccessToken();
+    const policy = this.deliveryPolicy(delivery.type, delivery.category);
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`, {
       method: 'POST',
       headers: {
@@ -181,15 +197,29 @@ export class FcmService {
         message: {
           token: delivery.token,
           notification: { title: delivery.title, body: delivery.body },
+          android: {
+            priority: policy.androidPriority,
+            ...(policy.ttlSeconds !== undefined ? { ttl: `${policy.ttlSeconds}s` } : {}),
+          },
+          apns: {
+            headers: {
+              'apns-priority': policy.apnsPriority,
+              ...(policy.ttlSeconds !== undefined
+                ? { 'apns-expiration': String(Math.floor(Date.now() / 1000) + policy.ttlSeconds) }
+                : {}),
+            },
+          },
           data: {
             ...(delivery.metadata && typeof delivery.metadata === 'object'
               ? Object.fromEntries(
                   Object.entries(delivery.metadata as Record<string, unknown>)
-                    .filter(([key]) => !['notificationId', 'entityType', 'entityId'].includes(key))
+                    .filter(([key]) => !['notificationId', 'entityType', 'entityId', 'type', 'category'].includes(key))
                     .map(([key, value]) => [key, this.stringifyData(value)]),
                 )
               : {}),
             notificationId: delivery.notificationId,
+            ...(delivery.type ? { type: delivery.type } : {}),
+            ...(delivery.category ? { category: delivery.category } : {}),
             ...(delivery.entityType ? { entityType: delivery.entityType } : {}),
             ...(delivery.entityId ? { entityId: delivery.entityId } : {}),
           },
@@ -205,6 +235,28 @@ export class FcmService {
     const error = new Error(`FCM HTTP ${response.status}: ${text}`);
     Object.assign(error, { status: response.status });
     throw error;
+  }
+
+  /**
+   * Calls need to arrive immediately and stop trying once the call is no longer
+   * relevant (an old "incoming call" push after the call already ended is worse
+   * than no push), so they get high priority with a short TTL. Messages need
+   * high priority too but should keep retrying with no short expiry. Everything
+   * else uses normal priority with FCM's own default retry/expiry behavior.
+   */
+  private deliveryPolicy(
+    type: string | null,
+    category: string | null,
+  ): { androidPriority: 'high' | 'normal'; apnsPriority: '5' | '10'; ttlSeconds?: number } {
+    const isCall = !!type && /_call$/.test(type);
+    const isMessage = category === 'messages' && !isCall;
+    if (isCall) {
+      return { androidPriority: 'high', apnsPriority: '10', ttlSeconds: 60 };
+    }
+    if (isMessage) {
+      return { androidPriority: 'high', apnsPriority: '10' };
+    }
+    return { androidPriority: 'normal', apnsPriority: '5' };
   }
 
   private async getAccessToken(): Promise<string> {
