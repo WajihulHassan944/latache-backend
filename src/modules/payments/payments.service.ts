@@ -29,7 +29,7 @@ import {
   PAYMENT_TRANSACTION_KIND,
   WALLET_WITHDRAWAL_EXECUTION_MODE,
 } from './payments.constants';
-import { ListPaymentTransactionsQueryDto, RetryBookingPaymentDto } from './payments.dto';
+import { CompleteBookingPaymentDto, ListPaymentTransactionsQueryDto, RetryBookingPaymentDto } from './payments.dto';
 import type {
   BookingPaymentStatusView,
   BookingRefundRequest,
@@ -560,6 +560,107 @@ export class PaymentsService {
     return this.serializeBookingPayment(booking);
   }
 
+  /** Captures the estimated hourly amount after acceptance, before the booking becomes confirmed. */
+  async completeAcceptancePayment(
+    customerId: number,
+    bookingId: number,
+    dto: CompleteBookingPaymentDto,
+  ): Promise<
+    | { bookingId: number; status: 'confirmed'; capturedAmount: number; capturedAt: string }
+    | { requiresAction: true; clientSecret: string }
+  > {
+    const booking = await this.prisma.booking.findFirst({ where: { id: bookingId, customerId } });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.status === 'confirmed' && booking.amountCapturedAt && booking.capturedAmount) {
+      return { bookingId, status: 'confirmed', capturedAmount: Number(booking.capturedAmount), capturedAt: booking.amountCapturedAt.toISOString() };
+    }
+    if (booking.status !== 'awaiting_payment') {
+      throw new ConflictException('Payment can only be completed after tasker acceptance');
+    }
+    if (booking.paymentSource !== dto.source) {
+      throw new ConflictException('Payment source must match the booking payment source');
+    }
+    const amount = roundMoney(Number(booking.hourlyRate) * (booking.estimatedDurationMinutes / 60));
+    if (dto.source === PAYMENT_SOURCE.Wallet) {
+      return this.captureAcceptanceFromWallet(bookingId, customerId, amount);
+    }
+    const paymentMethodId = dto.paymentMethodId ?? booking.stripePaymentMethodId ?? await this.defaultPaymentMethod(customerId);
+    if (!paymentMethodId) {
+      throw new ConflictException('A Stripe payment method is required to complete payment');
+    }
+    await this.assertPaymentMethodOwnedByCustomer(customerId, paymentMethodId);
+    if (booking.stripePaymentMethodId !== paymentMethodId) {
+      await this.prisma.booking.update({ where: { id: bookingId }, data: { stripePaymentMethodId: paymentMethodId } });
+    }
+    const transactionKey = `acceptance-capture:${bookingId}`;
+    const existing = await this.prisma.paymentTransaction.findUnique({ where: { idempotencyKey: transactionKey } });
+    if (existing?.providerReference) {
+      const intent = await this.stripeProvider.client().paymentIntents.retrieve(existing.providerReference);
+      if (intent.status === 'succeeded') return this.markAcceptanceCaptured(bookingId, amount, intent.id, transactionKey);
+      if (intent.status === 'requires_action' && intent.client_secret) return { requiresAction: true, clientSecret: intent.client_secret };
+      if (intent.status === 'requires_payment_method') throw new ConflictException(intent.last_payment_error?.message ?? 'Stripe declined the payment');
+    }
+    try {
+      const customer = await this.ensureStripeCustomer(customerId);
+      const intent = await this.stripeProvider.client().paymentIntents.create({
+        amount: toMinorUnits(amount), currency: booking.paymentCurrency.toLowerCase(), customer,
+        payment_method: paymentMethodId, confirm: true, off_session: true,
+        description: `Latache booking #${bookingId} acceptance payment`,
+        metadata: { kind: 'booking_acceptance_capture', latacheBookingId: String(bookingId), latacheCustomerId: String(customerId) },
+      }, { idempotencyKey: transactionKey });
+      await this.prisma.paymentTransaction.upsert({
+        where: { idempotencyKey: transactionKey },
+        create: { customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.BookingCharge, provider: 'stripe', providerReference: intent.id, status: intent.status, amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: transactionKey },
+        update: { providerReference: intent.id, status: intent.status, failureReason: intent.last_payment_error?.message ?? null },
+      });
+      if (intent.status === 'succeeded') return this.markAcceptanceCaptured(bookingId, amount, intent.id, transactionKey);
+      if (intent.status === 'requires_action' && intent.client_secret) return { requiresAction: true, clientSecret: intent.client_secret };
+      throw new ConflictException(intent.last_payment_error?.message ?? 'Stripe declined the payment');
+    } catch (error) {
+      const intent = this.paymentIntentFromStripeError(error);
+      if (intent?.status === 'requires_action' && intent.client_secret) {
+        await this.prisma.paymentTransaction.upsert({
+          where: { idempotencyKey: transactionKey },
+          create: { customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.BookingCharge, provider: 'stripe', providerReference: intent.id, status: intent.status, amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: transactionKey, failureReason: intent.last_payment_error?.message ?? null },
+          update: { providerReference: intent.id, status: intent.status, failureReason: intent.last_payment_error?.message ?? null },
+        });
+        return { requiresAction: true, clientSecret: intent.client_secret };
+      }
+      throw error;
+    }
+  }
+
+  private async captureAcceptanceFromWallet(bookingId: number, customerId: number, amount: number) {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findUniqueOrThrow({ where: { id: bookingId } });
+      if (booking.amountCapturedAt && booking.capturedAmount) {
+        return { bookingId, status: 'confirmed' as const, capturedAmount: Number(booking.capturedAmount), capturedAt: booking.amountCapturedAt.toISOString() };
+      }
+      await this.ensureCustomerWallet(customerId, transaction);
+      await transaction.$queryRaw`SELECT "customerId" FROM "CustomerWallets" WHERE "customerId" = ${customerId} FOR UPDATE`;
+      const wallet = await transaction.customerWallet.findUniqueOrThrow({ where: { customerId } });
+      if (Number(wallet.availableBalance) < amount) {
+        throw new ConflictException('Customer wallet balance is insufficient');
+      }
+      const key = `wallet:acceptance:${bookingId}:debit`;
+      await transaction.customerWallet.update({ where: { customerId }, data: { availableBalance: { decrement: moneyString(amount) } } });
+      await transaction.customerWalletLedgerEntry.create({ data: { customerId, bookingId, kind: CUSTOMER_WALLET_ENTRY_KIND.BookingDebit, status: 'settled', amount: moneyString(amount), balanceDelta: moneyString(-amount), currency: booking.paymentCurrency, description: `Acceptance payment for booking #${bookingId}`, providerReference: `wallet:acceptance:${bookingId}`, idempotencyKey: key } });
+      await transaction.paymentTransaction.create({ data: { customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.BookingCharge, provider: 'internal_wallet', providerReference: `wallet:acceptance:${bookingId}`, status: 'succeeded', amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: `acceptance-capture:${bookingId}` } });
+      return this.markAcceptanceCaptured(bookingId, amount, `wallet:acceptance:${bookingId}`, `acceptance-capture:${bookingId}`, transaction);
+    });
+  }
+
+  private async markAcceptanceCaptured(bookingId: number, amount: number, reference: string, transactionKey: string, transaction?: Prisma.TransactionClient) {
+    const client = transaction ?? this.prisma;
+    const now = new Date();
+    const booking = await client.booking.update({ where: { id: bookingId }, data: { status: 'confirmed', confirmedAt: now, capturedAmount: moneyString(amount), amountCapturedAt: now, paymentStatus: PAYMENT_STATUS.Ready, paymentFailureReason: null } });
+    await client.paymentTransaction.update({ where: { idempotencyKey: transactionKey }, data: { providerReference: reference, status: 'succeeded', failureReason: null } });
+    await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_captured', title: 'Booking confirmed', body: `${booking.paymentCurrency} ${amount.toFixed(2)} was captured and your booking is confirmed.`, entityType: 'booking', entityId: String(bookingId) }, transaction);
+    await this.enqueuePaymentUpdate(bookingId, 'confirmed', 'acceptance_payment_captured', transaction, { paymentStatus: PAYMENT_STATUS.Ready });
+    return { bookingId, status: 'confirmed' as const, capturedAmount: amount, capturedAt: now.toISOString() };
+  }
+
   async finalizeCompletedBooking(bookingId: number): Promise<PaymentOrchestrationResult> {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
@@ -633,7 +734,20 @@ export class PaymentsService {
     }
 
     const billableMinutes = Math.max(this.minimumBillableMinutes, actualMinutes);
-    const rawServiceAmount = roundMoney(Number(booking.hourlyRate) * (billableMinutes / 60));
+    const alreadyPaidMinutes = booking.amountCapturedAt ? booking.estimatedDurationMinutes : 0;
+    const additionalBillableMinutes = Math.max(0, billableMinutes - alreadyPaidMinutes);
+    // Accept-time captures are a pure hourly prepayment.  Completion charges
+    // only the overtime delta; legacy and cash bookings retain their existing
+    // full finalization calculation.
+    if (booking.amountCapturedAt && additionalBillableMinutes === 0) {
+      await this.prisma.booking.update({
+        where: { id: bookingId },
+        data: { paymentStatus: PAYMENT_STATUS.Paid, totalChargedAmount: booking.capturedAmount, paidAt: new Date(), paymentFailureReason: null },
+      });
+      await this.enqueuePaymentUpdate(bookingId, booking.status, 'no_overtime_payment_due', undefined, { paymentStatus: PAYMENT_STATUS.Paid });
+      return { bookingId, status: PAYMENT_STATUS.Paid };
+    }
+    const rawServiceAmount = roundMoney(Number(booking.hourlyRate) * ((booking.amountCapturedAt ? additionalBillableMinutes : billableMinutes) / 60));
     const pricingCharges = await this.platformSettings.calculatePricingCharges({
       serviceAmount: rawServiceAmount,
       taskerId: booking.taskerId,

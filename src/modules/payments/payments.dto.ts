@@ -61,6 +61,19 @@ export class RetryBookingPaymentDto {
   paymentMethodId?: string;
 }
 
+export class CompleteBookingPaymentDto {
+  @ApiProperty({ enum: ['wallet', 'stripe'] })
+  @IsIn(['wallet', 'stripe'])
+  source!: 'wallet' | 'stripe';
+
+  @ApiPropertyOptional({ example: 'pm_123' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(3, 255)
+  paymentMethodId?: string;
+}
+
 export class ListPaymentTransactionsQueryDto {
   @ApiPropertyOptional({
     enum: ['all', 'booking_charge', 'wallet_topup', 'refund'],

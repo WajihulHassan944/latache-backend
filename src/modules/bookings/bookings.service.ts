@@ -53,7 +53,7 @@ import {
   RespondRescheduleProposalDto,
 } from './dto/reschedule-proposal.dto';
 
-const BOOKED = ['pending', 'confirmed'];
+const BOOKED = ['pending', 'awaiting_payment', 'confirmed'];
 const ONGOING = ['en_route', 'arrived', 'in_progress', 'awaiting_customer_approval'];
 const HISTORY = ['completed', 'cancelled'];
 const ACTIVE = [...BOOKED, ...ONGOING];
@@ -224,10 +224,11 @@ export class BookingsService {
     if (paymentSource === PAYMENT_SOURCE.Stripe) {
       stripePaymentMethodId =
         dto.stripePaymentMethodId ?? (await this.payments.defaultPaymentMethod(customerId));
-      if (!stripePaymentMethodId) {
-        throw new BadRequestException('Save or select a Stripe payment method before booking');
+      // A card may be selected when the request is created, but it is deliberately
+      // optional: online payment is captured only after tasker acceptance.
+      if (stripePaymentMethodId) {
+        await this.payments.assertPaymentMethodOwnedByCustomer(customerId, stripePaymentMethodId);
       }
-      await this.payments.assertPaymentMethodOwnedByCustomer(customerId, stripePaymentMethodId);
     }
 
     try {

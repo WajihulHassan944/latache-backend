@@ -848,6 +848,8 @@ model Booking {
   paymentCurrency           String    @default("USD") @db.VarChar(3)
   stripePaymentMethodId     String?   @db.VarChar(255)
   stripePaymentIntentId     String?   @unique(map: "Bookings_stripePaymentIntentId_key") @db.VarChar(255)
+  capturedAmount            Decimal?  @db.Decimal(14, 2)
+  amountCapturedAt          DateTime? @db.Timestamptz(6)
   serviceAmount             Decimal?  @db.Decimal(14, 2)
   platformFeeAmount         Decimal   @default(0) @db.Decimal(14, 2)
   commissionRatePercent     Decimal   @default(0) @db.Decimal(7, 4)

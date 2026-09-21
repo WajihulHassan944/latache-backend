@@ -130,18 +130,23 @@ export class TaskerTasksService {
       if (booking.status !== TASKER_BOOKING_STATUS.Pending) {
         throw new ConflictException('Only pending tasks can be confirmed');
       }
+      const status = booking.paymentSource === 'cash'
+        ? TASKER_BOOKING_STATUS.Confirmed
+        : TASKER_BOOKING_STATUS.AwaitingPayment;
       const row = await transaction.booking.update({
         where: { id: bookingId },
-        data: { status: TASKER_BOOKING_STATUS.Confirmed, confirmedAt: new Date() },
+        data: { status, ...(status === TASKER_BOOKING_STATUS.Confirmed ? { confirmedAt: new Date() } : {}) },
         include: this.includeRelations(),
       });
       await this.notifications.create(
         booking.customerId,
         {
           category: 'tasks',
-          type: 'task_confirmed',
-          title: 'Task confirmed',
-          body: 'Your tasker confirmed the booking.',
+          type: status === TASKER_BOOKING_STATUS.Confirmed ? 'task_confirmed' : 'booking_payment_required',
+          title: status === TASKER_BOOKING_STATUS.Confirmed ? 'Task confirmed' : 'Payment required',
+          body: status === TASKER_BOOKING_STATUS.Confirmed
+            ? 'Your tasker confirmed the booking.'
+            : 'Your tasker accepted the booking. Complete payment to confirm it.',
           entityType: 'booking',
           entityId: String(bookingId),
         },
@@ -151,13 +156,13 @@ export class TaskerTasksService {
         {
           actorId: taskerId,
           targetUserId: booking.customerId,
-          action: 'booking_confirmed_by_tasker',
+          action: status === TASKER_BOOKING_STATUS.Confirmed ? 'booking_confirmed_by_tasker' : 'booking_accepted_awaiting_payment',
           entityType: 'booking',
           entityId: bookingId,
         },
         transaction,
       );
-      await this.enqueueBookingUpdate(bookingId, 'confirmed', 'tasker_confirmed', transaction);
+      await this.enqueueBookingUpdate(bookingId, status, status === TASKER_BOOKING_STATUS.Confirmed ? 'tasker_confirmed' : 'tasker_accepted_awaiting_payment', transaction);
       return row;
     });
     return this.serialize(updated);

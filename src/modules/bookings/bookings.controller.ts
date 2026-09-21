@@ -19,6 +19,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PaymentsService } from '../payments/payments.service';
+import { CompleteBookingPaymentDto } from '../payments/payments.dto';
 import { UpdateTaskerLocationDto, UpdateTimerNotesDto } from '../tasker-dashboard/dto';
 import { TaskerTasksService } from '../tasker-dashboard/services/tasker-tasks.service';
 import { BookingsService } from './bookings.service';
@@ -109,6 +110,17 @@ export class BookingsController {
   @ApiOperation({ summary: 'Tasker confirms a pending booking' })
   confirm(@CurrentUser() user: User, @Param() params: BookingParamDto) {
     return this.taskerTasks.confirm(user.id, params.bookingId);
+  }
+
+  @Post(':bookingId/complete-payment')
+  @Roles(UserRole.Customer)
+  @ApiOperation({ summary: 'Capture online payment after a tasker accepts a booking' })
+  completePayment(
+    @CurrentUser() user: User,
+    @Param() params: BookingParamDto,
+    @Body() dto: CompleteBookingPaymentDto,
+  ) {
+    return this.payments.completeAcceptancePayment(user.id, params.bookingId, dto);
   }
 
   @Post(':bookingId/cancel')

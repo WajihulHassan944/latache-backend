@@ -1,5 +1,6 @@
 export const TASKER_BOOKING_STATUS = {
   Pending: 'pending',
+  AwaitingPayment: 'awaiting_payment',
   Confirmed: 'confirmed',
   EnRoute: 'en_route',
   Arrived: 'arrived',
@@ -14,6 +15,7 @@ export type TaskerBookingStatus =
 
 export const TASKER_BOOKED_STATUSES = [
   TASKER_BOOKING_STATUS.Pending,
+  TASKER_BOOKING_STATUS.AwaitingPayment,
   TASKER_BOOKING_STATUS.Confirmed,
 ] as const;
 
