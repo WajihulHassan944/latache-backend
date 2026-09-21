@@ -38,6 +38,7 @@ import type {
 
 const ACTIVE_BOOKING_STATUSES = [
   'pending',
+  'awaiting_payment',
   'confirmed',
   'en_route',
   'arrived',

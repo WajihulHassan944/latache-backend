@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -571,8 +573,8 @@ export class PaymentsService {
   > {
     const booking = await this.prisma.booking.findFirst({ where: { id: bookingId, customerId } });
     if (!booking) throw new NotFoundException('Booking not found');
-    if (booking.status === 'confirmed' && booking.amountCapturedAt && booking.capturedAmount) {
-      return { bookingId, status: 'confirmed', capturedAmount: Number(booking.capturedAmount), capturedAt: booking.amountCapturedAt.toISOString() };
+    if (booking.status === 'confirmed' && booking.capturedAt && booking.capturedAmount !== null) {
+      return { bookingId, status: 'confirmed', capturedAmount: Number(booking.capturedAmount), capturedAt: booking.capturedAt.toISOString() };
     }
     if (booking.status !== 'awaiting_payment') {
       throw new ConflictException('Payment can only be completed after tasker acceptance');
@@ -598,7 +600,9 @@ export class PaymentsService {
       const intent = await this.stripeProvider.client().paymentIntents.retrieve(existing.providerReference);
       if (intent.status === 'succeeded') return this.markAcceptanceCaptured(bookingId, amount, intent.id, transactionKey);
       if (intent.status === 'requires_action' && intent.client_secret) return { requiresAction: true, clientSecret: intent.client_secret };
-      if (intent.status === 'requires_payment_method') throw new ConflictException(intent.last_payment_error?.message ?? 'Stripe declined the payment');
+      if (intent.status === 'requires_payment_method') {
+        throw this.paymentRequired(intent.last_payment_error?.message ?? 'Stripe declined the payment');
+      }
     }
     try {
       const customer = await this.ensureStripeCustomer(customerId);
@@ -615,7 +619,7 @@ export class PaymentsService {
       });
       if (intent.status === 'succeeded') return this.markAcceptanceCaptured(bookingId, amount, intent.id, transactionKey);
       if (intent.status === 'requires_action' && intent.client_secret) return { requiresAction: true, clientSecret: intent.client_secret };
-      throw new ConflictException(intent.last_payment_error?.message ?? 'Stripe declined the payment');
+      throw this.paymentRequired(intent.last_payment_error?.message ?? 'Stripe declined the payment');
     } catch (error) {
       const intent = this.paymentIntentFromStripeError(error);
       if (intent?.status === 'requires_action' && intent.client_secret) {
@@ -626,6 +630,9 @@ export class PaymentsService {
         });
         return { requiresAction: true, clientSecret: intent.client_secret };
       }
+      if (this.isStripeCardFailure(error)) {
+        throw this.paymentRequired(this.stripeErrorMessage(error));
+      }
       throw error;
     }
   }
@@ -634,14 +641,17 @@ export class PaymentsService {
     return this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
       const booking = await transaction.booking.findUniqueOrThrow({ where: { id: bookingId } });
-      if (booking.amountCapturedAt && booking.capturedAmount) {
-        return { bookingId, status: 'confirmed' as const, capturedAmount: Number(booking.capturedAmount), capturedAt: booking.amountCapturedAt.toISOString() };
+      if (booking.capturedAt && booking.capturedAmount !== null) {
+        return { bookingId, status: 'confirmed' as const, capturedAmount: Number(booking.capturedAmount), capturedAt: booking.capturedAt.toISOString() };
+      }
+      if (booking.status !== 'awaiting_payment' || booking.paymentSource !== PAYMENT_SOURCE.Wallet) {
+        throw new ConflictException('Payment can only be completed for an awaiting wallet booking');
       }
       await this.ensureCustomerWallet(customerId, transaction);
       await transaction.$queryRaw`SELECT "customerId" FROM "CustomerWallets" WHERE "customerId" = ${customerId} FOR UPDATE`;
       const wallet = await transaction.customerWallet.findUniqueOrThrow({ where: { customerId } });
       if (Number(wallet.availableBalance) < amount) {
-        throw new ConflictException('Customer wallet balance is insufficient');
+        throw this.paymentRequired('Customer wallet balance is insufficient');
       }
       const key = `wallet:acceptance:${bookingId}:debit`;
       await transaction.customerWallet.update({ where: { customerId }, data: { availableBalance: { decrement: moneyString(amount) } } });
@@ -654,11 +664,37 @@ export class PaymentsService {
   private async markAcceptanceCaptured(bookingId: number, amount: number, reference: string, transactionKey: string, transaction?: Prisma.TransactionClient) {
     const client = transaction ?? this.prisma;
     const now = new Date();
-    const booking = await client.booking.update({ where: { id: bookingId }, data: { status: 'confirmed', confirmedAt: now, capturedAmount: moneyString(amount), amountCapturedAt: now, paymentStatus: PAYMENT_STATUS.Ready, paymentFailureReason: null } });
+    const claimed = await client.booking.updateMany({
+      where: { id: bookingId, status: 'awaiting_payment', capturedAt: null, capturedAmount: null },
+      data: { status: 'confirmed', confirmedAt: now, capturedAmount: moneyString(amount), capturedAt: now, paymentStatus: PAYMENT_STATUS.Ready, paymentFailureReason: null },
+    });
     await client.paymentTransaction.update({ where: { idempotencyKey: transactionKey }, data: { providerReference: reference, status: 'succeeded', failureReason: null } });
+    if (claimed.count === 0) {
+      const existing = await client.booking.findUniqueOrThrow({ where: { id: bookingId } });
+      if (existing.status === 'confirmed' && existing.capturedAt && existing.capturedAmount !== null) {
+        return { bookingId, status: 'confirmed' as const, capturedAmount: Number(existing.capturedAmount), capturedAt: existing.capturedAt.toISOString() };
+      }
+      throw new ConflictException('Booking payment state changed while payment was being completed');
+    }
+    const booking = await client.booking.findUniqueOrThrow({ where: { id: bookingId } });
     await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_captured', title: 'Booking confirmed', body: `${booking.paymentCurrency} ${amount.toFixed(2)} was captured and your booking is confirmed.`, entityType: 'booking', entityId: String(bookingId) }, transaction);
     await this.enqueuePaymentUpdate(bookingId, 'confirmed', 'acceptance_payment_captured', transaction, { paymentStatus: PAYMENT_STATUS.Ready });
     return { bookingId, status: 'confirmed' as const, capturedAmount: amount, capturedAt: now.toISOString() };
+  }
+
+  private paymentRequired(message: string): HttpException {
+    return new HttpException({ statusCode: HttpStatus.PAYMENT_REQUIRED, code: 'PAYMENT_REQUIRED', message }, HttpStatus.PAYMENT_REQUIRED);
+  }
+
+  private isStripeCardFailure(error: unknown): boolean {
+    return typeof error === 'object' && error !== null &&
+      ['card_error', 'invalid_request_error'].includes((error as { type?: string }).type ?? '');
+  }
+
+  private stripeErrorMessage(error: unknown): string {
+    return typeof error === 'object' && error !== null && typeof (error as { message?: unknown }).message === 'string'
+      ? (error as { message: string }).message
+      : 'Stripe declined the payment';
   }
 
   async finalizeCompletedBooking(bookingId: number): Promise<PaymentOrchestrationResult> {
@@ -734,20 +770,15 @@ export class PaymentsService {
     }
 
     const billableMinutes = Math.max(this.minimumBillableMinutes, actualMinutes);
-    const alreadyPaidMinutes = booking.amountCapturedAt ? booking.estimatedDurationMinutes : 0;
+    // hourlyRate is stored per hour, so normalize the captured monetary amount
+    // into minutes before calculating the exact overtime delta.
+    const alreadyPaidMinutes = booking.capturedAmount !== null && Number(booking.hourlyRate) > 0
+      ? (Number(booking.capturedAmount) / Number(booking.hourlyRate)) * 60
+      : 0;
     const additionalBillableMinutes = Math.max(0, billableMinutes - alreadyPaidMinutes);
-    // Accept-time captures are a pure hourly prepayment.  Completion charges
-    // only the overtime delta; legacy and cash bookings retain their existing
-    // full finalization calculation.
-    if (booking.amountCapturedAt && additionalBillableMinutes === 0) {
-      await this.prisma.booking.update({
-        where: { id: bookingId },
-        data: { paymentStatus: PAYMENT_STATUS.Paid, totalChargedAmount: booking.capturedAmount, paidAt: new Date(), paymentFailureReason: null },
-      });
-      await this.enqueuePaymentUpdate(bookingId, booking.status, 'no_overtime_payment_due', undefined, { paymentStatus: PAYMENT_STATUS.Paid });
-      return { bookingId, status: PAYMENT_STATUS.Paid };
-    }
-    const rawServiceAmount = roundMoney(Number(booking.hourlyRate) * ((booking.amountCapturedAt ? additionalBillableMinutes : billableMinutes) / 60));
+    // Retain the full service value for payout accounting; the provider charge
+    // below is independently reduced to the exact prepaid-time delta.
+    const rawServiceAmount = roundMoney(Number(booking.hourlyRate) * (billableMinutes / 60));
     const pricingCharges = await this.platformSettings.calculatePricingCharges({
       serviceAmount: rawServiceAmount,
       taskerId: booking.taskerId,
@@ -770,7 +801,7 @@ export class PaymentsService {
         (pricingCharges.taxInclusive ? 0 : taxAmount),
     );
     const referralDiscount =
-      booking.paymentSource === PAYMENT_SOURCE.Cash
+      booking.paymentSource === PAYMENT_SOURCE.Cash || booking.capturedAt
         ? { amount: 0, percent: 0 }
         : await this.referrals.reserveCustomerDiscount({
             bookingId,
@@ -779,7 +810,9 @@ export class PaymentsService {
             totalBeforeDiscount,
             currency: booking.paymentCurrency,
           });
-    const totalAmount = roundMoney(totalBeforeDiscount - referralDiscount.amount);
+    const totalAmount = booking.capturedAt
+      ? roundMoney(Number(booking.hourlyRate) * (additionalBillableMinutes / 60))
+      : roundMoney(totalBeforeDiscount - referralDiscount.amount);
 
     await this.prisma.booking.update({
       where: { id: bookingId },
@@ -810,6 +843,12 @@ export class PaymentsService {
       return { bookingId, status: PAYMENT_STATUS.CashConfirmationRequired };
     }
 
+    // The prepaid acceptance capture is settled into tasker finance after the
+    // work completes even when no overtime is due; it is never charged again.
+    if (booking.capturedAt && totalAmount <= 0) {
+      return this.settleCapturedBookingWithoutOvertime(bookingId);
+    }
+
     if (booking.paymentSource === PAYMENT_SOURCE.Wallet) {
       return this.settleBookingFromCustomerWallet(
         bookingId,
@@ -819,6 +858,31 @@ export class PaymentsService {
     }
 
     return this.createStripeBookingCharge(bookingId, totalAmount, serviceAmount + tipAmount);
+  }
+
+  private async settleCapturedBookingWithoutOvertime(
+    bookingId: number,
+  ): Promise<PaymentOrchestrationResult> {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findUniqueOrThrow({ where: { id: bookingId } });
+      if (!booking.capturedAt || booking.capturedAmount === null) {
+        throw new ConflictException('This booking has no acceptance-time capture');
+      }
+      if (booking.paymentStatus === PAYMENT_STATUS.Paid) return { bookingId, status: PAYMENT_STATUS.Paid };
+      const settledAt = new Date();
+      await transaction.booking.update({
+        where: { id: bookingId },
+        data: { paymentStatus: PAYMENT_STATUS.Paid, totalChargedAmount: booking.capturedAmount, paidAt: settledAt, paymentFailureReason: null },
+      });
+      await this.creditTaskerWallet(
+        transaction, booking.taskerId, booking.id, Number(booking.serviceAmount ?? booking.capturedAmount),
+        booking.paymentCurrency, `acceptance-capture:${bookingId}`,
+      );
+      await this.referrals.qualifyPaidBooking(transaction, booking.id);
+      await this.enqueuePaymentUpdate(bookingId, booking.status, 'no_overtime_payment_due', transaction, { paymentStatus: PAYMENT_STATUS.Paid });
+      return { bookingId, status: PAYMENT_STATUS.Paid };
+    });
   }
 
   confirmCashCollection(input: ConfirmCashCollectionInput) {
@@ -2214,11 +2278,14 @@ export class PaymentsService {
     }
 
     const amountReceived = roundMoney(intent.amount_received / 100);
+    const totalChargedAmount = booking.capturedAt && booking.capturedAmount !== null
+      ? roundMoney(Number(booking.capturedAmount) + amountReceived)
+      : amountReceived;
     await transaction.booking.update({
       where: { id: bookingId },
       data: {
         paymentStatus: PAYMENT_STATUS.Paid,
-        totalChargedAmount: moneyString(amountReceived),
+        totalChargedAmount: moneyString(totalChargedAmount),
         paidAt: new Date(),
         paymentFailureReason: null,
       },
@@ -2612,7 +2679,11 @@ export class PaymentsService {
         where: { id: bookingId },
         data: {
           paymentStatus: PAYMENT_STATUS.Paid,
-          totalChargedAmount: moneyString(totalAmount),
+          totalChargedAmount: moneyString(
+            booking.capturedAt && booking.capturedAmount !== null
+              ? Number(booking.capturedAmount) + totalAmount
+              : totalAmount,
+          ),
           paidAt: new Date(),
           paymentFailureReason: null,
         },

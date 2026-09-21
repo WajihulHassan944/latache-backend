@@ -77,7 +77,7 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Create a booking',
     description:
-      'Reserves a real Tasker availability slot. Stripe cards are saved before booking and are not charged until finalization. Cash is paid directly to the Tasker, is subject to the configured platform-payable threshold, and never enters the Latache wallet.',
+      'Reserves a real Tasker availability slot. A Stripe card is optional at booking creation and online payment is captured only after tasker acceptance. Cash is paid directly to the Tasker, is subject to the configured platform-payable threshold, and never enters the Latache wallet.',
   })
   create(@CurrentUser() user: User, @Body() dto: BookTaskerDto) {
     return this.bookings.book(user.id, dto);
@@ -113,8 +113,13 @@ export class BookingsController {
   }
 
   @Post(':bookingId/complete-payment')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Customer)
-  @ApiOperation({ summary: 'Capture online payment after a tasker accepts a booking' })
+  @ApiOperation({
+    summary: 'Capture the acceptance-time online payment',
+    description:
+      'Only the booking customer may pay an awaiting_payment booking. Stripe may return requiresAction/clientSecret; wallet insufficiency never falls back to Stripe.',
+  })
   completePayment(
     @CurrentUser() user: User,
     @Param() params: BookingParamDto,

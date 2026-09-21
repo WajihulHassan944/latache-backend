@@ -13,7 +13,8 @@ describe('booking lifecycle admin audit trail', () => {
 
   it('records Tasker acceptance, cancellation, and arrival', () => {
     const tasks = read('src/modules/tasker-dashboard/services/tasker-tasks.service.ts');
-    expect(tasks).toContain("action: 'booking_confirmed_by_tasker'");
+    expect(tasks).toContain("'booking_confirmed_by_tasker'");
+    expect(tasks).toContain("'booking_accepted_awaiting_payment'");
     expect(tasks).toContain("action: 'booking_cancelled_by_tasker'");
     expect(tasks).toContain("action: 'booking_tasker_arrived'");
   });
