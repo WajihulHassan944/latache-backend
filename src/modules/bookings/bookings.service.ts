@@ -2,10 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
-  TooManyRequestsException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -219,12 +220,12 @@ export class BookingsService {
         ? new Date(booking.customerReminderSentAt.getTime() + CUSTOMER_REMINDER_COOLDOWN_MS)
         : now;
       if (nextAllowedAt > now) {
-        throw new TooManyRequestsException({
+        throw new HttpException({
           code: 'BOOKING_REMINDER_COOLDOWN',
           message: 'A reminder was already sent recently',
           retryAfter: Math.ceil((nextAllowedAt.getTime() - now.getTime()) / 1000),
           nextAllowedAt: nextAllowedAt.toISOString(),
-        });
+        }, HttpStatus.TOO_MANY_REQUESTS);
       }
 
       const notification = await this.notifications.create(
