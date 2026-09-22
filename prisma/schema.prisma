@@ -841,6 +841,7 @@ model Booking {
   cancelledByRole           String?   @db.VarChar(32)
   cancellationReason        String?   @db.VarChar(1000)
   rescheduledAt             DateTime? @db.Timestamptz(6)
+  customerReminderSentAt    DateTime? @db.Timestamptz(6)
   estimatedDurationMinutes  Int       @default(120)
   extensionMinutes          Int       @default(0)
   paymentSource             String    @default("stripe") @db.VarChar(32)
@@ -908,6 +909,7 @@ model Booking {
   @@index([customerId, conversationLastMessageAt, updatedAt], map: "bookings_customer_conversation_activity_idx")
   @@index([taskerId, conversationLastMessageAt, updatedAt], map: "bookings_tasker_conversation_activity_idx")
   @@index([conversationId, bookingDate], map: "bookings_conversation_date_idx")
+  @@index([customerId, customerReminderSentAt], map: "bookings_customer_reminder_sent_idx")
   @@map("Bookings")
 }
 

@@ -49,6 +49,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       this.logger.error(`Unhandled error for ${request.method} ${request.originalUrl}`, stack);
     }
 
+    const retryAfter = body.retryAfter;
+    if (status === HttpStatus.TOO_MANY_REQUESTS && typeof retryAfter === 'number') {
+      response.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfter))));
+    }
+
     response.status(status).json({
       statusCode: status,
       code: typeof body.code === 'string' ? body.code : codeForStatus(status),

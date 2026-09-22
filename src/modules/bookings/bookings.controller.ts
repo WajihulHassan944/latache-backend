@@ -104,6 +104,18 @@ export class BookingsController {
     return this.bookings.get(user, params.bookingId);
   }
 
+  @Post(':bookingId/reminder')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @Roles(UserRole.Customer)
+  @ApiOperation({
+    summary: 'Send the assigned Tasker a reminder about an active booking',
+    description:
+      'Creates a persisted task notification and queues Socket.IO/FCM delivery. The queued timestamp does not guarantee device delivery. One reminder is allowed per booking every 15 minutes.',
+  })
+  sendReminder(@CurrentUser() user: User, @Param() params: BookingParamDto) {
+    return this.bookings.sendCustomerReminder(user.id, params.bookingId);
+  }
+
   @Post(':bookingId/confirm')
   @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)

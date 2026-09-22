@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  TooManyRequestsException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -57,6 +58,8 @@ const BOOKED = ['pending', 'awaiting_payment', 'confirmed'];
 const ONGOING = ['en_route', 'arrived', 'in_progress', 'awaiting_customer_approval'];
 const HISTORY = ['completed', 'cancelled'];
 const ACTIVE = [...BOOKED, ...ONGOING];
+const CUSTOMER_REMINDER_ALLOWED_STATUSES = new Set(['pending', 'confirmed', 'en_route', 'arrived']);
+const CUSTOMER_REMINDER_COOLDOWN_MS = 15 * 60 * 1000;
 const money = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 const uniqueEvidenceByPublicId = <T extends { publicId: string }>(items: T[]): T[] => {
   const seen = new Set<string>();
@@ -192,6 +195,65 @@ export class BookingsService {
       dateOnlyToDate(dto.date),
       currency.code,
     );
+  }
+
+  async sendCustomerReminder(customerId: number, bookingId: number) {
+    return this.prisma.$transaction(async (transaction) => {
+      // Serialize reminder attempts on the booking itself, including attempts from
+      // separate API replicas, before checking the persisted cooldown.
+      await transaction.$queryRaw(Prisma.sql`
+        SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE
+      `);
+      const booking = await transaction.booking.findFirst({
+        where: { id: bookingId, customerId },
+        select: { id: true, taskerId: true, status: true, customerReminderSentAt: true },
+      });
+      // Deliberately collapse a missing ID and another customer's booking.
+      if (!booking) throw new NotFoundException('Booking not found');
+      if (!CUSTOMER_REMINDER_ALLOWED_STATUSES.has(booking.status)) {
+        throw new ConflictException('A reminder cannot be sent for this booking status');
+      }
+
+      const now = new Date();
+      const nextAllowedAt = booking.customerReminderSentAt
+        ? new Date(booking.customerReminderSentAt.getTime() + CUSTOMER_REMINDER_COOLDOWN_MS)
+        : now;
+      if (nextAllowedAt > now) {
+        throw new TooManyRequestsException({
+          code: 'BOOKING_REMINDER_COOLDOWN',
+          message: 'A reminder was already sent recently',
+          retryAfter: Math.ceil((nextAllowedAt.getTime() - now.getTime()) / 1000),
+          nextAllowedAt: nextAllowedAt.toISOString(),
+        });
+      }
+
+      const notification = await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'tasks',
+          type: 'booking_customer_reminder',
+          title: 'Customer reminder',
+          body: 'Your customer sent a reminder about an upcoming task.',
+          entityType: 'booking',
+          entityId: String(booking.id),
+          metadata: { bookingId: String(booking.id) },
+          audienceRole: UserRole.Tasker,
+        },
+        transaction,
+      );
+      const queuedAt = notification.createdAt;
+      const allowedAt = new Date(queuedAt.getTime() + CUSTOMER_REMINDER_COOLDOWN_MS);
+      await transaction.booking.update({
+        where: { id: booking.id },
+        data: { customerReminderSentAt: queuedAt },
+      });
+      return {
+        bookingId: String(booking.id),
+        notificationId: notification.id,
+        queuedAt: queuedAt.toISOString(),
+        nextAllowedAt: allowedAt.toISOString(),
+      };
+    });
   }
 
   async book(customerId: number, dto: BookTaskerDto) {
