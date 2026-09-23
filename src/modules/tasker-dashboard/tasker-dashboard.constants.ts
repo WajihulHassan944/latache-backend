@@ -70,6 +70,7 @@ export const WALLET_ENTRY_KIND = {
   PlanCharge: 'plan_charge',
   PlanRefund: 'plan_refund',
   PlanBonus: 'plan_bonus',
+  PlanRevenueShare: 'plan_revenue_share',
 } as const;
 
 export const WITHDRAWAL_STATUS = {

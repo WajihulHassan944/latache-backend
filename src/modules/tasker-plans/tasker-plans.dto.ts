@@ -1,5 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { AdminPaginationDto } from '../admin-dashboard/dto/admin-pagination.dto';
 import { TASKER_PLAN_STATUS } from './tasker-plans.constants';
 
@@ -39,4 +53,87 @@ export class ReviewTaskerSubscriptionDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
+}
+
+export class TaskerPlanOverrideDto {
+  @ApiPropertyOptional({ example: 'Gold' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'false stops new purchases; existing subscribers keep renewing.' })
+  @IsOptional()
+  @IsBoolean()
+  isAvailable?: boolean;
+
+  @ApiPropertyOptional({ example: 100, description: 'Monthly price in MAD.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(1)
+  @Max(100000)
+  monthlyPrice?: number;
+
+  @ApiPropertyOptional({ example: 12 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  platformFeePercent?: number;
+
+  @ApiPropertyOptional({ example: 25, description: 'Monthly wallet bonus in MAD.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100000)
+  monthlyBonus?: number;
+
+  @ApiPropertyOptional({ example: 2, description: '% of each online-paid booking service amount credited at earning release.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(50)
+  revenueSharePercent?: number;
+
+  @ApiPropertyOptional({ enum: ['priority_email', 'phone_and_email', 'dedicated_account_manager'] })
+  @IsOptional()
+  @IsIn(['priority_email', 'phone_and_email', 'dedicated_account_manager'])
+  supportTier?: 'priority_email' | 'phone_and_email' | 'dedicated_account_manager';
+
+  @ApiPropertyOptional({ enum: ['none', 'quarterly', 'monthly'] })
+  @IsOptional()
+  @IsIn(['none', 'quarterly', 'monthly'])
+  spotlightFrequency?: 'none' | 'quarterly' | 'monthly';
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Length(1, 200, { each: true })
+  perks?: string[];
+}
+
+export class UpdateTaskerPlanCatalogDto {
+  @ApiPropertyOptional({ type: TaskerPlanOverrideDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TaskerPlanOverrideDto)
+  gold?: TaskerPlanOverrideDto;
+
+  @ApiPropertyOptional({ type: TaskerPlanOverrideDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TaskerPlanOverrideDto)
+  platinum?: TaskerPlanOverrideDto;
+
+  @ApiPropertyOptional({ type: TaskerPlanOverrideDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TaskerPlanOverrideDto)
+  diamond?: TaskerPlanOverrideDto;
 }

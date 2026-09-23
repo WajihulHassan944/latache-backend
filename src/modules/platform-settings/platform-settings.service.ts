@@ -27,7 +27,11 @@ import {
 } from './platform-settings.types';
 import { AppCacheService, CacheNamespace } from '../../infrastructure/redis/app-cache.service';
 import { UserRole } from '../../common/enums/user-role.enum';
-import { isTaskerPlanId, TASKER_PLANS } from '../tasker-plans/tasker-plans.constants';
+import {
+  isTaskerPlanId,
+  resolveTaskerPlanCatalog,
+  TASKER_PLAN_CATALOG_SETTING_KEY,
+} from '../tasker-plans/tasker-plans.constants';
 import {
   PLATFORM_CURRENCY_PRESETS,
   STATIC_RATE_VERSION,
@@ -280,7 +284,7 @@ export class PlatformSettingsService {
     bookingDate: Date;
     bookingCreatedAt: Date;
   }): Promise<PricingChargeResult> {
-    const [commission, tax, tasker, currency, paidPlan] = await Promise.all([
+    const [commission, tax, tasker, currency, paidPlan, planCatalogRow] = await Promise.all([
       this.section<CommissionSettingsDto>('commission'),
       this.section<TaxSettingsDto>('tax'),
       this.prisma.user.findUnique({
@@ -305,6 +309,7 @@ export class PlatformSettingsService {
         where: { taskerId: input.taskerId, status: 'active' },
         select: { planId: true },
       }),
+      this.prisma.platformSetting.findUnique({ where: { key: TASKER_PLAN_CATALOG_SETTING_KEY } }),
     ]);
 
     const tierCode = tasker?.eliteTier?.code?.toLowerCase() ?? 'standard';
@@ -331,7 +336,9 @@ export class PlatformSettingsService {
     const effectiveServiceAmount = money(Math.max(rawServiceAmount, minimumTaskPrice));
 
     const planDefinition =
-      paidPlan && isTaskerPlanId(paidPlan.planId) ? TASKER_PLANS[paidPlan.planId] : null;
+      paidPlan && isTaskerPlanId(paidPlan.planId)
+        ? resolveTaskerPlanCatalog(planCatalogRow?.value)[paidPlan.planId]
+        : null;
     // A paid plan's fee applies only when it beats whatever rate the Tasker already has.
     const paidPlanFeeApplied =
       planDefinition !== null && planDefinition.platformFeePercent < Number(baseRate ?? 0);

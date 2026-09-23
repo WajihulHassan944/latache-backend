@@ -12,6 +12,12 @@ import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { WALLET_ENTRY_KIND } from '../tasker-dashboard/tasker-dashboard.constants';
 import {
+  isTaskerPlanId,
+  resolveTaskerPlanCatalog,
+  TASKER_PLAN_CATALOG_SETTING_KEY,
+  TASKER_PLAN_STATUS,
+} from '../tasker-plans/tasker-plans.constants';
+import {
   EARNING_LEDGER_KIND,
   PLATFORM_LEDGER_KIND,
   PLATFORM_RECEIVABLE_STATUS,
@@ -931,6 +937,7 @@ export class TaskerFinanceService {
           idempotencyKey: `earning:${earning.id}:release`,
         },
       });
+      await this.creditPlanRevenueShare(transaction, earning);
 
       const newOutstanding = money(money(account.outstandingPayable) - debtOffset);
       await this.applyRestrictionPolicy(
@@ -1331,6 +1338,66 @@ export class TaskerFinanceService {
         createdAt: entry.createdAt.toISOString(),
       })),
     };
+  }
+
+  /**
+   * Paid-plan revenue share (e.g. Diamond +2%): when an online earning is
+   * released, credit revenueSharePercent of the booking's service amount (net of
+   * any reversal) to the Tasker's available balance, if a plan is active at
+   * release. Crediting at release rather than settlement means refunds and disputes
+   * during clearance are already reflected. Caller holds the TaskerWallets lock.
+   */
+  private async creditPlanRevenueShare(
+    transaction: Prisma.TransactionClient,
+    earning: { id: string; taskerId: number; bookingId: number; serviceAmount: Prisma.Decimal; reversedAmount: Prisma.Decimal; currency: string },
+  ): Promise<void> {
+    const [subscription, catalogRow] = await Promise.all([
+      transaction.taskerSubscription.findFirst({
+        where: { taskerId: earning.taskerId, status: TASKER_PLAN_STATUS.Active },
+        select: { id: true, planId: true },
+      }),
+      transaction.platformSetting.findUnique({ where: { key: TASKER_PLAN_CATALOG_SETTING_KEY } }),
+    ]);
+    if (!subscription || !isTaskerPlanId(subscription.planId)) return;
+    const plan = resolveTaskerPlanCatalog(catalogRow?.value)[subscription.planId];
+    const base = Math.max(0, money(earning.serviceAmount) - money(earning.reversedAmount));
+    const amount = money(base * (plan.revenueSharePercent / 100));
+    if (amount <= 0) return;
+    const idempotencyKey = `plan-revenue-share:${earning.id}`;
+    if (await transaction.taskerWalletLedgerEntry.findUnique({ where: { idempotencyKey } })) return;
+    await transaction.taskerWallet.update({
+      where: { taskerId: earning.taskerId },
+      data: { availableBalance: { increment: decimal(amount) } },
+    });
+    await transaction.taskerWalletLedgerEntry.create({
+      data: {
+        taskerId: earning.taskerId,
+        bookingId: earning.bookingId,
+        earningId: earning.id,
+        kind: WALLET_ENTRY_KIND.PlanRevenueShare,
+        status: 'settled',
+        amount: decimal(amount),
+        availableDelta: decimal(amount),
+        pendingDelta: decimal(0),
+        currency: earning.currency,
+        description: `${plan.name} plan ${plan.revenueSharePercent}% revenue share for booking #${earning.bookingId}`,
+        externalReference: subscription.id,
+        idempotencyKey,
+      },
+    });
+    await this.notifications.create(
+      earning.taskerId,
+      {
+        category: 'wallet',
+        type: 'tasker_plan_revenue_share',
+        title: `${plan.name} revenue share added`,
+        body: `${earning.currency} ${amount.toFixed(2)} (${plan.revenueSharePercent}% of booking #${earning.bookingId}) was added to your wallet.`,
+        entityType: 'booking',
+        entityId: String(earning.bookingId),
+        metadata: { subscriptionId: subscription.id, planId: plan.id, amount },
+      },
+      transaction,
+    );
   }
 
   private async applyRestrictionPolicy(

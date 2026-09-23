@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -20,15 +21,17 @@ import { PlatformSettingsService } from '../platform-settings/platform-settings.
 import { WALLET_ENTRY_KIND } from '../tasker-dashboard/tasker-dashboard.constants';
 import {
   PLAN_PRICE_CURRENCY,
+  EDITABLE_PLAN_FIELDS,
+  TASKER_PLAN_CATALOG_SETTING_KEY,
   TASKER_PLAN_IDS,
   TASKER_PLAN_PERIOD_DAYS,
   TASKER_PLAN_STATUS,
-  TASKER_PLANS,
   isTaskerPlanId,
+  resolveTaskerPlanCatalog,
   type TaskerPlanDefinition,
   type TaskerPlanId,
 } from './tasker-plans.constants';
-import type { ListTaskerSubscriptionsDto } from './tasker-plans.dto';
+import type { ListTaskerSubscriptionsDto, UpdateTaskerPlanCatalogDto } from './tasker-plans.dto';
 
 const DAY_MS = 86_400_000;
 const money = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -67,12 +70,75 @@ export class TaskerPlansService {
     this.graceDays = config.get<number>('taskerPlans.graceDays', 3);
   }
 
-  catalog() {
+  /** Current catalog: code defaults merged with the Super Admin's stored overrides. */
+  async plans(transaction?: Prisma.TransactionClient): Promise<Record<TaskerPlanId, TaskerPlanDefinition>> {
+    const row = await (transaction ?? this.prisma).platformSetting.findUnique({
+      where: { key: TASKER_PLAN_CATALOG_SETTING_KEY },
+    });
+    return resolveTaskerPlanCatalog(row?.value);
+  }
+
+  async catalog() {
+    const plans = await this.plans();
     return {
       currency: PLAN_PRICE_CURRENCY,
       periodDays: TASKER_PLAN_PERIOD_DAYS,
-      plans: TASKER_PLAN_IDS.map((id) => TASKER_PLANS[id]),
+      plans: TASKER_PLAN_IDS.map((id) => plans[id]).filter((plan) => plan.isAvailable),
     };
+  }
+
+  async adminCatalog() {
+    const [plans, row] = await Promise.all([
+      this.plans(),
+      this.prisma.platformSetting.findUnique({ where: { key: TASKER_PLAN_CATALOG_SETTING_KEY } }),
+    ]);
+    return {
+      currency: PLAN_PRICE_CURRENCY,
+      periodDays: TASKER_PLAN_PERIOD_DAYS,
+      editableFields: EDITABLE_PLAN_FIELDS,
+      version: row?.version ?? 0,
+      updatedAt: row?.updatedAt.toISOString() ?? null,
+      plans: TASKER_PLAN_IDS.map((id) => plans[id]),
+    };
+  }
+
+  /**
+   * Super Admin edits prices/perks. New purchases use the new values at once;
+   * existing subscribers are charged the new price from their next renewal, and
+   * fee/revenue-share/bonus changes apply to new bookings, releases and renewals.
+   */
+  async updateCatalog(actor: { id: number; role: string }, dto: UpdateTaskerPlanCatalogDto) {
+    if (actor.role !== UserRole.SuperAdmin) {
+      throw new ForbiddenException('Only Super Admin can change paid plan pricing and perks');
+    }
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${TASKER_PLAN_CATALOG_SETTING_KEY}, 0))`;
+      const existing = await transaction.platformSetting.findUnique({
+        where: { key: TASKER_PLAN_CATALOG_SETTING_KEY },
+      });
+      const previous = (existing?.value ?? {}) as Record<string, Record<string, unknown>>;
+      const next: Record<string, Record<string, unknown>> = { ...previous };
+      for (const id of TASKER_PLAN_IDS) {
+        const patch = dto[id];
+        if (!patch) continue;
+        const clean: Record<string, unknown> = {};
+        for (const field of EDITABLE_PLAN_FIELDS) {
+          const value = (patch as Record<string, unknown>)[field];
+          if (value !== undefined) clean[field] = value;
+        }
+        next[id] = { ...(previous[id] ?? {}), ...clean };
+      }
+      await transaction.platformSetting.upsert({
+        where: { key: TASKER_PLAN_CATALOG_SETTING_KEY },
+        create: { key: TASKER_PLAN_CATALOG_SETTING_KEY, value: next as Prisma.InputJsonValue, updatedById: actor.id },
+        update: { value: next as Prisma.InputJsonValue, version: { increment: 1 }, updatedById: actor.id },
+      });
+      await this.audit.record(
+        { actorId: actor.id, action: 'tasker_plan_catalog_updated', entityType: 'platform_setting', entityId: TASKER_PLAN_CATALOG_SETTING_KEY, metadata: { before: previous, after: next } },
+        transaction,
+      );
+    });
+    return this.adminCatalog();
   }
 
   async active(taskerId: number): Promise<{
@@ -147,7 +213,7 @@ export class TaskerPlansService {
       select: { planId: true },
     });
     if (!row || !isTaskerPlanId(row.planId)) return null;
-    const plan = TASKER_PLANS[row.planId];
+    const plan = (await this.plans(transaction))[row.planId];
     return {
       planId: plan.id,
       platformFeePercent: plan.platformFeePercent,
@@ -158,7 +224,10 @@ export class TaskerPlansService {
 
   async purchase(taskerId: number, planIdInput: string, paymentMethodInput: string) {
     if (!isTaskerPlanId(planIdInput)) throw new NotFoundException('Plan not found');
-    const plan = TASKER_PLANS[planIdInput];
+    const plan = (await this.plans())[planIdInput];
+    if (!plan.isAvailable) {
+      throw new ConflictException({ code: 'TASKER_PLAN_UNAVAILABLE', message: `The ${plan.name} plan is not currently offered` });
+    }
     const method = paymentMethodInput.trim();
     const row =
       method === 'wallet'
@@ -306,7 +375,7 @@ export class TaskerPlansService {
   async adminList(query: ListTaskerSubscriptionsDto) {
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 20);
     const where: Prisma.TaskerSubscriptionWhereInput = query.status ? { status: query.status } : {};
-    const [rows, totalItems] = await Promise.all([
+    const [rows, totalItems, plans] = await Promise.all([
       this.prisma.taskerSubscription.findMany({
         where,
         include: { tasker: { select: { id: true, firstName: true, lastName: true, email: true, profilePicture: true } } },
@@ -315,6 +384,7 @@ export class TaskerPlansService {
         take: limit,
       }),
       this.prisma.taskerSubscription.count({ where }),
+      this.plans(),
     ]);
     return {
       page,
@@ -329,6 +399,10 @@ export class TaskerPlansService {
           email: row.tasker.email,
           avatar: row.tasker.profilePicture ?? '',
         },
+        // Staff-fulfilled perks, so ops can see who is owed support/spotlight.
+        operationalPerks: isTaskerPlanId(row.planId)
+          ? { supportTier: plans[row.planId].supportTier, spotlightFrequency: plans[row.planId].spotlightFrequency }
+          : null,
       })),
     };
   }
@@ -339,7 +413,7 @@ export class TaskerPlansService {
       if (row.status !== TASKER_PLAN_STATUS.Pending || !row.paymentReference) {
         throw new ConflictException(`Only a paid pending plan can be approved (status: ${row.status})`);
       }
-      const plan = this.planOf(row);
+      const plan = await this.planOf(row);
       const now = new Date();
       await transaction.taskerSubscription.update({
         where: { id: row.id },
@@ -405,7 +479,7 @@ export class TaskerPlansService {
       if (row.status !== TASKER_PLAN_STATUS.Pending) {
         throw new ConflictException(`Only a pending plan can be ${actor.kind} (status: ${row.status})`);
       }
-      const plan = this.planOf(row);
+      const plan = await this.planOf(row);
       if (row.paymentMethod === 'wallet') {
         await this.creditWallet(row.taskerId, row.currency, Number(row.priceAmount), WALLET_ENTRY_KIND.PlanRefund, `plan-refund:${row.id}`, `${plan.name} plan refund`, transaction);
       }
@@ -449,6 +523,46 @@ export class TaskerPlansService {
       );
       return transaction.taskerSubscription.findUniqueOrThrow({ where: { id: row.id } });
     });
+  }
+
+  /**
+   * Admin ends an active plan immediately (abuse, account closure, support
+   * request). Perks stop at once. No automatic refund: the admin can credit a
+   * goodwill amount separately, which keeps money movements explicit.
+   */
+  async terminate(adminId: number, subscriptionId: string, note?: string) {
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      const row = await this.lockSubscription(subscriptionId, transaction);
+      if (row.status !== TASKER_PLAN_STATUS.Active) {
+        throw new ConflictException(`Only an active plan can be terminated (status: ${row.status})`);
+      }
+      const plan = await this.planOf(row);
+      const now = new Date();
+      await transaction.taskerSubscription.update({
+        where: { id: row.id },
+        data: { status: TASKER_PLAN_STATUS.Terminated, endedAt: now, reviewedById: adminId, reviewedAt: now, adminNote: note ?? row.adminNote },
+      });
+      await this.notifications.create(
+        row.taskerId,
+        {
+          category: 'payments',
+          type: 'tasker_plan_terminated',
+          title: `${plan.name} plan ended`,
+          body: `Your ${plan.name} plan was ended by the Latache team and will not renew.${note ? ` Note: ${note}` : ''}`,
+          entityType: 'tasker_subscription',
+          entityId: row.id,
+          metadata: { subscriptionId: row.id, planId: plan.id },
+          audienceRole: UserRole.Tasker,
+        },
+        transaction,
+      );
+      await this.audit.record(
+        { actorId: adminId, targetUserId: row.taskerId, action: 'tasker_plan_terminated', entityType: 'tasker_subscription', entityId: row.id, reason: note ?? null, metadata: { planId: plan.id } },
+        transaction,
+      );
+      return transaction.taskerSubscription.findUniqueOrThrow({ where: { id: row.id } });
+    });
+    return this.adminView(updated);
   }
 
   // ---------------------------------------------------------- maintenance
@@ -498,7 +612,7 @@ export class TaskerPlansService {
   }
 
   private async renewOne(row: TaskerSubscription): Promise<boolean> {
-    const plan = this.planOf(row);
+    const plan = await this.planOf(row);
     const periodEnd = row.currentPeriodEnd as Date;
     const renewalKey = `${row.id}:${periodEnd.toISOString()}`;
     let reference: string;
@@ -517,7 +631,7 @@ export class TaskerPlansService {
         const charge = await this.payments.chargeSavedCardOffSession({
           userId: row.taskerId,
           paymentMethodId: row.stripePaymentMethodId,
-          amount: Number(row.priceAmount),
+          amount: this.priceIn(plan.monthlyPrice, row.currency),
           currency: row.currency,
           description: `Latache ${plan.name} Tasker plan renewal`,
           // One key per period per retry day: a retry after a decline is a new attempt.
@@ -563,7 +677,14 @@ export class TaskerPlansService {
       const nextEnd = new Date(periodEnd.getTime() + TASKER_PLAN_PERIOD_DAYS * DAY_MS);
       await transaction.taskerSubscription.update({
         where: { id: row.id },
-        data: { currentPeriodEnd: nextEnd, graceUntil: null, renewalFailureReason: null, paymentReference: reference },
+        data: {
+          currentPeriodEnd: nextEnd,
+          graceUntil: null,
+          renewalFailureReason: null,
+          paymentReference: reference,
+          // Record what this period actually cost (the catalog price may have changed).
+          priceAmount: this.priceIn(plan.monthlyPrice, row.currency).toFixed(2),
+        },
       });
       await this.payBonus(row.taskerId, row.id, plan, periodEnd, transaction);
     });
@@ -576,7 +697,7 @@ export class TaskerPlansService {
       const row = await this.lockSubscription(id, transaction);
       if (row.status !== TASKER_PLAN_STATUS.Active || !row.cancelAtPeriodEnd) return false;
       if (!row.currentPeriodEnd || row.currentPeriodEnd > new Date()) return false;
-      const plan = this.planOf(row);
+      const plan = await this.planOf(row);
       await transaction.taskerSubscription.update({
         where: { id },
         data: { status: TASKER_PLAN_STATUS.Cancelled, endedAt: new Date() },
@@ -605,7 +726,7 @@ export class TaskerPlansService {
       if (row.status !== TASKER_PLAN_STATUS.Active || !row.graceUntil || row.graceUntil > new Date()) {
         return false;
       }
-      const plan = this.planOf(row);
+      const plan = await this.planOf(row);
       await transaction.taskerSubscription.update({
         where: { id },
         data: { status: TASKER_PLAN_STATUS.Expired, endedAt: new Date() },
@@ -745,9 +866,9 @@ export class TaskerPlansService {
     return row;
   }
 
-  private planOf(row: TaskerSubscription): TaskerPlanDefinition {
+  private async planOf(row: TaskerSubscription): Promise<TaskerPlanDefinition> {
     if (!isTaskerPlanId(row.planId)) throw new ConflictException(`Unknown plan ${row.planId}`);
-    return TASKER_PLANS[row.planId];
+    return (await this.plans())[row.planId];
   }
 
   /** Converts a PLAN_PRICE_CURRENCY amount into `currencyCode` using the platform's static rates. */

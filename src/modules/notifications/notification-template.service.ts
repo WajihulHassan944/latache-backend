@@ -230,6 +230,8 @@ const ARABIC_TEMPLATES: Record<string, LocalizedTemplate> = {
   tasker_plan_renewal_failed: { title: 'فشل تجديد الباقة', body: 'تعذر تجديد باقتك. تبقى المزايا مفعلة لفترة سماح قصيرة بينما نعيد المحاولة.' },
   tasker_plan_expired: { title: 'انتهت الباقة', body: 'انتهت باقتك لتعذر تحصيل دفعة التجديد. تطبق الآن الرسوم والترتيب العاديان.' },
   tasker_plan_cancelled: { title: 'تم إلغاء الباقة', body: 'تم إلغاء باقتك بناءً على طلبك، وإذا كانت لا تزال قيد المراجعة فقد تم استرداد المبلغ.' },
+  tasker_plan_terminated: { title: 'تم إنهاء الباقة', body: 'أنهى فريق Latache باقتك ولن يتم تجديدها.' },
+  tasker_plan_revenue_share: { title: 'تمت إضافة حصة الإيرادات', body: 'تمت إضافة حصة إيرادات باقتك من هذا الحجز إلى محفظتك.' },
 };
 
 const DARIJA_TEMPLATES: Record<string, LocalizedTemplate> = {
@@ -450,6 +452,8 @@ const DARIJA_TEMPLATES: Record<string, LocalizedTemplate> = {
   tasker_plan_renewal_failed: { title: 'تجديد الباقة ما دازش', body: 'ما قدرناش نجددو الباقة ديالك. المزايا باقين شي أيام وحنا كنعاودو المحاولة.' },
   tasker_plan_expired: { title: 'الباقة سالات', body: 'الباقة سالات حيت خلصة التجديد ما دازتش. دابا كتطبق العمولة والترتيب العاديين.' },
   tasker_plan_cancelled: { title: 'الباقة تلغات', body: 'الباقة ديالك تلغات كيف طلبتي، وإلا كانت الخلصة ديالها باقا فالمراجعة ترجعات ليك.' },
+  tasker_plan_terminated: { title: 'الباقة توقفات', body: 'فريق Latache وقف الباقة ديالك وما غاديش تتجدد.' },
+  tasker_plan_revenue_share: { title: 'تزادت حصة المداخيل', body: 'تزادت فالمحفظة ديالك حصة المداخيل ديال الباقة من هاد الحجز.' },
 };
 
 @Injectable()
