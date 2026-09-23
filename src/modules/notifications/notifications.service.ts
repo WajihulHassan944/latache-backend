@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { normalizePagination } from '../../common/utils/pagination.util';
 import { PrismaService } from '../../database/prisma.service';
@@ -9,6 +9,39 @@ import type { NotificationListView, NotificationView } from './notifications.typ
 import { LocaleService } from '../localization/locale.service';
 import { NotificationTemplateService } from './notification-template.service';
 import { FcmService } from '../fcm/fcm.service';
+import { MailService } from '../mail/mail.service';
+
+/**
+ * Notification `type`s that are also worth an email — booking/task lifecycle and
+ * payment events a customer or tasker may miss if their phone is idle, mirroring
+ * what booking platforms typically email for (confirmation, reminders, cancellation,
+ * reschedule, receipts, completion). Chatty operational pings (en route, arrived,
+ * OTP codes, etc.) stay push/in-app only. Dispute events already have their own
+ * dedicated email pipeline (see DisputeLifecycleService) and are excluded here to
+ * avoid double-emailing the same event.
+ */
+const EMAIL_NOTIFIED_TYPES = new Set<string>([
+  'booking_requested',
+  'task_confirmed',
+  'booking_payment_required',
+  'booking_cancelled_by_customer',
+  'booking_cancelled_by_admin',
+  'task_cancelled_by_tasker',
+  'booking_rescheduled',
+  'booking_reassigned',
+  'reschedule_proposal_created',
+  'reschedule_proposal_accepted',
+  'reschedule_proposal_rejected',
+  'booking_payment_succeeded',
+  'booking_wallet_payment_succeeded',
+  'booking_payment_failed',
+  'task_completed_by_customer',
+  'task_completion_verified',
+  'booking_expired_no_response',
+  'booking_reminder_24h',
+  'booking_reminder_1h',
+  'review_request',
+]);
 
 export interface CreateNotificationInput {
   category: 'messages' | 'tasks' | 'payments' | 'wallet' | 'system';
@@ -25,12 +58,15 @@ export interface CreateNotificationInput {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeOutboxService,
     private readonly locales: LocaleService,
     private readonly templates: NotificationTemplateService,
     private readonly fcm: FcmService,
+    private readonly mail: MailService,
   ) {}
 
   async create(
@@ -46,7 +82,7 @@ export class NotificationsService {
     const client = transaction;
     const recipient = await client.user.findUnique({
       where: { id: userId },
-      select: { preferredLanguage: true, roles: true },
+      select: { preferredLanguage: true, roles: true, email: true },
     });
     const locale = this.locales.resolve({
       preferredLanguage: recipient?.preferredLanguage,
@@ -96,7 +132,79 @@ export class NotificationsService {
       audienceRole,
       client,
     );
+    if (EMAIL_NOTIFIED_TYPES.has(input.type) && recipient?.email) {
+      await client.emailNotificationDelivery.create({
+        data: { notificationId: notification.id, userId },
+      });
+    }
     return notification;
+  }
+
+  /**
+   * Drains the email outbox written by `create()` above. Runs off the request
+   * path on a poll interval (see PerformanceJobsService), the same pattern used
+   * for FCM push and dispute lifecycle email delivery, so a slow/unavailable
+   * mail provider never blocks or fails the booking action that triggered it.
+   */
+  async processEmailDeliveries(): Promise<number> {
+    const staleSendingBefore = new Date(Date.now() - 10 * 60 * 1000);
+    const rows = await this.prisma.emailNotificationDelivery.findMany({
+      where: {
+        attempts: { lt: 5 },
+        OR: [
+          { status: { in: ['pending', 'failed'] }, nextAttemptAt: { lte: new Date() } },
+          { status: 'sending', lockedAt: { lte: staleSendingBefore } },
+        ],
+      },
+      include: {
+        user: { select: { email: true, firstName: true, lastName: true, preferredLanguage: true } },
+        notification: {
+          select: { id: true, title: true, body: true, templateKey: true, entityId: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+    let sent = 0;
+    for (const row of rows) {
+      const claimed = await this.prisma.emailNotificationDelivery.updateMany({
+        where: { id: row.id, attempts: row.attempts },
+        data: { status: 'sending', attempts: { increment: 1 }, lockedAt: new Date() },
+      });
+      if (!claimed.count) continue;
+      try {
+        if (!row.user.email) throw new Error('RECIPIENT_HAS_NO_EMAIL');
+        const locale = row.user.preferredLanguage ?? undefined;
+        const rendered = this.templates.render(row.notification.templateKey, this.locales.resolve({
+          preferredLanguage: row.user.preferredLanguage,
+        }).locale, row.notification);
+        await this.mail.sendBookingLifecycleEmail({
+          to: row.user.email,
+          name: [row.user.firstName, row.user.lastName].filter(Boolean).join(' '),
+          bookingId: row.notification.entityId ?? row.notification.id,
+          title: rendered.title,
+          body: rendered.body,
+          locale,
+        });
+        await this.prisma.emailNotificationDelivery.update({
+          where: { id: row.id },
+          data: { status: 'sent', sentAt: new Date(), lastError: null },
+        });
+        sent += 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.prisma.emailNotificationDelivery.update({
+          where: { id: row.id },
+          data: {
+            status: 'failed',
+            lastError: message.slice(0, 1000),
+            nextAttemptAt: new Date(Date.now() + Math.min(2 ** row.attempts, 60) * 60_000),
+          },
+        });
+        this.logger.warn(`Notification email delivery ${row.id} failed: ${message.slice(0, 300)}`);
+      }
+    }
+    return sent;
   }
 
   async list(

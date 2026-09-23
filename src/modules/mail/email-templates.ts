@@ -437,3 +437,65 @@ export const disputeLifecycleEmailTemplate = (params: {
     text: `${copy.subject}\n${copy.caseLabel}: ${params.disputeId}\n${copy.actionLabel}: ${event.label}\n${event.body ?? params.detail}`,
   };
 };
+
+interface BookingLifecycleCopy {
+  bookingLabel: string;
+  greeting: (name: string) => string;
+  cta: string;
+}
+
+const bookingLifecycleCopy: Record<EmailLocale, BookingLifecycleCopy> = {
+  en: {
+    bookingLabel: 'Booking',
+    greeting: (name) => `Hello ${name || 'there'},`,
+    cta: 'Open the Latache app to see the full details and respond if needed.',
+  },
+  ar: {
+    bookingLabel: 'الحجز',
+    greeting: (name) => `مرحباً ${name || 'بك'}،`,
+    cta: 'افتح تطبيق Latache للاطلاع على كامل التفاصيل والرد إذا لزم الأمر.',
+  },
+  ary: {
+    bookingLabel: 'الحجز',
+    greeting: (name) => `سلام ${name || 'عليك'}،`,
+    cta: 'حل تطبيق Latache باش تشوف التفاصيل كاملة وتجاوب إلا كان خاصك.',
+  },
+};
+
+/**
+ * Booking lifecycle emails deliberately reuse the same rendered title/body that
+ * NotificationTemplateService already produces for the push + in-app channel for
+ * this event, so the wording stays identical across channels and every booking
+ * event type is covered without a second copy dictionary to keep in sync.
+ */
+export const bookingLifecycleEmailTemplate = (params: {
+  name: string;
+  bookingId: string;
+  title: string;
+  body: string;
+  locale?: string;
+}): { subject: string; html: string; text: string } => {
+  const locale = normalizeEmailLocale(params.locale);
+  const copy = bookingLifecycleCopy[locale];
+  const name = escapeHtml(params.name);
+  const title = escapeHtml(params.title);
+  const body = escapeHtml(params.body);
+  const bookingId = escapeHtml(params.bookingId);
+  const html = latacheEmailLayout({
+    documentTitle: params.title,
+    preheader: params.body,
+    locale,
+    content: `<h1 class="email-title" style="margin:0;color:#60230c;font-family:Georgia,'Times New Roman',serif;font-size:40px;line-height:48px;text-align:center">${title}</h1>
+      <p style="margin:20px 0 12px;color:#a66229;font-size:21px;line-height:29px;text-align:center">${copy.greeting(name)}</p>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:18px 0;border:1px solid #efd7ad;border-radius:16px;background:#fff5e4;font-size:14px">
+        <tr><td style="padding:10px 12px;color:#8c551f;font-weight:bold">${copy.bookingLabel}</td><td dir="ltr" style="padding:10px 12px;color:#4b2112;text-align:left">#${bookingId}</td></tr>
+      </table>
+      <p style="margin:0 0 16px;color:#563226;font-size:16px;line-height:25px;text-align:${locale === 'en' ? 'left' : 'right'}">${body}</p>
+      <p style="margin:0;color:#a66229;font-size:13px;line-height:20px;text-align:center">${escapeHtml(copy.cta)}</p>`,
+  });
+  return {
+    subject: params.title,
+    html,
+    text: `${params.title}\n${copy.bookingLabel}: #${params.bookingId}\n${params.body}`,
+  };
+};

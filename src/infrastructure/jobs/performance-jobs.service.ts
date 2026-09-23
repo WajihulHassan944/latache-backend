@@ -13,6 +13,7 @@ import { DisputeLifecycleService } from '../../modules/disputes/dispute-lifecycl
 import { EliteProgramService } from '../../modules/elite-program/services/elite-program.service';
 import { FcmService } from '../../modules/fcm/fcm.service';
 import { GuestService } from '../../modules/guest/guest.service';
+import { NotificationsService } from '../../modules/notifications/notifications.service';
 
 const JOB_NAMES = {
   ReleaseEarnings: 'finance.release-mature',
@@ -25,6 +26,9 @@ const JOB_NAMES = {
   MaintainDisputes: 'disputes.maintain',
   MaintainElite: 'elite.maintain',
   DispatchFcmPush: 'notifications.dispatch-fcm-push',
+  DispatchNotificationEmails: 'notifications.dispatch-emails',
+  SendBookingReminders: 'bookings.send-reminders',
+  SendReviewRequests: 'bookings.send-review-requests',
   CleanupGuestSessions: 'guest.cleanup-sessions',
 } as const;
 
@@ -64,6 +68,7 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly elite: EliteProgramService,
     private readonly fcm: FcmService,
     private readonly guests: GuestService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.enabled = this.config.get<boolean>('jobs.enabled', false);
     this.workerEnabled = this.config.get<boolean>('jobs.workerEnabled', false);
@@ -225,6 +230,21 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { name: JOB_NAMES.DispatchFcmPush, data: {} },
       ),
       queue.upsertJobScheduler(
+        'dispatch-notification-emails-v1',
+        { every: this.config.get<number>('notificationEmails.pollMs', 15_000) },
+        { name: JOB_NAMES.DispatchNotificationEmails, data: {} },
+      ),
+      queue.upsertJobScheduler(
+        'send-booking-reminders-v1',
+        { every: this.config.get<number>('bookingReminders.sweepIntervalMs', 300_000) },
+        { name: JOB_NAMES.SendBookingReminders, data: {} },
+      ),
+      queue.upsertJobScheduler(
+        'send-booking-review-requests-v1',
+        { every: this.config.get<number>('bookingReviewRequests.sweepIntervalMs', 900_000) },
+        { name: JOB_NAMES.SendReviewRequests, data: {} },
+      ),
+      queue.upsertJobScheduler(
         'cleanup-guest-sessions-v1',
         { every: this.config.get<number>('jobs.guestSessionCleanupIntervalMs', 3_600_000) },
         { name: JOB_NAMES.CleanupGuestSessions, data: {} },
@@ -292,6 +312,12 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return this.elite.runMaintenance(this.config.get<number>('elite.workerBatchSize', 200));
       case JOB_NAMES.DispatchFcmPush:
         return this.fcm.runOnce();
+      case JOB_NAMES.DispatchNotificationEmails:
+        return { sent: await this.notificationsService.processEmailDeliveries() };
+      case JOB_NAMES.SendBookingReminders:
+        return this.bookings.sendDueBookingReminders();
+      case JOB_NAMES.SendReviewRequests:
+        return this.bookings.sendDueReviewRequests();
       case JOB_NAMES.CleanupGuestSessions:
         return this.guests.runOnce();
       default: {

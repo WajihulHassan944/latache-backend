@@ -1273,6 +1273,208 @@ export class BookingsService {
     return result;
   }
 
+  /** Absolute UTC start instant for a booking, mirroring isPastSlotStart's UTC-minutes convention. */
+  private bookingStartAt(bookingDate: Date, startTime: string): Date | null {
+    const minutes = parseTimeToMinutes(startTime);
+    if (minutes === null) return null;
+    return new Date(bookingDate.getTime() + minutes * 60_000);
+  }
+
+  /**
+   * Sweeps confirmed bookings for upcoming-appointment reminders (24h-out and
+   * 1h-out), the automated nudge that push/in-app + email previously had no
+   * equivalent of. Idempotent via reminder24hSentAt/reminder1hSentAt.
+   */
+  async sendDueBookingReminders(): Promise<{ examined: number; sent24h: number; sent1h: number }> {
+    const now = new Date();
+    const rangeStart = dateOnlyToDate(todayDateOnly(now));
+    const rangeEnd = dateOnlyToDate(dateOnlyFromDate(new Date(now.getTime() + 2 * 86_400_000)));
+    const batchSize = this.config.get<number>('bookingReminders.batchSize', 200);
+    const candidates = await this.prisma.booking.findMany({
+      where: {
+        status: 'confirmed',
+        bookingDate: { gte: rangeStart, lte: rangeEnd },
+        OR: [{ reminder24hSentAt: null }, { reminder1hSentAt: null }],
+      },
+      select: {
+        id: true,
+        bookingDate: true,
+        startTime: true,
+        reminder24hSentAt: true,
+        reminder1hSentAt: true,
+      },
+      take: batchSize,
+    });
+
+    let sent24h = 0;
+    let sent1h = 0;
+    for (const candidate of candidates) {
+      const startAt = this.bookingStartAt(candidate.bookingDate, candidate.startTime);
+      if (!startAt) continue;
+      const msUntilStart = startAt.getTime() - now.getTime();
+      if (msUntilStart <= 0) continue;
+      const due24h = !candidate.reminder24hSentAt && msUntilStart <= 24 * 60 * 60_000;
+      const due1h = !candidate.reminder1hSentAt && msUntilStart <= 60 * 60_000;
+      if (!due24h && !due1h) continue;
+      const outcome = await this.sendBookingReminderOne(candidate.id, due24h, due1h);
+      if (outcome.sent24h) sent24h += 1;
+      if (outcome.sent1h) sent1h += 1;
+    }
+    return { examined: candidates.length, sent24h, sent1h };
+  }
+
+  private async sendBookingReminderOne(
+    bookingId: number,
+    due24h: boolean,
+    due1h: boolean,
+  ): Promise<{ sent24h: boolean; sent1h: boolean }> {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findUnique({
+        where: { id: bookingId },
+        select: {
+          id: true,
+          status: true,
+          customerId: true,
+          taskerId: true,
+          reminder24hSentAt: true,
+          reminder1hSentAt: true,
+        },
+      });
+      if (!booking || booking.status !== 'confirmed') return { sent24h: false, sent1h: false };
+
+      const now = new Date();
+      let sent24h = false;
+      let sent1h = false;
+
+      if (due24h && !booking.reminder24hSentAt) {
+        await this.notifyBothParties(
+          transaction,
+          booking,
+          'booking_reminder_24h',
+          'Booking tomorrow',
+          'You have a booking scheduled within the next 24 hours.',
+        );
+        await transaction.booking.update({
+          where: { id: bookingId },
+          data: { reminder24hSentAt: now },
+        });
+        sent24h = true;
+      }
+      if (due1h && !booking.reminder1hSentAt) {
+        await this.notifyBothParties(
+          transaction,
+          booking,
+          'booking_reminder_1h',
+          'Booking starting soon',
+          'Your booking starts in about an hour.',
+        );
+        await transaction.booking.update({
+          where: { id: bookingId },
+          data: { reminder1hSentAt: now },
+        });
+        sent1h = true;
+      }
+      return { sent24h, sent1h };
+    });
+  }
+
+  private async notifyBothParties(
+    transaction: Prisma.TransactionClient,
+    booking: { id: number; customerId: number; taskerId: number },
+    type: string,
+    title: string,
+    body: string,
+  ): Promise<void> {
+    await this.notifications.create(
+      booking.customerId,
+      {
+        category: 'tasks',
+        type,
+        title,
+        body,
+        entityType: 'booking',
+        entityId: String(booking.id),
+        audienceRole: UserRole.Customer,
+      },
+      transaction,
+    );
+    await this.notifications.create(
+      booking.taskerId,
+      {
+        category: 'tasks',
+        type,
+        title,
+        body,
+        entityType: 'booking',
+        entityId: String(booking.id),
+        audienceRole: UserRole.Tasker,
+      },
+      transaction,
+    );
+  }
+
+  /**
+   * Sweeps recently completed bookings for a one-time "leave a review" nudge to
+   * the customer once no review exists yet, a small delay after completion.
+   */
+  async sendDueReviewRequests(): Promise<{ examined: number; sent: number }> {
+    const now = new Date();
+    const delayMs = this.config.get<number>('bookingReviewRequests.delayMs', 2 * 60 * 60_000);
+    const threshold = new Date(now.getTime() - delayMs);
+    const batchSize = this.config.get<number>('bookingReviewRequests.batchSize', 200);
+    const candidates = await this.prisma.booking.findMany({
+      where: { status: 'completed', reviewRequestSentAt: null, taskCompletedAt: { lte: threshold } },
+      select: { id: true },
+      take: batchSize,
+    });
+    let sent = 0;
+    for (const candidate of candidates) {
+      if (await this.sendReviewRequestOne(candidate.id)) sent += 1;
+    }
+    return { examined: candidates.length, sent };
+  }
+
+  private async sendReviewRequestOne(bookingId: number): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findUnique({
+        where: { id: bookingId },
+        select: { id: true, status: true, customerId: true, reviewRequestSentAt: true },
+      });
+      if (!booking || booking.status !== 'completed' || booking.reviewRequestSentAt) return false;
+      const existingReview = await transaction.review.findFirst({
+        where: { bookingId, reviewerId: booking.customerId },
+        select: { id: true },
+      });
+      if (existingReview) {
+        await transaction.booking.update({
+          where: { id: bookingId },
+          data: { reviewRequestSentAt: new Date() },
+        });
+        return false;
+      }
+      await this.notifications.create(
+        booking.customerId,
+        {
+          category: 'tasks',
+          type: 'review_request',
+          title: 'Share your feedback',
+          body: 'Your task is complete. Take a moment to rate your experience.',
+          entityType: 'booking',
+          entityId: String(bookingId),
+          audienceRole: UserRole.Customer,
+        },
+        transaction,
+      );
+      await transaction.booking.update({
+        where: { id: bookingId },
+        data: { reviewRequestSentAt: new Date() },
+      });
+      return true;
+    });
+  }
+
   async updateBilling(customerId: number, bookingId: number, dto: UpdateBookingBillingDto) {
     if (
       dto.tipAmount === undefined &&

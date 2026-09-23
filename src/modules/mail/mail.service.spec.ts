@@ -1,5 +1,9 @@
 import { ConfigService } from '@nestjs/config';
-import { passwordResetOtpTemplate, verificationEmailTemplate } from './email-templates';
+import {
+  bookingLifecycleEmailTemplate,
+  passwordResetOtpTemplate,
+  verificationEmailTemplate,
+} from './email-templates';
 import { LATACHE_EMAIL_ASSETS, LATACHE_EMAIL_LOGO_URL } from './email-layout';
 import { MailService } from './mail.service';
 import type { MailTransporter } from './mail.types';
@@ -52,6 +56,33 @@ describe('MailService', () => {
     expect(html).toContain('expires in 15 minutes');
     expect(html).not.toContain('reset?token=');
     expect(html).not.toContain('Open reset page');
+  });
+
+  it('renders a booking lifecycle email reusing the notification title/body and escaping HTML', () => {
+    const rendered = bookingLifecycleEmailTemplate({
+      name: '<b>Sara</b>',
+      bookingId: '482',
+      title: 'Task confirmed',
+      body: 'Your tasker confirmed the booking.',
+    });
+    expect(rendered.subject).toBe('Task confirmed');
+    expect(rendered.html).toContain('#482');
+    expect(rendered.html).toContain('Your tasker confirmed the booking.');
+    expect(rendered.html).toContain('&lt;b&gt;Sara&lt;/b&gt;');
+    expect(rendered.html).not.toContain('<b>Sara</b>');
+    expect(rendered.text).toContain('#482');
+  });
+
+  it('renders an Arabic booking lifecycle email', () => {
+    const rendered = bookingLifecycleEmailTemplate({
+      name: 'سارة',
+      bookingId: '482',
+      title: 'تم تأكيد المهمة',
+      body: 'تم تأكيد المهمة بنجاح.',
+      locale: 'ar',
+    });
+    expect(rendered.html).toContain('lang="ar" dir="rtl"');
+    expect(rendered.html).toContain('تم تأكيد المهمة بنجاح.');
   });
 
   it('renders Arabic security email without standalone templates', () => {

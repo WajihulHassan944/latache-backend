@@ -201,6 +201,18 @@ const ARABIC_TEMPLATES: Record<string, LocalizedTemplate> = {
     title: 'تم رفض اقتراح تغيير الموعد',
     body: 'رفض العميل اقتراحك لتغيير الموعد.',
   },
+  booking_reminder_24h: {
+    title: 'تذكير: حجزك غداً',
+    body: 'لديك حجز مجدول غداً. تحقق من التفاصيل استعداداً له.',
+  },
+  booking_reminder_1h: {
+    title: 'تذكير: حجزك خلال ساعة',
+    body: 'يبدأ حجزك المجدول خلال حوالي ساعة.',
+  },
+  review_request: {
+    title: 'شاركنا تقييمك',
+    body: 'اكتملت المهمة. خذ لحظة لتقييم تجربتك.',
+  },
 
 };
 
@@ -392,6 +404,18 @@ const DARIJA_TEMPLATES: Record<string, LocalizedTemplate> = {
   reschedule_proposal_rejected: {
     title: 'رفض الزبون اقتراح الموعد',
     body: 'الزبون رفض الاقتراح ديالك باش يتبدل الموعد.',
+  },
+  booking_reminder_24h: {
+    title: 'تذكير: الحجز ديالك غدا',
+    body: 'عندك حجز مبرمج غدا. تأكد من التفاصيل قبل الموعد.',
+  },
+  booking_reminder_1h: {
+    title: 'تذكير: الحجز ديالك من بعد ساعة',
+    body: 'الحجز المبرمج ديالك غادي يبدا من بعد شي ساعة.',
+  },
+  review_request: {
+    title: 'عاونا بالتقييم ديالك',
+    body: 'كملات المهمة. خود شي دقيقة باش تقيّم التجربة ديالك.',
   },
 
 };

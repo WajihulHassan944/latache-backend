@@ -11,6 +11,7 @@ import { MAIL_TRANSPORTER } from './mail.constants';
 import type { MailRecipientAddress, MailTransporter } from './mail.types';
 import {
   adminWelcomeTemplate,
+  bookingLifecycleEmailTemplate,
   disputeLifecycleEmailTemplate,
   emailPlainText,
   emailSubject,
@@ -122,6 +123,23 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     locale?: string;
   }): Promise<void> {
     const rendered = disputeLifecycleEmailTemplate(params);
+    await this.send({
+      to: params.to,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+    });
+  }
+
+  async sendBookingLifecycleEmail(params: {
+    to: string;
+    name: string;
+    bookingId: string;
+    title: string;
+    body: string;
+    locale?: string;
+  }): Promise<void> {
+    const rendered = bookingLifecycleEmailTemplate(params);
     await this.send({
       to: params.to,
       subject: rendered.subject,

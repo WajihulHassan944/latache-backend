@@ -5,9 +5,10 @@ import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { NotificationTemplateService } from './notification-template.service';
 import { FcmModule } from '../fcm/fcm.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
-  imports: [AuthModule, RealtimeModule, FcmModule],
+  imports: [AuthModule, RealtimeModule, FcmModule, MailModule],
   controllers: [NotificationsController],
   providers: [NotificationsService, NotificationTemplateService],
   exports: [NotificationsService],

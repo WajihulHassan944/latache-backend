@@ -131,6 +131,7 @@ model User {
   conversationCallsEnded      ConversationCall[]          @relation("ConversationCallEndedBy")
   notifications               TaskNotification[]
   fcmDeviceTokens             FcmDeviceToken[]
+  emailNotificationDeliveries EmailNotificationDelivery[]
   reviewsWritten              Review[]                    @relation("ReviewsWritten")
   reviewsReceived             Review[]                    @relation("ReviewsReceived")
   reviewsModerated            Review[]                    @relation("ReviewsModerated")
@@ -842,6 +843,9 @@ model Booking {
   cancellationReason        String?   @db.VarChar(1000)
   rescheduledAt             DateTime? @db.Timestamptz(6)
   customerReminderSentAt    DateTime? @db.Timestamptz(6)
+  reminder24hSentAt         DateTime? @db.Timestamptz(6)
+  reminder1hSentAt          DateTime? @db.Timestamptz(6)
+  reviewRequestSentAt       DateTime? @db.Timestamptz(6)
   estimatedDurationMinutes  Int       @default(120)
   extensionMinutes          Int       @default(0)
   paymentSource             String    @default("stripe") @db.VarChar(32)
@@ -910,6 +914,9 @@ model Booking {
   @@index([taskerId, conversationLastMessageAt, updatedAt], map: "bookings_tasker_conversation_activity_idx")
   @@index([conversationId, bookingDate], map: "bookings_conversation_date_idx")
   @@index([customerId, customerReminderSentAt], map: "bookings_customer_reminder_sent_idx")
+  @@index([status, bookingDate, reminder24hSentAt], map: "bookings_reminder_24h_idx")
+  @@index([status, bookingDate, reminder1hSentAt], map: "bookings_reminder_1h_idx")
+  @@index([status, taskCompletedAt, reviewRequestSentAt], map: "bookings_review_request_idx")
   @@map("Bookings")
 }
 
@@ -1559,8 +1566,9 @@ model TaskNotification {
   readAt         DateTime? @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @db.Timestamptz(6)
 
-  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "TaskNotifications_userId_fkey")
+  user              User                        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "TaskNotifications_userId_fkey")
   fcmPushDeliveries FcmPushDelivery[]
+  emailDeliveries   EmailNotificationDelivery[]
 
   @@index([userId, audienceRole, readAt, createdAt], map: "task_notifications_user_role_read_created_idx")
   @@index([userId, category, createdAt], map: "task_notifications_user_category_idx")
@@ -2046,4 +2054,26 @@ model FcmPushDelivery {
   @@unique([notificationId, deviceTokenId], map: "fcm_push_deliveries_notification_device_unique")
   @@index([status, nextAttemptAt, lockedAt, createdAt], map: "fcm_push_deliveries_queue_idx")
   @@map("FcmPushDeliveries")
+}
+
+model EmailNotificationDelivery {
+  id             String    @id @default(cuid()) @db.VarChar(40)
+  notificationId String    @db.VarChar(40)
+  userId         Int
+  status         String    @default("pending") @db.VarChar(16)
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now()) @db.Timestamptz(6)
+  lockedAt       DateTime? @db.Timestamptz(6)
+  lockToken      String?   @db.VarChar(64)
+  lastError      String?   @db.VarChar(1000)
+  sentAt         DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  notification TaskNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "EmailNotificationDeliveries_notificationId_fkey")
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "EmailNotificationDeliveries_userId_fkey")
+
+  @@unique([notificationId], map: "email_notification_deliveries_notification_unique")
+  @@index([status, nextAttemptAt, lockedAt, createdAt], map: "email_notification_deliveries_queue_idx")
+  @@map("EmailNotificationDeliveries")
 }
