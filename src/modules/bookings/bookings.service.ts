@@ -1059,6 +1059,132 @@ export class BookingsService {
     });
   }
 
+  /**
+   * Cancels accepted online-paid bookings the customer never paid for by
+   * `paymentDueAt`, releasing the Tasker's slot. A Stripe attempt that actually
+   * succeeded is reconciled (booking confirmed) instead of cancelled.
+   */
+  async expireDueAwaitingPaymentBookings(): Promise<{
+    examined: number;
+    expired: number;
+    reconciled: number;
+    deferred: number;
+  }> {
+    const batchSize = this.config.get<number>('bookingExpiration.batchSize', 100);
+    const candidates = await this.prisma.booking.findMany({
+      where: { status: 'awaiting_payment', paymentDueAt: { lte: new Date() } },
+      select: { id: true, paymentSource: true },
+      orderBy: [{ paymentDueAt: 'asc' }, { id: 'asc' }],
+      take: batchSize,
+    });
+    let expired = 0;
+    let reconciled = 0;
+    let deferred = 0;
+    for (const candidate of candidates) {
+      try {
+        if (candidate.paymentSource === PAYMENT_SOURCE.Stripe) {
+          const settlement = await this.payments.settleAcceptancePaymentBeforeExpiry(candidate.id);
+          if (settlement === 'captured') {
+            reconciled += 1;
+            continue;
+          }
+          if (settlement === 'in_flight') {
+            deferred += 1;
+            continue;
+          }
+        }
+        if (await this.expireOneAwaitingPaymentBooking(candidate.id)) expired += 1;
+      } catch (error) {
+        deferred += 1;
+        this.logger.error(
+          `Failed to expire awaiting-payment booking ${candidate.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    return { examined: candidates.length, expired, reconciled, deferred };
+  }
+
+  private async expireOneAwaitingPaymentBooking(bookingId: number): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findUnique({ where: { id: bookingId } });
+      // Serialized with the wallet capture / markAcceptanceCaptured row lock: a
+      // payment that won the race leaves the booking confirmed and we stop here.
+      if (
+        !booking ||
+        booking.status !== 'awaiting_payment' ||
+        booking.capturedAt ||
+        !booking.paymentDueAt ||
+        booking.paymentDueAt > new Date()
+      ) {
+        return false;
+      }
+      await transaction.userAvailability.updateMany({
+        where: { id: booking.availabilityId },
+        data: { isBooked: false },
+      });
+      await this.referrals.releaseCustomerDiscountReservation(
+        transaction,
+        bookingId,
+        'Booking automatically cancelled: payment not completed before the deadline',
+      );
+      await transaction.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          cancelledByRole: 'system',
+          cancellationReason: 'Automatically cancelled: payment was not completed before the deadline',
+        },
+      });
+      const when = `${dateOnlyFromDate(booking.bookingDate)} at ${booking.startTime}`;
+      await this.notifications.create(
+        booking.customerId,
+        {
+          category: 'tasks',
+          type: 'booking_payment_expired',
+          title: 'Booking cancelled - payment not completed',
+          body: `Your booking for ${when} was cancelled because payment was not completed in time. You were not charged.`,
+          entityType: 'booking',
+          entityId: String(bookingId),
+          audienceRole: UserRole.Customer,
+        },
+        transaction,
+      );
+      await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'tasks',
+          type: 'booking_payment_expired',
+          title: 'Booking cancelled - customer did not pay',
+          body: `The booking for ${when} was cancelled because the customer did not pay in time. That time is open again.`,
+          entityType: 'booking',
+          entityId: String(bookingId),
+          templateKey: 'booking_payment_expired_tasker',
+          audienceRole: UserRole.Tasker,
+        },
+        transaction,
+      );
+      await this.audit.record(
+        {
+          targetUserId: booking.customerId,
+          action: 'booking_payment_expired',
+          entityType: 'booking',
+          entityId: bookingId,
+          reason: 'Payment deadline elapsed after Tasker acceptance',
+          metadata: {
+            taskerId: booking.taskerId,
+            paymentSource: booking.paymentSource,
+            paymentDueAt: booking.paymentDueAt.toISOString(),
+          },
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(bookingId, 'cancelled', 'booking_payment_expired', transaction);
+      return true;
+    });
+  }
+
   async completeByCustomer(customerId: number, bookingId: number): Promise<void> {
     await this.prisma.$transaction(async (transaction) => {
       const rows = await transaction.$queryRaw<Array<{ id: number }>>`
@@ -3030,6 +3156,8 @@ export class BookingsService {
         complaints: booking._count.complaints,
         reviews: booking._count.reviews,
       },
+      paymentDueAt:
+        booking.status === 'awaiting_payment' ? (booking.paymentDueAt?.toISOString() ?? null) : null,
       cancelledByRole: booking.status === 'cancelled' ? booking.cancelledByRole : null,
       cancellationReason: booking.status === 'cancelled' ? booking.cancellationReason : null,
       cancelledAt:

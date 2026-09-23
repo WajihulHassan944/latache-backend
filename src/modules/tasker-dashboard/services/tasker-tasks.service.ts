@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { ConfigService } from '@nestjs/config';
 import { dateOnlyFromDate, dateOnlyToDate, todayDateOnly } from '../../../common/utils/date.util';
 import { normalizePagination } from '../../../common/utils/pagination.util';
+import { parseTimeToMinutes } from '../../../common/utils/time.util';
 import { PrismaService } from '../../../database/prisma.service';
 import { Prisma } from '../../../generated/prisma/client';
 import type {
@@ -133,9 +134,17 @@ export class TaskerTasksService {
       const status = booking.paymentSource === 'cash'
         ? TASKER_BOOKING_STATUS.Confirmed
         : TASKER_BOOKING_STATUS.AwaitingPayment;
+      const paymentDueAt =
+        status === TASKER_BOOKING_STATUS.AwaitingPayment
+          ? await this.paymentDeadline(booking.bookingDate, booking.startTime, transaction)
+          : null;
       const row = await transaction.booking.update({
         where: { id: bookingId },
-        data: { status, ...(status === TASKER_BOOKING_STATUS.Confirmed ? { confirmedAt: new Date() } : {}) },
+        data: {
+          status,
+          ...(status === TASKER_BOOKING_STATUS.Confirmed ? { confirmedAt: new Date() } : {}),
+          ...(paymentDueAt ? { paymentDueAt } : {}),
+        },
         include: this.includeRelations(),
       });
       await this.notifications.create(
@@ -146,9 +155,10 @@ export class TaskerTasksService {
           title: status === TASKER_BOOKING_STATUS.Confirmed ? 'Task confirmed' : 'Payment required',
           body: status === TASKER_BOOKING_STATUS.Confirmed
             ? 'Your tasker confirmed the booking.'
-            : 'Your tasker accepted the booking. Complete payment to confirm it.',
+            : `Your tasker accepted the booking. Complete payment within ${Math.max(1, Math.round(((paymentDueAt?.getTime() ?? Date.now()) - Date.now()) / 60_000))} minutes to confirm it, or it will be cancelled.`,
           entityType: 'booking',
           entityId: String(bookingId),
+          ...(paymentDueAt ? { metadata: { paymentDueAt: paymentDueAt.toISOString() } } : {}),
         },
         transaction,
       );
@@ -166,6 +176,25 @@ export class TaskerTasksService {
       return row;
     });
     return this.serialize(updated);
+  }
+
+  /**
+   * Payment window after acceptance: the configured minutes, but never past the
+   * booking start (UTC-minutes convention, as elsewhere in bookings), and never
+   * shorter than 5 minutes so an accepted same-day booking is still payable.
+   */
+  private async paymentDeadline(
+    bookingDate: Date,
+    startTime: string,
+    transaction: Prisma.TransactionClient,
+  ): Promise<Date> {
+    const { awaitingPaymentMinutes } =
+      await this.platformSettings.bookingAwaitingPaymentPolicy(transaction);
+    const now = Date.now();
+    let due = now + awaitingPaymentMinutes * 60_000;
+    const startMinutes = parseTimeToMinutes(startTime);
+    if (startMinutes !== null) due = Math.min(due, bookingDate.getTime() + startMinutes * 60_000);
+    return new Date(Math.max(due, now + 5 * 60_000));
   }
 
   async cancel(taskerId: number, bookingId: number, dto: CancelTaskDto): Promise<TaskerTaskView> {
@@ -854,6 +883,7 @@ export class TaskerTasksService {
         completionApprovedByRole: booking.completionApprovedByRole,
         completionAutoApprovedAt: toIso(booking.completionAutoApprovedAt),
         taskCompletedAt: toIso(booking.taskCompletedAt),
+        paymentDueAt: booking.status === TASKER_BOOKING_STATUS.AwaitingPayment ? toIso(booking.paymentDueAt) : null,
         cancelledAt: toIso(booking.cancelledAt),
         cancellationReason: booking.cancellationReason,
       },

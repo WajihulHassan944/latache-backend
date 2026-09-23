@@ -847,6 +847,8 @@ model TaskerSubscription {
   activatedAt           DateTime? @db.Timestamptz(6)
   currentPeriodEnd      DateTime? @db.Timestamptz(6)
   graceUntil            DateTime? @db.Timestamptz(6)
+  /// Tasker turned off auto-renewal: the plan stays active until currentPeriodEnd, then expires.
+  cancelAtPeriodEnd     Boolean   @default(false)
   renewalFailureReason  String?   @db.VarChar(500)
   lastBonusPaidAt       DateTime? @db.Timestamptz(6)
   reviewedById          Int?
@@ -923,6 +925,9 @@ model Booking {
   stripePaymentIntentId     String?   @unique(map: "Bookings_stripePaymentIntentId_key") @db.VarChar(255)
   capturedAmount            Decimal?  @db.Decimal(14, 2)
   capturedAt                DateTime? @db.Timestamptz(6)
+  /// Set when the Tasker accepts an online-paid booking (-> awaiting_payment). The
+  /// customer must pay by then or the booking is cancelled and the slot released.
+  paymentDueAt              DateTime? @db.Timestamptz(6)
   serviceAmount             Decimal?  @db.Decimal(14, 2)
   platformFeeAmount         Decimal   @default(0) @db.Decimal(14, 2)
   commissionRatePercent     Decimal   @default(0) @db.Decimal(7, 4)
@@ -985,6 +990,7 @@ model Booking {
   @@index([status, bookingDate, reminder24hSentAt], map: "bookings_reminder_24h_idx")
   @@index([status, bookingDate, reminder1hSentAt], map: "bookings_reminder_1h_idx")
   @@index([status, taskCompletedAt, reviewRequestSentAt], map: "bookings_review_request_idx")
+  @@index([status, paymentDueAt], map: "bookings_payment_due_idx")
   @@map("Bookings")
 }
 

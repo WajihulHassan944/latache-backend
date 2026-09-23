@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -12,6 +12,7 @@ import {
   CreateCustomTimeRequestDto,
   CustomTimeRequestParamDto,
   CustomTimeRequestTaskerParamDto,
+  ListCustomTimeRequestsQueryDto,
   RespondCustomTimeRequestDto,
 } from './dto/custom-time-request.dto';
 
@@ -38,6 +39,27 @@ export class CustomTimeRequestsController {
     @Body() dto: CreateCustomTimeRequestDto,
   ) {
     return this.requests.create(user.id, params.taskerId, dto);
+  }
+
+  @Get('custom-time-requests')
+  @ApiOperation({
+    summary: "List the caller's custom time requests",
+    description:
+      'As a Tasker: requests sent to you (use status=pending for the inbox). As a Customer: requests you sent. Newest first.',
+  })
+  list(@CurrentUser() user: User, @Query() query: ListCustomTimeRequestsQueryDto) {
+    return this.requests.list(user, query);
+  }
+
+  @Post('custom-time-requests/:requestId/cancel')
+  @Roles(UserRole.Customer)
+  @ApiParam({ name: 'requestId', required: true, type: String })
+  @ApiOperation({
+    summary: 'Customer withdraws a pending or accepted custom time request',
+    description: 'Frees the one-pending-request-per-Tasker limit so a new request can be sent.',
+  })
+  cancel(@CurrentUser() user: User, @Param() params: CustomTimeRequestParamDto) {
+    return this.requests.cancel(user.id, params.requestId);
   }
 
   @Post('custom-time-requests/:requestId/respond')

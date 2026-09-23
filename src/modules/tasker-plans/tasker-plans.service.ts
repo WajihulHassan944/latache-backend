@@ -75,13 +75,65 @@ export class TaskerPlansService {
     };
   }
 
-  async active(taskerId: number): Promise<{ planId: TaskerPlanId | null; status: 'pending' | 'active' | null }> {
+  async active(taskerId: number): Promise<{
+    planId: TaskerPlanId | null;
+    status: 'pending' | 'active' | null;
+    nextBillingAt: string | null;
+    autoRenew: boolean;
+    graceUntil: string | null;
+  }> {
     const row = await this.prisma.taskerSubscription.findFirst({
       where: { taskerId, status: { in: OPEN_STATUSES } },
       orderBy: { createdAt: 'desc' },
     });
-    if (!row) return { planId: null, status: null };
-    return { planId: row.planId as TaskerPlanId, status: row.status as 'pending' | 'active' };
+    if (!row) return { planId: null, status: null, nextBillingAt: null, autoRenew: false, graceUntil: null };
+    return {
+      planId: row.planId as TaskerPlanId,
+      status: row.status as 'pending' | 'active',
+      nextBillingAt: row.currentPeriodEnd?.toISOString() ?? null,
+      autoRenew: !row.cancelAtPeriodEnd,
+      graceUntil: row.graceUntil?.toISOString() ?? null,
+    };
+  }
+
+  /**
+   * Tasker-initiated cancel. A pending (unreviewed) purchase is cancelled and
+   * refunded in full. An active plan keeps its perks until the paid period ends
+   * and simply stops renewing (resume() undoes that before the period ends).
+   */
+  async cancel(taskerId: number) {
+    const row = await this.prisma.taskerSubscription.findFirst({
+      where: { taskerId, status: { in: OPEN_STATUSES } },
+    });
+    if (!row) throw new NotFoundException('You have no pending or active plan');
+    if (row.status === TASKER_PLAN_STATUS.Pending) {
+      await this.closePendingWithRefund(row.id, { kind: 'cancelled', taskerId });
+    } else {
+      await this.prisma.$transaction(async (transaction) => {
+        const locked = await this.lockSubscription(row.id, transaction);
+        if (locked.status !== TASKER_PLAN_STATUS.Active) {
+          throw new ConflictException('This plan changed status; reload and try again');
+        }
+        await transaction.taskerSubscription.update({ where: { id: row.id }, data: { cancelAtPeriodEnd: true } });
+        await this.audit.record(
+          { actorId: taskerId, targetUserId: taskerId, action: 'tasker_plan_auto_renew_disabled', entityType: 'tasker_subscription', entityId: row.id, metadata: { planId: row.planId } },
+          transaction,
+        );
+      });
+    }
+    return this.active(taskerId);
+  }
+
+  async resume(taskerId: number) {
+    const row = await this.prisma.taskerSubscription.findFirst({
+      where: { taskerId, status: TASKER_PLAN_STATUS.Active },
+    });
+    if (!row) throw new NotFoundException('You have no active plan');
+    if (row.cancelAtPeriodEnd) {
+      await this.prisma.taskerSubscription.update({ where: { id: row.id }, data: { cancelAtPeriodEnd: false } });
+      await this.audit.record({ actorId: taskerId, targetUserId: taskerId, action: 'tasker_plan_auto_renew_enabled', entityType: 'tasker_subscription', entityId: row.id, metadata: { planId: row.planId } });
+    }
+    return this.active(taskerId);
   }
 
   /** Perks for pricing/discovery. Only an approved (active) plan counts, never a pending one. */
@@ -325,10 +377,19 @@ export class TaskerPlansService {
   }
 
   async reject(adminId: number, subscriptionId: string, note?: string) {
+    return this.adminView(await this.closePendingWithRefund(subscriptionId, { kind: 'rejected', adminId, note }));
+  }
+
+  /** Refunds a paid pending purchase to its original method and closes it (admin reject or tasker cancel). */
+  private async closePendingWithRefund(
+    subscriptionId: string,
+    actor: { kind: 'rejected'; adminId: number; note?: string } | { kind: 'cancelled'; taskerId: number },
+  ): Promise<TaskerSubscription> {
+    const note = actor.kind === 'rejected' ? actor.note : undefined;
     const current = await this.prisma.taskerSubscription.findUnique({ where: { id: subscriptionId } });
     if (!current) throw new NotFoundException('Plan subscription not found');
     if (current.status !== TASKER_PLAN_STATUS.Pending || !current.paymentReference) {
-      throw new ConflictException(`Only a paid pending plan can be rejected (status: ${current.status})`);
+      throw new ConflictException(`Only a paid pending plan can be ${actor.kind} (status: ${current.status})`);
     }
     // Card refunds are a network call: do it first (idempotent by key), then flip state.
     let refundReference: string | null = null;
@@ -339,10 +400,10 @@ export class TaskerPlansService {
         { kind: 'tasker_plan_refund', latacheSubscriptionId: current.id },
       );
     }
-    const updated = await this.prisma.$transaction(async (transaction) => {
+    return this.prisma.$transaction(async (transaction) => {
       const row = await this.lockSubscription(subscriptionId, transaction);
       if (row.status !== TASKER_PLAN_STATUS.Pending) {
-        throw new ConflictException(`Only a pending plan can be rejected (status: ${row.status})`);
+        throw new ConflictException(`Only a pending plan can be ${actor.kind} (status: ${row.status})`);
       }
       const plan = this.planOf(row);
       if (row.paymentMethod === 'wallet') {
@@ -351,15 +412,22 @@ export class TaskerPlansService {
       const now = new Date();
       await transaction.taskerSubscription.update({
         where: { id: row.id },
-        data: { status: TASKER_PLAN_STATUS.Rejected, reviewedById: adminId, reviewedAt: now, endedAt: now, adminNote: note ?? null },
+        data:
+          actor.kind === 'rejected'
+            ? { status: TASKER_PLAN_STATUS.Rejected, reviewedById: actor.adminId, reviewedAt: now, endedAt: now, adminNote: note ?? null }
+            : { status: TASKER_PLAN_STATUS.Cancelled, endedAt: now },
       });
+      const refundedTo = `${row.currency} ${Number(row.priceAmount).toFixed(2)} has been refunded to your ${row.paymentMethod === 'wallet' ? 'wallet' : 'card'}`;
       await this.notifications.create(
         row.taskerId,
         {
           category: 'payments',
-          type: 'tasker_plan_rejected',
-          title: `${plan.name} plan not approved`,
-          body: `Your ${plan.name} plan request was not approved and ${row.currency} ${Number(row.priceAmount).toFixed(2)} has been refunded to your ${row.paymentMethod === 'wallet' ? 'wallet' : 'card'}.${note ? ` Note: ${note}` : ''}`,
+          type: actor.kind === 'rejected' ? 'tasker_plan_rejected' : 'tasker_plan_cancelled',
+          title: actor.kind === 'rejected' ? `${plan.name} plan not approved` : `${plan.name} plan cancelled`,
+          body:
+            actor.kind === 'rejected'
+              ? `Your ${plan.name} plan request was not approved and ${refundedTo}.${note ? ` Note: ${note}` : ''}`
+              : `You cancelled your ${plan.name} plan request and ${refundedTo}.`,
           entityType: 'tasker_subscription',
           entityId: row.id,
           metadata: { subscriptionId: row.id, planId: plan.id },
@@ -368,12 +436,19 @@ export class TaskerPlansService {
         transaction,
       );
       await this.audit.record(
-        { actorId: adminId, targetUserId: row.taskerId, action: 'tasker_plan_rejected', entityType: 'tasker_subscription', entityId: row.id, reason: note ?? null, metadata: { planId: plan.id, refundReference } },
+        {
+          actorId: actor.kind === 'rejected' ? actor.adminId : actor.taskerId,
+          targetUserId: row.taskerId,
+          action: actor.kind === 'rejected' ? 'tasker_plan_rejected' : 'tasker_plan_cancelled',
+          entityType: 'tasker_subscription',
+          entityId: row.id,
+          reason: note ?? null,
+          metadata: { planId: plan.id, refundReference },
+        },
         transaction,
       );
       return transaction.taskerSubscription.findUniqueOrThrow({ where: { id: row.id } });
     });
-    return this.adminView(updated);
   }
 
   // ---------------------------------------------------------- maintenance
@@ -405,6 +480,10 @@ export class TaskerPlansService {
       orderBy: { currentPeriodEnd: 'asc' },
     });
     for (const row of due) {
+      if (row.cancelAtPeriodEnd) {
+        if (await this.endNonRenewing(row.id)) expired += 1;
+        continue;
+      }
       // During grace, retry at most once a day rather than on every sweep.
       if (row.graceUntil && row.updatedAt.getTime() > now.getTime() - DAY_MS) continue;
       try {
@@ -489,6 +568,35 @@ export class TaskerPlansService {
       await this.payBonus(row.taskerId, row.id, plan, periodEnd, transaction);
     });
     return true;
+  }
+
+  /** Auto-renew was turned off: the paid period is over, so the plan ends without charging. */
+  private async endNonRenewing(id: string): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      const row = await this.lockSubscription(id, transaction);
+      if (row.status !== TASKER_PLAN_STATUS.Active || !row.cancelAtPeriodEnd) return false;
+      if (!row.currentPeriodEnd || row.currentPeriodEnd > new Date()) return false;
+      const plan = this.planOf(row);
+      await transaction.taskerSubscription.update({
+        where: { id },
+        data: { status: TASKER_PLAN_STATUS.Cancelled, endedAt: new Date() },
+      });
+      await this.notifications.create(
+        row.taskerId,
+        {
+          category: 'payments',
+          type: 'tasker_plan_cancelled',
+          title: `${plan.name} plan ended`,
+          body: `Your ${plan.name} plan ended at the close of its paid period as you requested. You were not charged again.`,
+          entityType: 'tasker_subscription',
+          entityId: id,
+          metadata: { subscriptionId: id, planId: plan.id },
+          audienceRole: UserRole.Tasker,
+        },
+        transaction,
+      );
+      return true;
+    });
   }
 
   private async expireOne(id: string): Promise<boolean> {
@@ -688,6 +796,7 @@ export class TaskerPlansService {
       lastBonusPaidAt: row.lastBonusPaidAt?.toISOString() ?? null,
       reviewedAt: row.reviewedAt?.toISOString() ?? null,
       adminNote: row.adminNote,
+      autoRenew: !row.cancelAtPeriodEnd,
       endedAt: row.endedAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
     };

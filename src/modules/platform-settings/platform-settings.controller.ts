@@ -126,6 +126,7 @@ export class PlatformSettingsController {
         value: {
           bookingRules: {
             pendingRequestExpiryMinutes: 1440,
+            awaitingPaymentExpiryMinutes: 60,
           },
         },
       },

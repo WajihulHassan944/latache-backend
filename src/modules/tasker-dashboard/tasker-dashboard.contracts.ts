@@ -71,6 +71,8 @@ export interface TaskerTaskView {
     completionApprovedByRole: string | null;
     completionAutoApprovedAt: string | null;
     taskCompletedAt: string | null;
+    /** Only while status is awaiting_payment: after this the booking is auto-cancelled. */
+    paymentDueAt: string | null;
     cancelledAt: string | null;
     cancellationReason: string | null;
   };

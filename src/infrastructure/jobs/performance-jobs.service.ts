@@ -24,6 +24,7 @@ const JOB_NAMES = {
   PurgeDeletedAssets: 'storage.purge-deleted-assets',
   AutoCompleteBookings: 'bookings.auto-complete',
   ExpirePendingBookings: 'bookings.expire-pending',
+  ExpireAwaitingPaymentBookings: 'bookings.expire-awaiting-payment',
   MaintainReferrals: 'referrals.maintain',
   MaintainDisputes: 'disputes.maintain',
   MaintainElite: 'elite.maintain',
@@ -251,6 +252,11 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { name: JOB_NAMES.SendReviewRequests, data: {} },
       ),
       queue.upsertJobScheduler(
+        'expire-awaiting-payment-bookings-v1',
+        { every: this.config.get<number>('bookingExpiration.sweepIntervalMs', 60_000) },
+        { name: JOB_NAMES.ExpireAwaitingPaymentBookings, data: {} },
+      ),
+      queue.upsertJobScheduler(
         'expire-custom-time-requests-v1',
         { every: this.config.get<number>('customTimeRequests.sweepIntervalMs', 60_000) },
         { name: JOB_NAMES.ExpireCustomTimeRequests, data: {} },
@@ -318,6 +324,8 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return { deleted: await this.storageDeletion.processPending() };
       case JOB_NAMES.AutoCompleteBookings:
         return this.bookings.autoCompleteDueBookings();
+      case JOB_NAMES.ExpireAwaitingPaymentBookings:
+        return this.bookings.expireDueAwaitingPaymentBookings();
       case JOB_NAMES.ExpirePendingBookings:
         return this.bookings.expireDuePendingBookings();
       case JOB_NAMES.MaintainReferrals:

@@ -52,6 +52,8 @@ import { StripeService } from './stripe.service';
 const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 const moneyString = (value: number): string => roundMoney(value).toFixed(2);
 const toMinorUnits = (value: number): number => Math.round(roundMoney(value) * 100);
+/** Stripe metadata.kind for the post-acceptance capture PaymentIntent (completeAcceptancePayment). */
+const ACCEPTANCE_CAPTURE_INTENT_KIND = 'booking_acceptance_capture';
 
 type StripeDisputeWithPaymentIntent = Stripe.Dispute & {
   payment_intent?: string | Stripe.PaymentIntent | null;
@@ -583,7 +585,11 @@ export class PaymentsService {
       throw new ConflictException('Payment source must match the booking payment source');
     }
     const amount = roundMoney(Number(booking.hourlyRate) * (booking.estimatedDurationMinutes / 60));
+    // Past the deadline only an already-succeeded Stripe attempt may still land;
+    // anything new is refused (the expiry sweep cancels the booking shortly).
+    const paymentWindowClosed = booking.paymentDueAt !== null && booking.paymentDueAt <= new Date();
     if (dto.source === PAYMENT_SOURCE.Wallet) {
+      if (paymentWindowClosed) throw this.paymentWindowClosed();
       return this.captureAcceptanceFromWallet(bookingId, customerId, amount);
     }
     const paymentMethodId = dto.paymentMethodId ?? booking.stripePaymentMethodId ?? await this.defaultPaymentMethod(customerId);
@@ -599,18 +605,20 @@ export class PaymentsService {
     if (existing?.providerReference) {
       const intent = await this.stripeProvider.client().paymentIntents.retrieve(existing.providerReference);
       if (intent.status === 'succeeded') return this.markAcceptanceCaptured(bookingId, amount, intent.id, transactionKey);
+      if (paymentWindowClosed) throw this.paymentWindowClosed();
       if (intent.status === 'requires_action' && intent.client_secret) return { requiresAction: true, clientSecret: intent.client_secret };
       if (intent.status === 'requires_payment_method') {
         throw this.paymentRequired(intent.last_payment_error?.message ?? 'Stripe declined the payment');
       }
     }
+    if (paymentWindowClosed) throw this.paymentWindowClosed();
     try {
       const customer = await this.ensureStripeCustomer(customerId);
       const intent = await this.stripeProvider.client().paymentIntents.create({
         amount: toMinorUnits(amount), currency: booking.paymentCurrency.toLowerCase(), customer,
         payment_method: paymentMethodId, confirm: true, off_session: true,
         description: `Latache booking #${bookingId} acceptance payment`,
-        metadata: { kind: 'booking_acceptance_capture', latacheBookingId: String(bookingId), latacheCustomerId: String(customerId) },
+        metadata: { kind: ACCEPTANCE_CAPTURE_INTENT_KIND, latacheBookingId: String(bookingId), latacheCustomerId: String(customerId) },
       }, { idempotencyKey: transactionKey });
       await this.prisma.paymentTransaction.upsert({
         where: { idempotencyKey: transactionKey },
@@ -677,9 +685,92 @@ export class PaymentsService {
       throw new ConflictException('Booking payment state changed while payment was being completed');
     }
     const booking = await client.booking.findUniqueOrThrow({ where: { id: bookingId } });
-    await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_captured', title: 'Booking confirmed', body: `${booking.paymentCurrency} ${amount.toFixed(2)} was captured and your booking is confirmed.`, entityType: 'booking', entityId: String(bookingId) }, transaction);
+    await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_captured', title: 'Booking confirmed', body: `${booking.paymentCurrency} ${amount.toFixed(2)} was captured and your booking is confirmed.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
+    // The Tasker's lists/home card/bell refresh on this notification; without it
+    // they only saw the payment if that booking happened to be open.
+    await this.notifications.create(booking.taskerId, { category: 'tasks', type: 'booking_payment_captured', title: 'Customer paid - task confirmed', body: `The customer paid for booking #${bookingId}. The task is confirmed for ${booking.bookingDate.toISOString().slice(0, 10)} at ${booking.startTime}.`, entityType: 'booking', entityId: String(bookingId), templateKey: 'booking_payment_captured_tasker', audienceRole: UserRole.Tasker }, transaction);
     await this.enqueuePaymentUpdate(bookingId, 'confirmed', 'acceptance_payment_captured', transaction, { paymentStatus: PAYMENT_STATUS.Ready });
     return { bookingId, status: 'confirmed' as const, capturedAmount: amount, capturedAt: now.toISOString() };
+  }
+
+  private paymentWindowClosed(): ConflictException {
+    return new ConflictException({
+      code: 'BOOKING_PAYMENT_WINDOW_EXPIRED',
+      message: 'The payment window for this booking has closed and it is being cancelled',
+    });
+  }
+
+  /**
+   * Stripe webhook for the acceptance-capture PaymentIntent. Covers a 3DS
+   * confirmation the app never reported back via complete-payment. A payment
+   * that lands after the booking was already cancelled (expired) is refunded.
+   */
+  private async handleAcceptanceIntent(
+    transaction: Prisma.TransactionClient,
+    intent: Stripe.PaymentIntent,
+    eventType: string,
+  ): Promise<void> {
+    const bookingId = Number(intent.metadata.latacheBookingId);
+    if (!Number.isInteger(bookingId) || bookingId <= 0) {
+      throw new BadRequestException('Stripe booking metadata is invalid');
+    }
+    const transactionKey = `acceptance-capture:${bookingId}`;
+    await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+    const booking = await transaction.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) throw new NotFoundException('Booking payment record not found');
+    const amount = roundMoney((intent.amount_received || intent.amount) / 100);
+    await transaction.paymentTransaction.upsert({
+      where: { idempotencyKey: transactionKey },
+      create: { customerId: booking.customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.BookingCharge, provider: 'stripe', providerReference: intent.id, status: intent.status, amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: transactionKey, failureReason: intent.last_payment_error?.message ?? null },
+      update: { providerReference: intent.id, status: intent.status, failureReason: intent.last_payment_error?.message ?? null },
+    });
+    if (eventType !== 'payment_intent.succeeded') return;
+    if (booking.status === 'awaiting_payment') {
+      await this.markAcceptanceCaptured(bookingId, amount, intent.id, transactionKey, transaction);
+      return;
+    }
+    if (booking.status === 'cancelled' && !booking.capturedAt) {
+      const refund = await this.stripeProvider.client().refunds.create(
+        { payment_intent: intent.id, metadata: { kind: 'booking_acceptance_late_refund', latacheBookingId: String(bookingId) } },
+        { idempotencyKey: `latache:acceptance-late-refund:${bookingId}` },
+      );
+      await transaction.paymentTransaction.update({
+        where: { idempotencyKey: transactionKey },
+        data: { status: 'refunded', failureReason: `Paid after booking was cancelled; refund ${refund.id}` },
+      });
+      await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `Your payment for booking #${bookingId} arrived after the booking was cancelled, so ${booking.paymentCurrency} ${amount.toFixed(2)} is being refunded to your card.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
+    }
+  }
+
+  /**
+   * Called by the awaiting-payment expiry sweep before it cancels a booking.
+   * Makes sure a Stripe acceptance payment is not silently in flight:
+   * 'captured' - it had succeeded, the booking is now confirmed (do not cancel);
+   * 'in_flight' - Stripe is still processing (retry later);
+   * 'none' - nothing will be charged (any open intent was cancelled), safe to cancel.
+   */
+  async settleAcceptancePaymentBeforeExpiry(bookingId: number): Promise<'captured' | 'in_flight' | 'none'> {
+    const row = await this.prisma.paymentTransaction.findUnique({ where: { idempotencyKey: `acceptance-capture:${bookingId}` } });
+    if (!row?.providerReference || row.provider !== 'stripe') return 'none';
+    const stripe = this.stripeProvider.client();
+    let intent = await stripe.paymentIntents.retrieve(row.providerReference);
+    if (['requires_action', 'requires_confirmation', 'requires_payment_method', 'requires_capture'].includes(intent.status)) {
+      try {
+        intent = await stripe.paymentIntents.cancel(intent.id, { cancellation_reason: 'abandoned' });
+      } catch {
+        // It may have completed between retrieve and cancel - look again.
+        intent = await stripe.paymentIntents.retrieve(intent.id);
+      }
+    }
+    if (intent.status === 'succeeded') {
+      await this.prisma.$transaction((transaction) =>
+        this.handleAcceptanceIntent(transaction, intent, 'payment_intent.succeeded'),
+      );
+      return 'captured';
+    }
+    if (intent.status === 'processing') return 'in_flight';
+    await this.prisma.paymentTransaction.update({ where: { id: row.id }, data: { status: intent.status } });
+    return intent.status === 'canceled' ? 'none' : 'in_flight';
   }
 
   private paymentRequired(message: string): HttpException {
@@ -1912,6 +2003,8 @@ export class PaymentsService {
             await this.handleTopupIntent(transaction, intent, event.type);
           } else if (kind === PAYMENT_TRANSACTION_KIND.BookingCharge) {
             await this.handleBookingIntent(transaction, intent, event.type);
+          } else if (kind === ACCEPTANCE_CAPTURE_INTENT_KIND) {
+            await this.handleAcceptanceIntent(transaction, intent, event.type);
           }
         } else if (
           event.type === 'refund.created' ||

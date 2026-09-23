@@ -12,6 +12,8 @@ export const TASKER_PLAN_STATUS = {
   Expired: 'expired',
   /** Card charge failed at purchase time; never took effect. */
   PaymentFailed: 'payment_failed',
+  /** Tasker cancelled a pending purchase (refunded) or let an active plan end without renewing. */
+  Cancelled: 'cancelled',
 } as const;
 
 export const TASKER_PLAN_PERIOD_DAYS = 30;

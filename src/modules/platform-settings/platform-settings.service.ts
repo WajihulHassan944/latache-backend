@@ -503,6 +503,18 @@ export class PlatformSettingsService {
     };
   }
 
+  async bookingAwaitingPaymentPolicy(transaction?: Prisma.TransactionClient): Promise<{
+    awaitingPaymentMinutes: number;
+  }> {
+    const section = await this.section<BookingRulesSettingsDto>('bookingRules', transaction);
+    return {
+      awaitingPaymentMinutes: Number(
+        section.awaitingPaymentExpiryMinutes ??
+          this.config.get<number>('bookingExpiration.awaitingPaymentMinutes', 60),
+      ),
+    };
+  }
+
   async assertBookingRules(input: {
     bookingDate: Date;
     startTime: string;
@@ -623,6 +635,7 @@ export class PlatformSettingsService {
         groupBookingEnabled: false,
         completionApprovalHours: this.config.get<number>('bookingCompletion.approvalHours', 24),
         pendingRequestExpiryMinutes: this.config.get<number>('bookingExpiration.pendingMinutes', 1_440),
+        awaitingPaymentExpiryMinutes: this.config.get<number>('bookingExpiration.awaitingPaymentMinutes', 60),
       },
       serviceRadius: {
         enforcementEnabled: true,

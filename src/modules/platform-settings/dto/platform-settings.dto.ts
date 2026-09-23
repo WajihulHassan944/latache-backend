@@ -221,6 +221,18 @@ export class BookingRulesSettingsDto {
   @Min(15)
   @Max(10080)
   pendingRequestExpiryMinutes?: number;
+  @ApiPropertyOptional({
+    example: 60,
+    default: 60,
+    description:
+      'Minutes a customer has to pay after the Tasker accepts an online-paid booking (never later than the booking start). Unpaid bookings are then cancelled and the slot released.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(10080)
+  awaitingPaymentExpiryMinutes?: number;
 }
 
 export class ServiceRadiusSettingsDto {

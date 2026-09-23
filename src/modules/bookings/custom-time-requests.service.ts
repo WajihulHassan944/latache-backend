@@ -14,6 +14,7 @@ import {
   isTodayOrFutureDate,
   todayDateOnly,
 } from '../../common/utils/date.util';
+import { normalizePagination } from '../../common/utils/pagination.util';
 import { parseTimeToMinutes } from '../../common/utils/time.util';
 import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
@@ -27,6 +28,8 @@ export const CUSTOM_TIME_REQUEST_STATUS = {
   Rejected: 'rejected',
   Expired: 'expired',
   Fulfilled: 'fulfilled',
+  /** Customer withdrew a pending or accepted request. */
+  Cancelled: 'cancelled',
 } as const;
 
 export type CustomTimeRequestStatus =
@@ -240,6 +243,83 @@ export class CustomTimeRequestsService {
               metadata: { requestId: request.id, taskerId: String(request.taskerId) },
               audienceRole: UserRole.Customer,
             },
+        transaction,
+      );
+      return this.view(updated);
+    });
+  }
+
+  /** Inbox/outbox for the caller's active role: a Tasker sees requests to them, a Customer their own. */
+  async list(
+    user: User,
+    query: { status?: string; page?: number; limit?: number },
+  ): Promise<{ page: number; limit: number; totalItems: number; totalPages: number; items: CustomTimeRequestView[] }> {
+    const { page, limit, offset } = normalizePagination(query.page, query.limit, 20);
+    const now = new Date();
+    const open = [CUSTOM_TIME_REQUEST_STATUS.Pending, CUSTOM_TIME_REQUEST_STATUS.Accepted] as string[];
+    // Lapsed pending/accepted rows count as expired even before the sweep flips them.
+    const statusFilter: Prisma.CustomTimeRequestWhereInput =
+      query.status === CUSTOM_TIME_REQUEST_STATUS.Expired
+        ? { OR: [{ status: CUSTOM_TIME_REQUEST_STATUS.Expired }, { status: { in: open }, expiresAt: { lte: now } }] }
+        : query.status && open.includes(query.status)
+          ? { status: query.status, expiresAt: { gt: now } }
+          : query.status
+            ? { status: query.status }
+            : {};
+    const where: Prisma.CustomTimeRequestWhereInput = {
+      ...(user.role === UserRole.Tasker ? { taskerId: user.id } : { customerId: user.id }),
+      ...statusFilter,
+    };
+    const [rows, totalItems] = await Promise.all([
+      this.prisma.customTimeRequest.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: offset,
+        take: limit,
+      }),
+      this.prisma.customTimeRequest.count({ where }),
+    ]);
+    return {
+      page,
+      limit,
+      totalItems,
+      totalPages: Math.ceil(totalItems / limit),
+      items: rows.map((row) => this.view(row)),
+    };
+  }
+
+  /** Customer withdraws a pending or accepted (not yet booked) request, freeing the one-pending slot. */
+  async cancel(customerId: number, requestId: string): Promise<CustomTimeRequestView> {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT "id" FROM "CustomTimeRequests" WHERE "id" = ${requestId} FOR UPDATE
+      `;
+      const request = await transaction.customTimeRequest.findUnique({ where: { id: requestId } });
+      if (!request || request.customerId !== customerId) {
+        throw new NotFoundException('Custom time request not found');
+      }
+      if (
+        request.status !== CUSTOM_TIME_REQUEST_STATUS.Pending &&
+        request.status !== CUSTOM_TIME_REQUEST_STATUS.Accepted
+      ) {
+        throw new ConflictException(`This custom time request is already ${request.status}`);
+      }
+      const updated = await transaction.customTimeRequest.update({
+        where: { id: request.id },
+        data: { status: CUSTOM_TIME_REQUEST_STATUS.Cancelled },
+      });
+      await this.notifications.create(
+        request.taskerId,
+        {
+          category: 'tasks',
+          type: 'custom_time_request_cancelled',
+          title: 'Custom time request withdrawn',
+          body: `The customer withdrew their request for ${dateOnlyFromDate(request.requestedDate)} at ${request.requestedTime}.`,
+          entityType: 'custom_time_request',
+          entityId: request.id,
+          metadata: { requestId: request.id },
+          audienceRole: UserRole.Tasker,
+        },
         transaction,
       );
       return this.view(updated);

@@ -42,6 +42,22 @@ export class TaskerPlansController {
     return this.plans.active(user.id);
   }
 
+  @Post('cancel')
+  @ApiOperation({
+    summary: 'Cancel the current plan',
+    description:
+      'A pending (not yet reviewed) purchase is cancelled and refunded to its original method. An active plan keeps its perks until nextBillingAt and then ends without another charge (autoRenew becomes false).',
+  })
+  cancel(@CurrentUser() user: User) {
+    return this.plans.cancel(user.id);
+  }
+
+  @Post('resume')
+  @ApiOperation({ summary: 'Turn auto-renewal back on for an active plan before its period ends' })
+  resume(@CurrentUser() user: User) {
+    return this.plans.resume(user.id);
+  }
+
   @Post(':planId/purchase')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiParam({ name: 'planId', enum: ['gold', 'platinum', 'diamond'] })

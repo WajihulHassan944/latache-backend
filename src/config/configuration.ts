@@ -115,6 +115,7 @@ export default () => {
     },
     bookingExpiration: {
       pendingMinutes: asPositiveInteger(process.env.BOOKING_PENDING_EXPIRY_MINUTES, 1_440),
+      awaitingPaymentMinutes: asPositiveInteger(process.env.BOOKING_AWAITING_PAYMENT_EXPIRY_MINUTES, 60),
       sweepIntervalMs: asPositiveInteger(process.env.BOOKING_EXPIRATION_SWEEP_INTERVAL_MS, 60_000),
       batchSize: asPositiveInteger(process.env.BOOKING_EXPIRATION_BATCH_SIZE, 100),
     },
