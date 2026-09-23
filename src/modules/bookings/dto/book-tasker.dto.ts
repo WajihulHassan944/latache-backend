@@ -129,4 +129,13 @@ export class BookTaskerDto {
   @ValidateNested()
   @Type(() => BookingDetailsDto)
   bookingDetails!: BookingDetailsDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Id of an accepted custom-time request for this exact tasker/service/date/time. Skips the open-slot match for this one booking and marks the request fulfilled.',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  customTimeRequestId?: string;
 }

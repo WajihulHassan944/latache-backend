@@ -28,6 +28,7 @@ export class BookingsRepository {
       WHERE "userId" = ${taskerId}
         AND "date" = ${dateOnlyToDate(date)}
         AND "isBooked" = false
+        AND "isCustom" = false
       ORDER BY "id"
       FOR UPDATE
     `;

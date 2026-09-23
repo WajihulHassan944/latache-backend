@@ -39,6 +39,8 @@ interface TaskerListRow {
   eliteSearchRank: number;
   eliteTierCode: string | null;
   eliteProfileBadgeVisible: boolean;
+  planSearchRank: number;
+  planBadge: string | null;
 }
 
 interface CountRow {
@@ -130,6 +132,7 @@ export class TaskersRepository {
           WHERE ua."userId" = u."id"
             AND ua."date" = ${query.date}::date
             AND ua."isBooked" = FALSE
+            AND ua."isCustom" = FALSE
             AND ua."startTime" <= ${query.startTime}
             AND ua."endTime" >= ${query.endTime}
         )`);
@@ -139,6 +142,7 @@ export class TaskersRepository {
           WHERE ua."userId" = u."id"
             AND ua."date" = ${query.date}::date
             AND ua."isBooked" = FALSE
+            AND ua."isCustom" = FALSE
             AND ua."startTime" <= ${query.startTime}
             AND ua."endTime" > ${query.startTime}
         )`);
@@ -148,6 +152,7 @@ export class TaskersRepository {
           WHERE ua."userId" = u."id"
             AND ua."date" = ${query.date}::date
             AND ua."isBooked" = FALSE
+            AND ua."isCustom" = FALSE
         )`);
       }
     }
@@ -227,21 +232,24 @@ export class TaskersRepository {
           EXISTS (
             SELECT 1 FROM "EliteBenefits" eb
             WHERE eb."tierId" = et."id" AND eb."code" = 'elite_profile_badge' AND eb."isActive" = TRUE
-          ) AS "eliteProfileBadgeVisible"
+          ) AS "eliteProfileBadgeVisible",
+          (CASE ts."planId" WHEN 'diamond' THEN 3 WHEN 'platinum' THEN 2 WHEN 'gold' THEN 1 ELSE 0 END)::int AS "planSearchRank",
+          ts."planId" AS "planBadge"
         FROM "Users" u
         INNER JOIN representative ON representative."userId" = u."id"
         LEFT JOIN "EliteTiers" et ON et."id" = u."eliteTierId" AND et."isActive" = TRUE
+        LEFT JOIN "TaskerSubscriptions" ts ON ts."taskerId" = u."id" AND ts."status" = 'active'
         WHERE ${Prisma.join(eligibleConditions, ' AND ')}
       )
     `;
 
     const orderBy: Record<TaskerSort | 'default', string> = {
-      [TaskerSort.PriceAscending]: '"hourlyRate" ASC, "eliteSearchRank" DESC, "rating" DESC, "id" ASC',
-      [TaskerSort.PriceDescending]: '"hourlyRate" DESC, "eliteSearchRank" DESC, "rating" DESC, "id" ASC',
-      [TaskerSort.RatingDescending]: '"rating" DESC, "eliteSearchRank" DESC, "completedTasks" DESC, "id" ASC',
-      [TaskerSort.CompletedDescending]: '"completedTasks" DESC, "eliteSearchRank" DESC, "rating" DESC, "id" ASC',
-      [TaskerSort.Nearest]: '"distanceKm" ASC NULLS LAST, "eliteSearchRank" DESC, "rating" DESC, "id" ASC',
-      default: '"eliteSearchRank" DESC, "rating" DESC, "completedTasks" DESC, "submittedAt" DESC NULLS LAST, "id" DESC',
+      [TaskerSort.PriceAscending]: '"hourlyRate" ASC, "eliteSearchRank" DESC, "planSearchRank" DESC, "rating" DESC, "id" ASC',
+      [TaskerSort.PriceDescending]: '"hourlyRate" DESC, "eliteSearchRank" DESC, "planSearchRank" DESC, "rating" DESC, "id" ASC',
+      [TaskerSort.RatingDescending]: '"rating" DESC, "eliteSearchRank" DESC, "planSearchRank" DESC, "completedTasks" DESC, "id" ASC',
+      [TaskerSort.CompletedDescending]: '"completedTasks" DESC, "eliteSearchRank" DESC, "planSearchRank" DESC, "rating" DESC, "id" ASC',
+      [TaskerSort.Nearest]: '"distanceKm" ASC NULLS LAST, "eliteSearchRank" DESC, "planSearchRank" DESC, "rating" DESC, "id" ASC',
+      default: '"eliteSearchRank" DESC, "planSearchRank" DESC, "rating" DESC, "completedTasks" DESC, "submittedAt" DESC NULLS LAST, "id" DESC',
     };
     const selectedOrder = query.sort ? orderBy[query.sort] : orderBy.default;
 
@@ -276,6 +284,7 @@ export class TaskersRepository {
         isElite: row.isElite,
         eliteTier: row.eliteTierCode ? { code: row.eliteTierCode, rank: row.eliteRank } : null,
         eliteProfileBadgeVisible: Boolean(row.eliteProfileBadgeVisible),
+        planBadge: row.planBadge,
         distanceKm: row.distanceKm === null ? null : Math.round(Number(row.distanceKm) * 10) / 10,
         location: formatLocation({
           lat: numberOrNull(row.serviceAreaLat),
@@ -296,6 +305,7 @@ export class TaskersRepository {
     const user = await this.prisma.user.findFirst({
       where: { id, roles: { has: UserRole.Tasker }, accountStatus: 'active', deletedAt: null, onboardingStatus: 'approved', taskerProfile: { is: { status: 'active' } } },
       include: {
+        taskerSubscriptions: { where: { status: 'active' }, select: { planId: true }, take: 1 },
         eliteTier: {
           select: {
             code: true,
@@ -361,6 +371,7 @@ export class TaskersRepository {
       elitePerks: user.eliteTier?.benefits.map((benefit) => benefit.code) ?? [],
       eliteProfileBadgeVisible:
         user.eliteTier?.benefits.some((benefit) => benefit.code === 'elite_profile_badge') ?? false,
+      planBadge: user.taskerSubscriptions[0]?.planId ?? null,
       location: formatLocation({
         lat: user.serviceAreaLat === null ? null : Number(user.serviceAreaLat),
         lng: user.serviceAreaLng === null ? null : Number(user.serviceAreaLng),
@@ -384,6 +395,7 @@ export class TaskersRepository {
       where: {
         userId: id,
         isBooked: false,
+        isCustom: false,
         date: { gte: dateOnlyToDate(todayDateOnly()) },
       },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],

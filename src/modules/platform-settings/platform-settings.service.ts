@@ -27,6 +27,7 @@ import {
 } from './platform-settings.types';
 import { AppCacheService, CacheNamespace } from '../../infrastructure/redis/app-cache.service';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { isTaskerPlanId, TASKER_PLANS } from '../tasker-plans/tasker-plans.constants';
 import {
   PLATFORM_CURRENCY_PRESETS,
   STATIC_RATE_VERSION,
@@ -279,7 +280,7 @@ export class PlatformSettingsService {
     bookingDate: Date;
     bookingCreatedAt: Date;
   }): Promise<PricingChargeResult> {
-    const [commission, tax, tasker, currency] = await Promise.all([
+    const [commission, tax, tasker, currency, paidPlan] = await Promise.all([
       this.section<CommissionSettingsDto>('commission'),
       this.section<TaxSettingsDto>('tax'),
       this.prisma.user.findUnique({
@@ -298,6 +299,12 @@ export class PlatformSettingsService {
         },
       }),
       this.currencyContext(),
+      // Paid Gold/Platinum/Diamond plan (TaskerPlansService). Queried directly to
+      // avoid a module cycle; only an admin-approved (active) plan counts.
+      this.prisma.taskerSubscription.findFirst({
+        where: { taskerId: input.taskerId, status: 'active' },
+        select: { planId: true },
+      }),
     ]);
 
     const tierCode = tasker?.eliteTier?.code?.toLowerCase() ?? 'standard';
@@ -323,7 +330,12 @@ export class PlatformSettingsService {
     const rawServiceAmount = money(input.serviceAmount);
     const effectiveServiceAmount = money(Math.max(rawServiceAmount, minimumTaskPrice));
 
-    let rate = Number(baseRate ?? 0);
+    const planDefinition =
+      paidPlan && isTaskerPlanId(paidPlan.planId) ? TASKER_PLANS[paidPlan.planId] : null;
+    // A paid plan's fee applies only when it beats whatever rate the Tasker already has.
+    const paidPlanFeeApplied =
+      planDefinition !== null && planDefinition.platformFeePercent < Number(baseRate ?? 0);
+    let rate = paidPlanFeeApplied ? planDefinition.platformFeePercent : Number(baseRate ?? 0);
     if (commission.categoryOverridesEnabled) {
       const override = commission.categoryOverrides?.find(
         (item) => item.serviceId === input.serviceId,
@@ -372,6 +384,8 @@ export class PlatformSettingsService {
       minimumTaskPriceApplied: effectiveServiceAmount > rawServiceAmount,
       taskerTierCode: tierCode,
       eliteCommissionPerkApplied,
+      paidPlanId: planDefinition?.id ?? null,
+      paidPlanFeeApplied,
       platformFeeAmount,
       taxAmount,
       serviceSurchargeAmount,

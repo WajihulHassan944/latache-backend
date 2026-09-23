@@ -23,6 +23,7 @@ import { FavoritesModule } from './modules/favorites/favorites.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module';
 import { EliteProgramModule } from './modules/elite-program/elite-program.module';
+import { TaskerPlansModule } from './modules/tasker-plans/tasker-plans.module';
 import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { AdminFinanceModule } from './modules/admin-finance/admin-finance.module';
 import { SupportModule } from './modules/support/support.module';
@@ -72,6 +73,7 @@ import { AddressesModule } from './modules/addresses/addresses.module';
     DashboardModule,
     AdminDashboardModule,
     EliteProgramModule,
+    TaskerPlansModule,
     PlatformSettingsModule,
     AdminFinanceModule,
     AdminServicesModule,

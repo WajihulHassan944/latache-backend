@@ -67,6 +67,9 @@ export const WALLET_ENTRY_KIND = {
   WithdrawalRelease: 'withdrawal_release',
   WithdrawalPaid: 'withdrawal_paid',
   Adjustment: 'adjustment',
+  PlanCharge: 'plan_charge',
+  PlanRefund: 'plan_refund',
+  PlanBonus: 'plan_bonus',
 } as const;
 
 export const WITHDRAWAL_STATUS = {

@@ -41,6 +41,15 @@ const EMAIL_NOTIFIED_TYPES = new Set<string>([
   'booking_reminder_24h',
   'booking_reminder_1h',
   'review_request',
+  'custom_time_request_created',
+  'custom_time_request_accepted',
+  'custom_time_request_rejected',
+  'custom_time_request_expired',
+  'tasker_plan_purchased',
+  'tasker_plan_activated',
+  'tasker_plan_rejected',
+  'tasker_plan_renewal_failed',
+  'tasker_plan_expired',
 ]);
 
 export interface CreateNotificationInput {

@@ -220,7 +220,12 @@ export class TaskerProfileService {
   async listAvailability(taskerId: number): Promise<TaskerAvailabilitySlotView[]> {
     await this.requireTasker(taskerId);
     const slots = await this.prisma.userAvailability.findMany({
-      where: { userId: taskerId, date: { gte: dateOnlyToDate(todayDateOnly()) } },
+      where: {
+        userId: taskerId,
+        date: { gte: dateOnlyToDate(todayDateOnly()) },
+        // A released custom-time slot is not real availability; hide it.
+        OR: [{ isCustom: false }, { isBooked: true }],
+      },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
       include: {
         bookings: {
@@ -245,7 +250,7 @@ export class TaskerProfileService {
         SELECT "id" FROM "UserAvailabilities" WHERE "userId" = ${taskerId} FOR UPDATE
       `;
       const existingSlots = await transaction.userAvailability.findMany({
-        where: { userId: taskerId },
+        where: { userId: taskerId, OR: [{ isCustom: false }, { isBooked: true }] },
       });
       for (const requested of dto.availability) {
         const conflicting = existingSlots.find(

@@ -14,6 +14,8 @@ import { EliteProgramService } from '../../modules/elite-program/services/elite-
 import { FcmService } from '../../modules/fcm/fcm.service';
 import { GuestService } from '../../modules/guest/guest.service';
 import { NotificationsService } from '../../modules/notifications/notifications.service';
+import { CustomTimeRequestsService } from '../../modules/bookings/custom-time-requests.service';
+import { TaskerPlansService } from '../../modules/tasker-plans/tasker-plans.service';
 
 const JOB_NAMES = {
   ReleaseEarnings: 'finance.release-mature',
@@ -30,6 +32,8 @@ const JOB_NAMES = {
   SendBookingReminders: 'bookings.send-reminders',
   SendReviewRequests: 'bookings.send-review-requests',
   CleanupGuestSessions: 'guest.cleanup-sessions',
+  ExpireCustomTimeRequests: 'bookings.expire-custom-time-requests',
+  MaintainTaskerPlans: 'tasker-plans.maintain',
 } as const;
 
 export interface QueueHealth {
@@ -69,6 +73,8 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly fcm: FcmService,
     private readonly guests: GuestService,
     private readonly notificationsService: NotificationsService,
+    private readonly customTimeRequests: CustomTimeRequestsService,
+    private readonly taskerPlans: TaskerPlansService,
   ) {
     this.enabled = this.config.get<boolean>('jobs.enabled', false);
     this.workerEnabled = this.config.get<boolean>('jobs.workerEnabled', false);
@@ -245,6 +251,16 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { name: JOB_NAMES.SendReviewRequests, data: {} },
       ),
       queue.upsertJobScheduler(
+        'expire-custom-time-requests-v1',
+        { every: this.config.get<number>('customTimeRequests.sweepIntervalMs', 60_000) },
+        { name: JOB_NAMES.ExpireCustomTimeRequests, data: {} },
+      ),
+      queue.upsertJobScheduler(
+        'maintain-tasker-plans-v1',
+        { every: this.config.get<number>('taskerPlans.sweepIntervalMs', 900_000) },
+        { name: JOB_NAMES.MaintainTaskerPlans, data: {} },
+      ),
+      queue.upsertJobScheduler(
         'cleanup-guest-sessions-v1',
         { every: this.config.get<number>('jobs.guestSessionCleanupIntervalMs', 3_600_000) },
         { name: JOB_NAMES.CleanupGuestSessions, data: {} },
@@ -318,6 +334,10 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return this.bookings.sendDueBookingReminders();
       case JOB_NAMES.SendReviewRequests:
         return this.bookings.sendDueReviewRequests();
+      case JOB_NAMES.ExpireCustomTimeRequests:
+        return this.customTimeRequests.expireDueRequests();
+      case JOB_NAMES.MaintainTaskerPlans:
+        return this.taskerPlans.runMaintenance();
       case JOB_NAMES.CleanupGuestSessions:
         return this.guests.runOnce();
       default: {

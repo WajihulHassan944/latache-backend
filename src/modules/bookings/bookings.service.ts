@@ -7,6 +7,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -18,7 +19,7 @@ import {
 } from '../../common/utils/date.util';
 import { formatLocation } from '../../common/utils/location.util';
 import { normalizePagination } from '../../common/utils/pagination.util';
-import { parseTimeToMinutes } from '../../common/utils/time.util';
+import { formatMinutesAs24Hour, parseTimeToMinutes, rangesOverlap } from '../../common/utils/time.util';
 import { hasUserRole } from '../../common/utils/user-role.util';
 import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
@@ -41,6 +42,7 @@ import type {
   SubmitDisputeSatisfactionDto,
 } from './dto/participant-disputes.dto';
 import { BookingsRepository } from './bookings.repository';
+import { CustomTimeRequestsService } from './custom-time-requests.service';
 import {
   BookingQuoteDto,
   CancelBookingDto,
@@ -169,19 +171,29 @@ export class BookingsService {
     private readonly referrals: ReferralsService,
     private readonly cache: AppCacheService,
     private readonly conversations: ConversationsService,
+    private readonly customTimeRequests: CustomTimeRequestsService,
   ) {
     this.minimumBillableMinutes = config.get<number>('payments.minimumBillableMinutes', 120);
   }
 
-  async quote(dto: BookingQuoteDto) {
+  async quote(dto: BookingQuoteDto, requesterId?: number) {
     if (!isTodayOrFutureDate(dto.date))
       throw new BadRequestException('date must be today or later');
+    if (dto.customTimeRequestId && !requesterId) {
+      throw new UnauthorizedException(
+        'Sign in as the requesting customer to quote with customTimeRequestId',
+      );
+    }
     const context = await this.loadQuoteContext(
       dto.taskerId,
       dto.serviceSlug,
       dto.serviceOptionId,
       dto.date,
       dto.time,
+      undefined,
+      dto.customTimeRequestId && requesterId
+        ? { requestId: dto.customTimeRequestId, customerId: requesterId }
+        : undefined,
     );
     const currency = await this.platformSettings.currencyContext();
     return this.quoteView(
@@ -265,12 +277,17 @@ export class BookingsService {
       throw new BadRequestException('date must be today or later');
     // Enforce configured booking-policy limits even when a client skips the quote endpoint.
     // Availability is re-read and locked again inside the booking transaction.
+    const customTime = dto.customTimeRequestId
+      ? { requestId: dto.customTimeRequestId, customerId }
+      : undefined;
     const preflight = await this.loadQuoteContext(
       dto.taskerId,
       dto.serviceSlug,
       dto.serviceOptionId,
       dto.date,
       dto.time,
+      undefined,
+      customTime,
     );
     const preflightStart = parseTimeToMinutes(preflight.slot.startTime) ?? 0;
     const preflightEnd = parseTimeToMinutes(preflight.slot.endTime) ?? preflightStart;
@@ -309,6 +326,8 @@ export class BookingsService {
         if (!customerProfile || customerProfile.status !== 'active' || customer.accountStatus !== 'active')
           throw new ForbiddenException('Customer profile is not active');
 
+        // Re-validated under lock: a custom-time request can expire or be
+        // consumed between the quote and this call.
         const context = await this.loadQuoteContext(
           dto.taskerId,
           dto.serviceSlug,
@@ -316,14 +335,33 @@ export class BookingsService {
           dto.date,
           dto.time,
           transaction,
+          customTime,
         );
         const currency = await this.platformSettings.currencyContext(transaction);
         const bookingHourlyRate = this.platformSettings.convertUsdAmount(
           Number(context.taskerService.hourlyRate),
           currency,
         );
-        if (!(await this.repository.claimSlot(context.slot.id, transaction))) {
-          throw new ConflictException('Requested slot has already been booked');
+        let availabilityId: number;
+        if (context.slot.id === null) {
+          // Custom-time booking: carried on a dedicated, already-booked slot that is
+          // never offered as open availability (isCustom).
+          const customSlot = await transaction.userAvailability.create({
+            data: {
+              userId: context.tasker.id,
+              date: dateOnlyToDate(dto.date),
+              startTime: context.slot.startTime,
+              endTime: context.slot.endTime,
+              isBooked: true,
+              isCustom: true,
+            },
+          });
+          availabilityId = customSlot.id;
+        } else {
+          if (!(await this.repository.claimSlot(context.slot.id, transaction))) {
+            throw new ConflictException('Requested slot has already been booked');
+          }
+          availabilityId = context.slot.id;
         }
         const start = parseTimeToMinutes(context.slot.startTime) ?? 0;
         const end = parseTimeToMinutes(context.slot.endTime) ?? start;
@@ -340,7 +378,7 @@ export class BookingsService {
             conversationId: conversation.id,
             serviceId: context.service.id,
             serviceOptionId: context.option?.id ?? null,
-            availabilityId: context.slot.id,
+            availabilityId,
             hourlyRate: bookingHourlyRate.toFixed(2),
             bookingDate: dateOnlyToDate(dto.date),
             startTime: context.slot.startTime,
@@ -369,6 +407,9 @@ export class BookingsService {
           },
           include: BOOKING_INCLUDE,
         });
+        if (dto.customTimeRequestId) {
+          await this.customTimeRequests.markFulfilled(dto.customTimeRequestId, created.id, transaction);
+        }
         await this.notifications.create(
           context.tasker.id,
           {
@@ -388,7 +429,13 @@ export class BookingsService {
             action: 'booking_created',
             entityType: 'booking',
             entityId: created.id,
-            metadata: { paymentSource, serviceId: context.service.id, date: dto.date, time: context.slot.startTime },
+            metadata: {
+              paymentSource,
+              serviceId: context.service.id,
+              date: dto.date,
+              time: context.slot.startTime,
+              ...(dto.customTimeRequestId ? { customTimeRequestId: dto.customTimeRequestId } : {}),
+            },
           },
           transaction,
         );
@@ -2688,6 +2735,7 @@ export class BookingsService {
     date: string,
     time: string,
     transaction?: Prisma.TransactionClient,
+    customTime?: { requestId: string; customerId: number },
   ) {
     const db = (transaction ?? this.prisma) as Prisma.TransactionClient;
     const tasker = await db.user.findFirst({
@@ -2715,18 +2763,55 @@ export class BookingsService {
       where: { userId_serviceId: { userId: taskerId, serviceId: service.id } },
     });
     if (!taskerService) throw new BadRequestException('Tasker does not offer this service');
-    const availability = await db.userAvailability.findMany({
-      where: { userId: taskerId, date: dateOnlyToDate(date), isBooked: false },
-    });
     const requestedMinutes = parseTimeToMinutes(time);
-    const slot = availability.find(
-      (item) => parseTimeToMinutes(item.startTime) === requestedMinutes,
-    );
-    if (!slot || requestedMinutes === null)
-      throw new ConflictException('Requested date/time is unavailable');
+    if (requestedMinutes === null) throw new ConflictException('Requested date/time is unavailable');
+
+    let slot: { id: number | null; startTime: string; endTime: string };
+    if (customTime) {
+      // An accepted custom-time request replaces the open-slot match for this one booking.
+      await this.customTimeRequests.assertUsableForBooking(
+        { ...customTime, taskerId, serviceSlug, date, time },
+        transaction,
+      );
+      const end = Math.min(requestedMinutes + this.minimumBillableMinutes, 23 * 60 + 59);
+      slot = {
+        id: null,
+        startTime: formatMinutesAs24Hour(requestedMinutes),
+        endTime: formatMinutesAs24Hour(end),
+      };
+    } else {
+      const availability = await db.userAvailability.findMany({
+        where: { userId: taskerId, date: dateOnlyToDate(date), isBooked: false, isCustom: false },
+      });
+      const match = availability.find(
+        (item) => parseTimeToMinutes(item.startTime) === requestedMinutes,
+      );
+      if (!match) throw new ConflictException('Requested date/time is unavailable');
+      slot = match;
+    }
     if (this.isPastSlotStart(date, slot.startTime))
       throw new ConflictException('Requested date/time is unavailable');
+    await this.assertTaskerTimeFree(db, taskerId, date, slot);
     return { tasker, service, option, taskerService, slot };
+  }
+
+  /**
+   * Listed slots and custom-time bookings can overlap in wall-clock time, so an
+   * open slot alone does not prove the Tasker is free at that time.
+   */
+  private async assertTaskerTimeFree(
+    db: Prisma.TransactionClient,
+    taskerId: number,
+    date: string,
+    range: { startTime: string; endTime: string },
+  ): Promise<void> {
+    const active = await db.booking.findMany({
+      where: { taskerId, bookingDate: dateOnlyToDate(date), status: { in: ACTIVE } },
+      select: { startTime: true, endTime: true },
+    });
+    if (active.some((booking) => rangesOverlap(booking, range))) {
+      throw new ConflictException('Requested date/time is unavailable');
+    }
   }
 
   /** Same-day bookings are allowed, but a slot whose start time already elapsed today cannot be booked. */

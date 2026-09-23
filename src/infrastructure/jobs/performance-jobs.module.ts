@@ -7,6 +7,7 @@ import { BookingsModule } from '../../modules/bookings/bookings.module';
 import { ReferralsModule } from '../../modules/referrals/referrals.module';
 import { DisputesModule } from '../../modules/disputes/disputes.module';
 import { EliteProgramModule } from '../../modules/elite-program/elite-program.module';
+import { TaskerPlansModule } from '../../modules/tasker-plans/tasker-plans.module';
 import { NotificationsModule } from '../../modules/notifications/notifications.module';
 import { FcmModule } from '../../modules/fcm/fcm.module';
 import { GuestModule } from '../../modules/guest/guest.module';
@@ -21,6 +22,7 @@ import { GuestModule } from '../../modules/guest/guest.module';
     ReferralsModule,
     DisputesModule,
     EliteProgramModule,
+    TaskerPlansModule,
     NotificationsModule,
     FcmModule,
     GuestModule,

@@ -18,6 +18,7 @@ import { UserRole } from '../../common/enums/user-role.enum';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { PaymentsService } from '../payments/payments.service';
 import { CompleteBookingPaymentDto } from '../payments/payments.dto';
 import { UpdateTaskerLocationDto, UpdateTimerNotesDto } from '../tasker-dashboard/dto';
@@ -48,14 +49,15 @@ export class BookingDiscoveryController {
   constructor(private readonly bookings: BookingsService) {}
 
   @Post('quote')
+  @UseGuards(OptionalJwtAuthGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({
     summary: 'Get a live booking estimate for an available tasker slot',
     description:
-      'Public/guest-safe. Uses persisted Tasker rates, real availability, and the active platform commission/tax policy. No payment is created by this quote.',
+      'Public/guest-safe. Uses persisted Tasker rates, real availability, and the active platform commission/tax policy. No payment is created by this quote. When customTimeRequestId is sent, a bearer token for the requesting customer is required and the open-slot match is skipped.',
   })
-  quote(@Body() dto: BookingQuoteDto) {
-    return this.bookings.quote(dto);
+  quote(@Body() dto: BookingQuoteDto, @CurrentUser() user?: User) {
+    return this.bookings.quote(dto, user?.id);
   }
 }
 

@@ -135,4 +135,13 @@ export class BookingQuoteDto {
   @Min(0)
   @Max(100000)
   donationAmount?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Id of an accepted custom-time request for this exact tasker/service/date/time. Skips the open-slot match; requires the requesting customer\'s bearer token.',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  customTimeRequestId?: string;
 }

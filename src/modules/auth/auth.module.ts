@@ -10,6 +10,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AdminAuthGuard } from './guards/admin-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 import { JwtIdentityGuard } from './guards/jwt-identity.guard';
 import { AuthRepository } from './repositories/auth.repository';
 import { AuthSessionsRepository } from './repositories/auth-sessions.repository';
@@ -47,6 +48,7 @@ import { SocialAuthService } from './services/social-auth.service';
     AuthSessionsRepository,
     JwtIdentityGuard,
     JwtAuthGuard,
+    OptionalJwtAuthGuard,
     AdminAuthGuard,
     RolesGuard,
     PermissionsGuard,
@@ -55,6 +57,7 @@ import { SocialAuthService } from './services/social-auth.service';
     AuthService,
     JwtIdentityGuard,
     JwtAuthGuard,
+    OptionalJwtAuthGuard,
     AdminAuthGuard,
     RolesGuard,
     PermissionsGuard,

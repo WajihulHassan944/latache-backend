@@ -32,6 +32,10 @@ export interface PricingChargeResult {
   minimumTaskPriceApplied: boolean;
   taskerTierCode: string;
   eliteCommissionPerkApplied: boolean;
+  /** Active paid Tasker plan (gold|platinum|diamond), if any. */
+  paidPlanId: string | null;
+  /** True when the paid plan's fee rate replaced the base rate. */
+  paidPlanFeeApplied: boolean;
   platformFeeAmount: number;
   taxAmount: number;
   serviceSurchargeAmount: number;

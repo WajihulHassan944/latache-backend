@@ -11,6 +11,8 @@ import { ParticipantDisputesController } from './participant-disputes.controller
 import { BookingsRepository } from './bookings.repository';
 import { BookingsService } from './bookings.service';
 import { BookingWorkVerificationService } from './booking-work-verification.service';
+import { CustomTimeRequestsController } from './custom-time-requests.controller';
+import { CustomTimeRequestsService } from './custom-time-requests.service';
 import { AdminAuditModule } from '../admin-audit/admin-audit.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { DisputesModule } from '../disputes/disputes.module';
@@ -32,8 +34,18 @@ import { UploadsModule } from '../uploads/uploads.module';
     ReferralsModule,
     UploadsModule,
   ],
-  controllers: [BookingDiscoveryController, BookingsController, ParticipantDisputesController],
-  providers: [BookingsService, BookingsRepository, BookingWorkVerificationService],
-  exports: [BookingsService],
+  controllers: [
+    BookingDiscoveryController,
+    BookingsController,
+    ParticipantDisputesController,
+    CustomTimeRequestsController,
+  ],
+  providers: [
+    BookingsService,
+    BookingsRepository,
+    BookingWorkVerificationService,
+    CustomTimeRequestsService,
+  ],
+  exports: [BookingsService, CustomTimeRequestsService],
 })
 export class BookingsModule {}

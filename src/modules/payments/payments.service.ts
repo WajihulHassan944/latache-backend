@@ -2738,6 +2738,74 @@ export class PaymentsService {
     });
   }
 
+  /**
+   * Off-session charge of a card the user already saved (any role - a Tasker
+   * paying a platform fee uses the cards saved on their shared User identity).
+   * Never falls back to another method. Declines and cards that would need 3DS
+   * (impossible off-session) surface as 402.
+   */
+  async chargeSavedCardOffSession(input: {
+    userId: number;
+    paymentMethodId: string | null;
+    amount: number;
+    currency: string;
+    description: string;
+    idempotencyKey: string;
+    metadata: Record<string, string>;
+  }): Promise<{ paymentIntentId: string; paymentMethodId: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: input.userId },
+      select: { stripeCustomerId: true, defaultStripePaymentMethodId: true },
+    });
+    const paymentMethodId = input.paymentMethodId ?? user?.defaultStripePaymentMethodId ?? null;
+    if (!user?.stripeCustomerId || !paymentMethodId) {
+      throw new ConflictException({
+        code: 'NO_SAVED_CARD',
+        message: 'No saved card is available for this account',
+      });
+    }
+    await this.assertStripePaymentMethodOwnership(user.stripeCustomerId, paymentMethodId);
+    try {
+      const intent = await this.stripeProvider.client().paymentIntents.create(
+        {
+          amount: toMinorUnits(input.amount),
+          currency: input.currency.toLowerCase(),
+          customer: user.stripeCustomerId,
+          payment_method: paymentMethodId,
+          confirm: true,
+          off_session: true,
+          description: input.description,
+          metadata: input.metadata,
+        },
+        { idempotencyKey: input.idempotencyKey },
+      );
+      if (intent.status !== 'succeeded') {
+        throw this.paymentRequired(
+          intent.last_payment_error?.message ?? 'The card could not be charged',
+        );
+      }
+      return { paymentIntentId: intent.id, paymentMethodId };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      if (this.isStripeCardFailure(error) || this.paymentIntentFromStripeError(error)) {
+        throw this.paymentRequired(this.stripeErrorMessage(error));
+      }
+      throw error;
+    }
+  }
+
+  /** Full refund of a PaymentIntent charged by chargeSavedCardOffSession. */
+  async refundPaymentIntent(
+    paymentIntentId: string,
+    idempotencyKey: string,
+    metadata: Record<string, string>,
+  ): Promise<string> {
+    const refund = await this.stripeProvider
+      .client()
+      .refunds.create({ payment_intent: paymentIntentId, metadata }, { idempotencyKey });
+    return refund.id;
+  }
+
   private async ensureStripeCustomer(customerId: number): Promise<string> {
     const user = await this.prisma.user.findUnique({
       where: { id: customerId },

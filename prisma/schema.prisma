@@ -86,80 +86,83 @@ model User {
   createdAt                    DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt                    DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  refreshTokens               RefreshToken[]
-  socialAuthIdentities        SocialAuthIdentity[]
-  customerProfile             CustomerProfile?
-  taskerProfile               TaskerProfile?
-  userServices                UserService[]
-  availability                UserAvailability[]
-  bookingsAsCustomer          Booking[]                   @relation("CustomerBookings")
-  bookingsAsTasker            Booking[]                   @relation("TaskerBookings")
-  conversationsAsCustomer     Conversation[]              @relation("ConversationCustomer")
-  conversationsAsTasker       Conversation[]              @relation("ConversationTasker")
-  createdBy                   User?                       @relation("AdminCreator", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  createdAdmins               User[]                      @relation("AdminCreator")
-  rbacRole                    RbacRole?                   @relation(fields: [rbacRoleId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Users_rbacRoleId_fkey")
-  taskerWallet                TaskerWallet?
-  payoutMethods               TaskerPayoutMethod[]
-  walletLedgerEntries         TaskerWalletLedgerEntry[]
-  taskerEarnings              TaskerEarning[]             @relation("TaskerEarningsTasker")
-  platformAccount             TaskerPlatformAccount?
-  platformReceivables         TaskerPlatformReceivable[]  @relation("TaskerPlatformReceivablesTasker")
-  platformLedgerEntries       TaskerPlatformLedgerEntry[] @relation("TaskerPlatformLedgerTasker")
-  cashPaymentsConfirmed       TaskerPlatformReceivable[]  @relation("TaskerPlatformReceivableConfirmer")
-  withdrawalRequests          TaskerWithdrawal[]
-  taskWorkSessions            TaskWorkSession[]
-  taskLocations               TaskerTaskLocation[]
-  taskComplaintsFiled         TaskComplaint[]             @relation("TaskComplaintFiledBy")
-  disputesAssigned            TaskComplaint[]             @relation("DisputeAssignedAdmin")
-  disputesResolved            TaskComplaint[]             @relation("DisputeResolvedBy")
-  disputeEvidenceUploaded     DisputeEvidence[]           @relation("DisputeEvidenceUploader")
-  disputeEvidenceReviewed     DisputeEvidence[]           @relation("DisputeEvidenceReviewer")
-  disputeEvidenceRequestsMade DisputeEvidenceRequest[]    @relation("DisputeEvidenceRequester")
-  disputeResolutions          DisputeResolution[]         @relation("DisputeResolutionActor")
-  disputesWithdrawn           TaskComplaint[]             @relation("DisputeWithdrawnBy")
-  disputeParticipantActions   DisputeParticipantAction[]
-  disputeComments             DisputeComment[]
-  disputeSatisfactionSurveys  DisputeSatisfactionSurvey[]
-  disputeDeliveries           DisputeDelivery[]           @relation("DisputeDeliveryRecipient")
-  cashRefundsConfirmed        DisputeCashRefund[]         @relation("DisputeCashRefundConfirmer")
-  disciplinaryActionsReceived DisciplinaryAction[]        @relation("DisciplinaryActionTarget")
-  disciplinaryActionsIssued   DisciplinaryAction[]        @relation("DisciplinaryActionActor")
-  taskMessagesSent            TaskMessage[]               @relation("TaskMessageSender")
-  conversationCallsInitiated  ConversationCall[]          @relation("ConversationCallInitiator")
-  conversationCallsReceived   ConversationCall[]          @relation("ConversationCallRecipient")
-  conversationCallsEnded      ConversationCall[]          @relation("ConversationCallEndedBy")
-  notifications               TaskNotification[]
-  fcmDeviceTokens             FcmDeviceToken[]
-  emailNotificationDeliveries EmailNotificationDelivery[]
-  reviewsWritten              Review[]                    @relation("ReviewsWritten")
-  reviewsReceived             Review[]                    @relation("ReviewsReceived")
-  reviewsModerated            Review[]                    @relation("ReviewsModerated")
-  favoriteTaskers             FavoriteTasker[]            @relation("CustomerFavoriteTaskers")
-  favoritedByCustomers        FavoriteTasker[]            @relation("FavoritedTasker")
+  refreshTokens                RefreshToken[]
+  socialAuthIdentities         SocialAuthIdentity[]
+  customerProfile              CustomerProfile?
+  taskerProfile                TaskerProfile?
+  userServices                 UserService[]
+  availability                 UserAvailability[]
+  bookingsAsCustomer           Booking[]                   @relation("CustomerBookings")
+  bookingsAsTasker             Booking[]                   @relation("TaskerBookings")
+  customTimeRequestsAsCustomer CustomTimeRequest[]         @relation("CustomTimeRequestCustomer")
+  customTimeRequestsAsTasker   CustomTimeRequest[]         @relation("CustomTimeRequestTasker")
+  taskerSubscriptions          TaskerSubscription[]        @relation("TaskerSubscriptions")
+  conversationsAsCustomer      Conversation[]              @relation("ConversationCustomer")
+  conversationsAsTasker        Conversation[]              @relation("ConversationTasker")
+  createdBy                    User?                       @relation("AdminCreator", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdAdmins                User[]                      @relation("AdminCreator")
+  rbacRole                     RbacRole?                   @relation(fields: [rbacRoleId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Users_rbacRoleId_fkey")
+  taskerWallet                 TaskerWallet?
+  payoutMethods                TaskerPayoutMethod[]
+  walletLedgerEntries          TaskerWalletLedgerEntry[]
+  taskerEarnings               TaskerEarning[]             @relation("TaskerEarningsTasker")
+  platformAccount              TaskerPlatformAccount?
+  platformReceivables          TaskerPlatformReceivable[]  @relation("TaskerPlatformReceivablesTasker")
+  platformLedgerEntries        TaskerPlatformLedgerEntry[] @relation("TaskerPlatformLedgerTasker")
+  cashPaymentsConfirmed        TaskerPlatformReceivable[]  @relation("TaskerPlatformReceivableConfirmer")
+  withdrawalRequests           TaskerWithdrawal[]
+  taskWorkSessions             TaskWorkSession[]
+  taskLocations                TaskerTaskLocation[]
+  taskComplaintsFiled          TaskComplaint[]             @relation("TaskComplaintFiledBy")
+  disputesAssigned             TaskComplaint[]             @relation("DisputeAssignedAdmin")
+  disputesResolved             TaskComplaint[]             @relation("DisputeResolvedBy")
+  disputeEvidenceUploaded      DisputeEvidence[]           @relation("DisputeEvidenceUploader")
+  disputeEvidenceReviewed      DisputeEvidence[]           @relation("DisputeEvidenceReviewer")
+  disputeEvidenceRequestsMade  DisputeEvidenceRequest[]    @relation("DisputeEvidenceRequester")
+  disputeResolutions           DisputeResolution[]         @relation("DisputeResolutionActor")
+  disputesWithdrawn            TaskComplaint[]             @relation("DisputeWithdrawnBy")
+  disputeParticipantActions    DisputeParticipantAction[]
+  disputeComments              DisputeComment[]
+  disputeSatisfactionSurveys   DisputeSatisfactionSurvey[]
+  disputeDeliveries            DisputeDelivery[]           @relation("DisputeDeliveryRecipient")
+  cashRefundsConfirmed         DisputeCashRefund[]         @relation("DisputeCashRefundConfirmer")
+  disciplinaryActionsReceived  DisciplinaryAction[]        @relation("DisciplinaryActionTarget")
+  disciplinaryActionsIssued    DisciplinaryAction[]        @relation("DisciplinaryActionActor")
+  taskMessagesSent             TaskMessage[]               @relation("TaskMessageSender")
+  conversationCallsInitiated   ConversationCall[]          @relation("ConversationCallInitiator")
+  conversationCallsReceived    ConversationCall[]          @relation("ConversationCallRecipient")
+  conversationCallsEnded       ConversationCall[]          @relation("ConversationCallEndedBy")
+  notifications                TaskNotification[]
+  fcmDeviceTokens              FcmDeviceToken[]
+  emailNotificationDeliveries  EmailNotificationDelivery[]
+  reviewsWritten               Review[]                    @relation("ReviewsWritten")
+  reviewsReceived              Review[]                    @relation("ReviewsReceived")
+  reviewsModerated             Review[]                    @relation("ReviewsModerated")
+  favoriteTaskers              FavoriteTasker[]            @relation("CustomerFavoriteTaskers")
+  favoritedByCustomers         FavoriteTasker[]            @relation("FavoritedTasker")
   savedAddresses               CustomerAddress[]
-  customerWallet              CustomerWallet?
-  customerWalletLedger        CustomerWalletLedgerEntry[]
+  customerWallet               CustomerWallet?
+  customerWalletLedger         CustomerWalletLedgerEntry[]
   customerWithdrawals          CustomerWithdrawal[]
-  paymentTransactions         PaymentTransaction[]
-  adminAuditActions           AdminAuditLog[]             @relation("AdminAuditActor")
-  adminAuditTargets           AdminAuditLog[]             @relation("AdminAuditTarget")
-  eliteTier                   EliteTier?                  @relation("EliteTierMembers", fields: [eliteTierId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Users_eliteTierId_fkey")
-  eliteRequests               EliteMembershipRequest[]    @relation("EliteRequestTasker")
-  eliteDecisions              EliteMembershipRequest[]    @relation("EliteRequestDecider")
-  eliteTransitions            EliteTierTransition[]       @relation("EliteTransitionTasker")
-  eliteTransitionsActed       EliteTierTransition[]       @relation("EliteTransitionActor")
-  eliteBadges                 EliteTaskerBadge[]          @relation("EliteBadgeTasker")
-  eliteEvaluations            EliteEvaluation[]           @relation("EliteEvaluationTasker")
-  eliteBadgesAwarded          EliteTaskerBadge[]          @relation("EliteBadgeAwarder")
-  supportTickets              SupportTicket[]             @relation("SupportTicketRequester")
-  supportTicketsAssigned      SupportTicket[]             @relation("SupportTicketAssignee")
-  supportMessagesSent         SupportTicketMessage[]      @relation("SupportTicketMessageSender")
-  referralsMade               Referral[]                  @relation("ReferralReferrer")
-  referralsReceived           Referral[]                  @relation("ReferralReferred")
-  referralRewards             ReferralReward[]            @relation("ReferralRewardRecipient")
-  convertedGuestSessions      GuestSession[]              @relation("GuestSessionConvertedUser")
-  rescheduleProposalsMade     RescheduleProposal[]        @relation("RescheduleProposalProposedBy")
+  paymentTransactions          PaymentTransaction[]
+  adminAuditActions            AdminAuditLog[]             @relation("AdminAuditActor")
+  adminAuditTargets            AdminAuditLog[]             @relation("AdminAuditTarget")
+  eliteTier                    EliteTier?                  @relation("EliteTierMembers", fields: [eliteTierId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Users_eliteTierId_fkey")
+  eliteRequests                EliteMembershipRequest[]    @relation("EliteRequestTasker")
+  eliteDecisions               EliteMembershipRequest[]    @relation("EliteRequestDecider")
+  eliteTransitions             EliteTierTransition[]       @relation("EliteTransitionTasker")
+  eliteTransitionsActed        EliteTierTransition[]       @relation("EliteTransitionActor")
+  eliteBadges                  EliteTaskerBadge[]          @relation("EliteBadgeTasker")
+  eliteEvaluations             EliteEvaluation[]           @relation("EliteEvaluationTasker")
+  eliteBadgesAwarded           EliteTaskerBadge[]          @relation("EliteBadgeAwarder")
+  supportTickets               SupportTicket[]             @relation("SupportTicketRequester")
+  supportTicketsAssigned       SupportTicket[]             @relation("SupportTicketAssignee")
+  supportMessagesSent          SupportTicketMessage[]      @relation("SupportTicketMessageSender")
+  referralsMade                Referral[]                  @relation("ReferralReferrer")
+  referralsReceived            Referral[]                  @relation("ReferralReferred")
+  referralRewards              ReferralReward[]            @relation("ReferralRewardRecipient")
+  convertedGuestSessions       GuestSession[]              @relation("GuestSessionConvertedUser")
+  rescheduleProposalsMade      RescheduleProposal[]        @relation("RescheduleProposalProposedBy")
 
   @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
   @@index([roles], type: Gin, map: "users_roles_gin_idx")
@@ -709,10 +712,11 @@ model Service {
   createdAt        DateTime @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @db.Timestamptz(6)
 
-  userServices UserService[]
-  bookings     Booking[]
-  options      ServiceOption[]
-  translations ServiceTranslation[]
+  userServices       UserService[]
+  bookings           Booking[]
+  customTimeRequests CustomTimeRequest[]
+  options            ServiceOption[]
+  translations       ServiceTranslation[]
 
   @@index([isActive, sortOrder], map: "services_active_sort_idx")
   @@map("Services")
@@ -784,6 +788,9 @@ model UserAvailability {
   startTime String   @db.VarChar(255)
   endTime   String   @db.VarChar(255)
   isBooked  Boolean  @default(false)
+  /// Created only to carry a booking made through an accepted CustomTimeRequest.
+  /// Never offered as an open slot (discovery, quote, reschedule all exclude it).
+  isCustom  Boolean  @default(false)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
@@ -793,6 +800,67 @@ model UserAvailability {
   @@index([userId, date], map: "user_availabilities_user_id_date")
   @@index([userId, date, isBooked], map: "user_availabilities_open_slot_idx")
   @@map("UserAvailabilities")
+}
+
+/// A customer's request to book a Tasker at a date/time outside their listed availability.
+/// pending -> accepted | rejected | expired; accepted -> fulfilled (booking created) | expired.
+model CustomTimeRequest {
+  id            String    @id @default(cuid()) @db.VarChar(40)
+  customerId    Int
+  taskerId      Int
+  serviceId     Int
+  serviceSlug   String    @db.VarChar(120)
+  requestedDate DateTime  @db.Date
+  requestedTime String    @db.VarChar(5)
+  status        String    @default("pending") @db.VarChar(16)
+  expiresAt     DateTime  @db.Timestamptz(6)
+  respondedAt   DateTime? @db.Timestamptz(6)
+  fulfilledAt   DateTime? @db.Timestamptz(6)
+  bookingId     Int?      @unique(map: "CustomTimeRequests_bookingId_key")
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  customer User    @relation("CustomTimeRequestCustomer", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "CustomTimeRequests_customerId_fkey")
+  tasker   User    @relation("CustomTimeRequestTasker", fields: [taskerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "CustomTimeRequests_taskerId_fkey")
+  service  Service @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "CustomTimeRequests_serviceId_fkey")
+
+  @@index([status, expiresAt], map: "custom_time_requests_status_expires_idx")
+  @@index([customerId, taskerId, status], map: "custom_time_requests_pair_status_idx")
+  @@index([taskerId, status], map: "custom_time_requests_tasker_status_idx")
+  @@map("CustomTimeRequests")
+}
+
+/// Paid Gold/Platinum/Diamond subscription a Tasker buys directly. Unrelated to
+/// the earned Elite tier (User.eliteTierId) even though tier names coincide.
+/// pending (admin review) -> active | rejected; active -> expired | cancelled.
+model TaskerSubscription {
+  id                    String    @id @default(cuid()) @db.VarChar(40)
+  taskerId              Int
+  planId                String    @db.VarChar(16)
+  status                String    @default("pending") @db.VarChar(16)
+  priceAmount           Decimal   @db.Decimal(14, 2)
+  currency              String    @db.VarChar(3)
+  paymentMethod         String    @db.VarChar(16)
+  stripePaymentMethodId String?   @db.VarChar(255)
+  paymentReference      String?   @db.VarChar(255)
+  purchasedAt           DateTime  @default(now()) @db.Timestamptz(6)
+  activatedAt           DateTime? @db.Timestamptz(6)
+  currentPeriodEnd      DateTime? @db.Timestamptz(6)
+  graceUntil            DateTime? @db.Timestamptz(6)
+  renewalFailureReason  String?   @db.VarChar(500)
+  lastBonusPaidAt       DateTime? @db.Timestamptz(6)
+  reviewedById          Int?
+  reviewedAt            DateTime? @db.Timestamptz(6)
+  adminNote             String?   @db.VarChar(1000)
+  endedAt               DateTime? @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  tasker User @relation("TaskerSubscriptions", fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerSubscriptions_taskerId_fkey")
+
+  @@index([taskerId, status], map: "tasker_subscriptions_tasker_status_idx")
+  @@index([status, currentPeriodEnd], map: "tasker_subscriptions_status_period_idx")
+  @@map("TaskerSubscriptions")
 }
 
 model Booking {
@@ -877,7 +945,7 @@ model Booking {
 
   customer               User                        @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_customerId_fkey")
   tasker                 User                        @relation("TaskerBookings", fields: [taskerId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_taskerId_fkey")
-  conversation            Conversation                @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_conversationId_fkey")
+  conversation           Conversation                @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_conversationId_fkey")
   service                Service                     @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_serviceId_fkey")
   serviceOption          ServiceOption?              @relation(fields: [serviceOptionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Bookings_serviceOptionId_fkey")
   availability           UserAvailability            @relation(fields: [availabilityId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Bookings_availabilityId_fkey")
