@@ -603,42 +603,56 @@ export class PaymentsService {
       await this.prisma.booking.update({ where: { id: bookingId }, data: { stripePaymentMethodId: paymentMethodId } });
     }
     const transactionKey = `acceptance-capture:${bookingId}`;
+    const stripe = this.stripeProvider.client();
     const existing = await this.prisma.paymentTransaction.findUnique({ where: { idempotencyKey: transactionKey } });
-    if (existing?.providerReference) {
-      const intent = await this.stripeProvider.client().paymentIntents.retrieve(existing.providerReference);
-      if (intent.status === 'succeeded') return this.markAcceptanceCaptured(bookingId, amount, intent.id, transactionKey);
-      if (paymentWindowClosed) throw this.paymentWindowClosed();
-      if (intent.status === 'requires_action' && intent.client_secret) return { requiresAction: true, clientSecret: intent.client_secret };
-      if (intent.status === 'requires_payment_method') {
-        throw this.paymentRequired(intent.last_payment_error?.message ?? 'Stripe declined the payment');
-      }
-    }
+    let intent: Stripe.PaymentIntent | null = existing?.providerReference
+      ? await stripe.paymentIntents.retrieve(existing.providerReference)
+      : null;
+    if (intent?.status === 'succeeded') return this.markAcceptanceCaptured(bookingId, amount, intent.id, transactionKey);
     if (paymentWindowClosed) throw this.paymentWindowClosed();
-    try {
-      const customer = await this.ensureStripeCustomer(customerId);
-      const intent = await this.stripeProvider.client().paymentIntents.create({
-        amount: toMinorUnits(amount), currency: booking.paymentCurrency.toLowerCase(), customer,
-        payment_method: paymentMethodId, confirm: true, off_session: true,
-        description: `Latache booking #${bookingId} acceptance payment`,
-        metadata: { kind: ACCEPTANCE_CAPTURE_INTENT_KIND, latacheBookingId: String(bookingId), latacheCustomerId: String(customerId) },
-      }, { idempotencyKey: transactionKey });
-      await this.prisma.paymentTransaction.upsert({
+    if (intent?.status === 'processing') {
+      throw new ConflictException({ code: 'PAYMENT_PROCESSING', message: 'Your payment is still being processed by the card network' });
+    }
+    // Same card mid-3DS: hand the challenge back instead of starting over.
+    const intentCardId = typeof intent?.payment_method === 'string' ? intent.payment_method : intent?.payment_method?.id;
+    if (intent?.status === 'requires_action' && intent.client_secret && intentCardId === paymentMethodId) {
+      return { requiresAction: true, clientSecret: intent.client_secret };
+    }
+    // One PaymentIntent per booking: a retry (possibly with another card) re-confirms
+    // it. Keys change per recorded attempt, so a double-click is still idempotent
+    // but a genuine retry is never answered with the cached decline.
+    const attemptKey = `${transactionKey}:${paymentMethodId}:${existing?.updatedAt.getTime() ?? 0}`;
+    const record = (row: Stripe.PaymentIntent) =>
+      this.prisma.paymentTransaction.upsert({
         where: { idempotencyKey: transactionKey },
-        create: { customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.BookingCharge, provider: 'stripe', providerReference: intent.id, status: intent.status, amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: transactionKey },
-        update: { providerReference: intent.id, status: intent.status, failureReason: intent.last_payment_error?.message ?? null },
+        create: { customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.BookingCharge, provider: 'stripe', providerReference: row.id, status: row.status, amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: transactionKey, failureReason: row.last_payment_error?.message ?? null },
+        update: { providerReference: row.id, status: row.status, failureReason: row.last_payment_error?.message ?? null },
       });
+    try {
+      if (intent && ['requires_payment_method', 'requires_confirmation', 'requires_action'].includes(intent.status)) {
+        intent = await stripe.paymentIntents.confirm(intent.id, { payment_method: paymentMethodId }, { idempotencyKey: `${attemptKey}:confirm` });
+      } else {
+        const customer = await this.ensureStripeCustomer(customerId);
+        intent = await stripe.paymentIntents.create({
+          amount: toMinorUnits(amount), currency: booking.paymentCurrency.toLowerCase(), customer,
+          payment_method: paymentMethodId, payment_method_types: ['card'], confirm: true,
+          // The customer is in the app paying right now: on-session, so a card that
+          // needs 3DS returns requires_action instead of being declined outright.
+          off_session: false,
+          description: `Latache booking #${bookingId} acceptance payment`,
+          metadata: { kind: ACCEPTANCE_CAPTURE_INTENT_KIND, latacheBookingId: String(bookingId), latacheCustomerId: String(customerId) },
+        }, { idempotencyKey: intent ? `${attemptKey}:create` : transactionKey });
+      }
+      await record(intent);
       if (intent.status === 'succeeded') return this.markAcceptanceCaptured(bookingId, amount, intent.id, transactionKey);
       if (intent.status === 'requires_action' && intent.client_secret) return { requiresAction: true, clientSecret: intent.client_secret };
       throw this.paymentRequired(intent.last_payment_error?.message ?? 'Stripe declined the payment');
     } catch (error) {
-      const intent = this.paymentIntentFromStripeError(error);
-      if (intent?.status === 'requires_action' && intent.client_secret) {
-        await this.prisma.paymentTransaction.upsert({
-          where: { idempotencyKey: transactionKey },
-          create: { customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.BookingCharge, provider: 'stripe', providerReference: intent.id, status: intent.status, amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: transactionKey, failureReason: intent.last_payment_error?.message ?? null },
-          update: { providerReference: intent.id, status: intent.status, failureReason: intent.last_payment_error?.message ?? null },
-        });
-        return { requiresAction: true, clientSecret: intent.client_secret };
+      const failed = this.paymentIntentFromStripeError(error);
+      // Keep the PaymentIntent so the next attempt re-confirms it rather than creating another.
+      if (failed) await record(failed);
+      if (failed?.status === 'requires_action' && failed.client_secret) {
+        return { requiresAction: true, clientSecret: failed.client_secret };
       }
       if (this.isStripeCardFailure(error)) {
         throw this.paymentRequired(this.stripeErrorMessage(error));
@@ -881,8 +895,13 @@ export class PaymentsService {
   }
 
   private isStripeCardFailure(error: unknown): boolean {
-    return typeof error === 'object' && error !== null &&
-      ['card_error', 'invalid_request_error'].includes((error as { type?: string }).type ?? '');
+    if (typeof error !== 'object' || error === null) return false;
+    // stripe-node sets `type` to the class name (StripeCardError) and keeps the API's
+    // own type ('card_error') in `rawType`; accept either so declines map to 402.
+    const { type, rawType } = error as { type?: string; rawType?: string };
+    return [type, rawType].some((value) =>
+      ['card_error', 'invalid_request_error', 'StripeCardError', 'StripeInvalidRequestError'].includes(value ?? ''),
+    );
   }
 
   private stripeErrorMessage(error: unknown): string {
