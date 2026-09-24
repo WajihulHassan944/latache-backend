@@ -53,6 +53,7 @@ const PERSON_SELECT = {
   profilePicture: true,
   phoneCountryCode: true,
   phoneNumber: true,
+  lastSeenAt: true,
 } as const;
 
 type PersonRow = {
@@ -62,6 +63,7 @@ type PersonRow = {
   profilePicture: string | null;
   phoneCountryCode: string | null;
   phoneNumber: string | null;
+  lastSeenAt: Date | null;
 };
 
 type BookingSummaryRow = {
@@ -636,6 +638,9 @@ export class ConversationsService {
       role,
       phoneCountryCode: person.phoneCountryCode ?? '',
       phoneNumber: person.phoneNumber ?? '',
+      // Initial presence snapshot for a viewer who connects after the counterparty;
+      // live presence:online/offline events refine it. null = never connected.
+      lastSeenAt: person.lastSeenAt?.toISOString() ?? null,
     };
   }
 

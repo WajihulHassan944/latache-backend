@@ -8,6 +8,11 @@ export interface PersonSummaryView {
   role: 'customer' | 'tasker';
   phoneCountryCode?: string;
   phoneNumber?: string;
+  /**
+   * ISO 8601 time this person was last connected to realtime (refreshed by the
+   * 60s presence heartbeat while connected), or null if they never connected.
+   */
+  lastSeenAt: string | null;
 }
 
 export interface ConversationMessageView {

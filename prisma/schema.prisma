@@ -39,7 +39,9 @@ model User {
   inheritsRolePermissions      Boolean   @default(true)
   mustChangePassword           Boolean   @default(false)
   lastLoginAt                  DateTime? @db.Timestamptz(6)
-  lastSeenAt                   DateTime  @default(now()) @db.Timestamptz(6)
+  /// Presence: stamped on connect, every 60s heartbeat while connected, and on disconnect.
+  /// null = the user has never connected to realtime.
+  lastSeenAt                   DateTime? @db.Timestamptz(6)
   loginFailedAttempts          Int       @default(0)
   loginLockedUntil             DateTime? @db.Timestamptz(6)
   lastFailedLoginAt            DateTime? @db.Timestamptz(6)

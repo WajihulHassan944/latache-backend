@@ -152,21 +152,20 @@ export class RealtimeGateway
 
   private async broadcastPresence(userId: number, status: 'online' | 'offline'): Promise<void> {
     try {
+      // Stamp on BOTH transitions: a first-ever connection must not read as
+      // "never seen" (null lastSeenAt) until the next 60s heartbeat.
+      const seenAt = new Date();
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lastSeenAt: seenAt },
+        select: { id: true },
+      });
       const counterpartyIds = await this.presenceCounterpartyIds(userId);
       if (counterpartyIds.length === 0) return;
-      let lastSeenAt: string | undefined;
-      if (status === 'offline') {
-        const updated = await this.prisma.user.update({
-          where: { id: userId },
-          data: { lastSeenAt: new Date() },
-          select: { lastSeenAt: true },
-        });
-        lastSeenAt = updated.lastSeenAt.toISOString();
-      }
       const payload =
         status === 'online'
           ? { userId: String(userId), status: 'online' as const }
-          : { userId: String(userId), status: 'offline' as const, lastSeenAt: lastSeenAt! };
+          : { userId: String(userId), status: 'offline' as const, lastSeenAt: seenAt.toISOString() };
       for (const counterpartyId of counterpartyIds) {
         this.server.to(realtimeRoom.user(counterpartyId)).emit(`presence:${status}`, payload);
       }

@@ -196,7 +196,10 @@ export class FcmService {
       body: JSON.stringify({
         message: {
           token: delivery.token,
-          notification: { title: delivery.title, body: delivery.body },
+          // Data-only on purpose: a top-level `notification` block lets the browser /
+          // service worker auto-display the message IN ADDITION to the app's own
+          // foreground/background handlers (the classic FCM-web duplicate). With no
+          // `notification` block only the app's JS decides what is shown.
           android: {
             priority: policy.androidPriority,
             ...(policy.ttlSeconds !== undefined ? { ttl: `${policy.ttlSeconds}s` } : {}),
@@ -213,11 +216,14 @@ export class FcmService {
             ...(delivery.metadata && typeof delivery.metadata === 'object'
               ? Object.fromEntries(
                   Object.entries(delivery.metadata as Record<string, unknown>)
-                    .filter(([key]) => !['notificationId', 'entityType', 'entityId', 'type', 'category'].includes(key))
+                    .filter(([key]) => !['notificationId', 'entityType', 'entityId', 'type', 'category', 'title', 'body'].includes(key))
                     .map(([key, value]) => [key, this.stringifyData(value)]),
                 )
               : {}),
             notificationId: delivery.notificationId,
+            // FCM data values must all be strings.
+            title: String(delivery.title ?? ''),
+            body: String(delivery.body ?? ''),
             ...(delivery.type ? { type: delivery.type } : {}),
             ...(delivery.category ? { category: delivery.category } : {}),
             ...(delivery.entityType ? { entityType: delivery.entityType } : {}),
