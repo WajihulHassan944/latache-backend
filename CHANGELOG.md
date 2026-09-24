@@ -1,3 +1,26 @@
+# 3.41.0
+
+- **Taskers can now pay Latache the commission owed on cash bookings.** Previously the cash platform payable (`TaskerPlatformAccount.outstandingPayable`) could only shrink by being offset against future *online* earnings, so a cash-only Tasker had no way to settle, and once the (optional) cash restriction applied they were locked out permanently. New `TaskerPlatformSettlement` model with these endpoints:
+  - Tasker: `POST /api/tasker-dashboard/wallet/platform-payables/settlements` (`Idempotency-Key` required). Methods:
+    - `wallet`: applied immediately.
+    - `stripe`: returns a PaymentIntent `clientSecret`; applied by the verified webhook.
+    - `bank_transfer`: `reference` required; finance confirms it.
+  - Tasker: `GET .../settlements`, `GET .../settlements/:id`, `POST .../settlements/:id/cancel`.
+  - Admin: `GET/POST /api/admin/finance/platform-payables/settlements` (record an offline receipt), `POST .../:id/approve` (optional different `receivedAmount`), `POST .../:id/reject`.
+  - Settlements apply FIFO across open cash receivables, write one idempotent `settlement_payment` platform-ledger entry per receivable, credit any overpayment to the wallet, re-evaluate the cash restriction, and are audited and notified. Only one open settlement per Tasker is allowed, and it can't exceed the outstanding amount.
+- The cash-booking restriction is now also enforced when a Tasker **accepts** a cash booking, not only when the customer creates it. `GET /api/tasker-dashboard/wallet/platform-payables` adds `settlement.methods`, `settlement.cashRestrictionLimit` and `settlement.pending`.
+- **Refund on cancellation of a paid booking.** Cancelling a booking already paid at acceptance (by the customer, the Tasker, an admin, or pending auto-expiry after reassignment) kept the customer's money. The captured amount now goes back in full to the original method: wallet refunds happen atomically; card refunds go through Stripe right after commit, with a `payments.process-acceptance-refunds` retry sweep. A reassigned paid booking is no longer charged twice when the new Tasker accepts, and admins can now cancel `awaiting_payment` bookings.
+- **Card payment fixes** (found by live E2E testing):
+  - Every card decline returned HTTP 500 instead of 402, because stripe-node error class names weren't recognized.
+  - The in-app acceptance payment ran off-session, so any 3DS card was hard-declined; it now returns `requiresAction`.
+  - A retry after a decline hit Stripe's idempotency cache and could never succeed. Retries now re-confirm the same PaymentIntent, including with a different card.
+- **Paid plans:**
+  - Super Admin can edit the catalog via `GET/PUT /api/admin/tasker-plans/catalog`: price, fee %, bonus, revenue share %, support tier, spotlight frequency, perk text and availability.
+  - Revenue share is implemented: Diamond defaults to 2% of each online booking's service amount, credited when the earning is released.
+  - New `POST /api/admin/tasker-plans/:id/terminate`.
+  - The admin list shows each subscriber's staff-fulfilled perks.
+  - The quote's `pricingPolicy` exposes `paidPlanId` / `paidPlanFeeApplied`.
+
 # 3.40.0
 
 - **Tasker is notified when the customer pays.** `markAcceptanceCaptured` (the single point where every acceptance payment, whether wallet, card or 3DS, completes) now also sends the Tasker a `booking_payment_captured` notification (`entityType: 'booking'`, `audienceRole: tasker`, own localized template `booking_payment_captured_tasker`). Push, in-app, realtime and email all go through the existing outbox, so the Tasker's list/home card/bell refresh without a manual reload.
