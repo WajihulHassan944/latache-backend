@@ -3,6 +3,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Headers,
   Param,
   Post,
   Query,
@@ -14,6 +15,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiForbiddenResponse,
+  ApiHeader,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -30,6 +32,13 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminFinanceQueryDto, AdminPayoutActionDto } from '../dto/admin-finance.dto';
 import { AdminEarningActionDto } from '../../tasker-finance/dto/tasker-finance.dto';
 import { AdminFinanceService } from '../services/admin-finance.service';
+import { PlatformPayableSettlementsService } from '../../tasker-finance/platform-payable-settlements.service';
+import {
+  AdminRecordPlatformSettlementDto,
+  ApprovePlatformSettlementDto,
+  ListPlatformSettlementsQueryDto,
+  RejectPlatformSettlementDto,
+} from '../../tasker-finance/dto/platform-settlement.dto';
 
 @ApiTags('58 Admin - Payments & Finance')
 @ApiBearerAuth('bearer')
@@ -38,7 +47,66 @@ import { AdminFinanceService } from '../services/admin-finance.service';
 @UseGuards(AdminAuthGuard, PermissionsGuard)
 @Controller('admin/finance')
 export class AdminFinanceController {
-  constructor(private readonly finance: AdminFinanceService) {}
+  constructor(
+    private readonly finance: AdminFinanceService,
+    private readonly settlements: PlatformPayableSettlementsService,
+  ) {}
+
+  @Get('platform-payables/settlements')
+  @Permissions('finance.read')
+  @ApiOperation({
+    summary: 'Tasker payments of cash-commission payables (status=pending_review is the confirmation queue)',
+  })
+  platformSettlements(@Query() query: ListPlatformSettlementsQueryDto) {
+    return this.settlements.list(
+      {
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.taskerId ? { taskerId: query.taskerId } : {}),
+      },
+      query.page,
+      query.limit,
+    );
+  }
+
+  @Post('platform-payables/settlements')
+  @Permissions('finance.manage')
+  @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'bank-stmt-2026-09-24-17' })
+  @ApiOperation({
+    summary: 'Record an offline payment received from a Tasker (bank transfer, cash deposit, other)',
+    description:
+      'Applied immediately: FIFO against open cash receivables, platform ledger entries written, cash restriction re-evaluated. Excess over the outstanding payable is credited to the Tasker wallet. Audited.',
+  })
+  recordPlatformSettlement(
+    @CurrentUser() actor: User,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() dto: AdminRecordPlatformSettlementDto,
+  ) {
+    return this.settlements.adminRecord(actor.id, dto, idempotencyKey ?? '');
+  }
+
+  @Post('platform-payables/settlements/:id/approve')
+  @Permissions('finance.manage')
+  @ApiParam({ name: 'id', required: true, type: String })
+  @ApiOperation({ summary: 'Confirm a Tasker-declared bank transfer was received (optionally a different amount)' })
+  approvePlatformSettlement(
+    @CurrentUser() actor: User,
+    @Param('id') id: string,
+    @Body() dto: ApprovePlatformSettlementDto,
+  ) {
+    return this.settlements.approve(actor.id, id, dto);
+  }
+
+  @Post('platform-payables/settlements/:id/reject')
+  @Permissions('finance.manage')
+  @ApiParam({ name: 'id', required: true, type: String })
+  @ApiOperation({ summary: 'Reject a Tasker-declared bank transfer that was not received' })
+  rejectPlatformSettlement(
+    @CurrentUser() actor: User,
+    @Param('id') id: string,
+    @Body() dto: RejectPlatformSettlementDto,
+  ) {
+    return this.settlements.reject(actor.id, id, dto.note);
+  }
 
   @Get()
   @Permissions('finance.read')

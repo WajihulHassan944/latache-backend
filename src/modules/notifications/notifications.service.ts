@@ -56,6 +56,8 @@ const EMAIL_NOTIFIED_TYPES = new Set<string>([
   'tasker_plan_expired',
   'tasker_plan_cancelled',
   'tasker_plan_terminated',
+  'platform_payable_settlement_completed',
+  'platform_payable_settlement_rejected',
 ]);
 
 export interface CreateNotificationInput {

@@ -231,6 +231,8 @@ const ARABIC_TEMPLATES: Record<string, LocalizedTemplate> = {
   tasker_plan_expired: { title: 'انتهت الباقة', body: 'انتهت باقتك لتعذر تحصيل دفعة التجديد. تطبق الآن الرسوم والترتيب العاديان.' },
   tasker_plan_cancelled: { title: 'تم إلغاء الباقة', body: 'تم إلغاء باقتك بناءً على طلبك، وإذا كانت لا تزال قيد المراجعة فقد تم استرداد المبلغ.' },
   tasker_plan_terminated: { title: 'تم إنهاء الباقة', body: 'أنهى فريق Latache باقتك ولن يتم تجديدها.' },
+  platform_payable_settlement_completed: { title: 'تم استلام دفعتك إلى Latache', body: 'تم تطبيق دفعتك على المستحقات للمنصة. افتح المحفظة لمعرفة الرصيد المتبقي.' },
+  platform_payable_settlement_rejected: { title: 'لم يتم تأكيد دفعتك إلى Latache', body: 'تعذر تأكيد التحويل المصرح به. افتح المحفظة للاطلاع على السبب.' },
   tasker_plan_revenue_share: { title: 'تمت إضافة حصة الإيرادات', body: 'تمت إضافة حصة إيرادات باقتك من هذا الحجز إلى محفظتك.' },
 };
 
@@ -453,6 +455,8 @@ const DARIJA_TEMPLATES: Record<string, LocalizedTemplate> = {
   tasker_plan_expired: { title: 'الباقة سالات', body: 'الباقة سالات حيت خلصة التجديد ما دازتش. دابا كتطبق العمولة والترتيب العاديين.' },
   tasker_plan_cancelled: { title: 'الباقة تلغات', body: 'الباقة ديالك تلغات كيف طلبتي، وإلا كانت الخلصة ديالها باقا فالمراجعة ترجعات ليك.' },
   tasker_plan_terminated: { title: 'الباقة توقفات', body: 'فريق Latache وقف الباقة ديالك وما غاديش تتجدد.' },
+  platform_payable_settlement_completed: { title: 'توصلنا بالخلصة ديالك لـ Latache', body: 'الخلصة ديالك تحسبات من المستحقات ديال المنصة. شوف المحفظة باش تعرف شحال باقي.' },
+  platform_payable_settlement_rejected: { title: 'الخلصة ديالك لـ Latache ما تأكداتش', body: 'ما قدرناش نأكدو التحويل اللي صرحتي بيه. شوف المحفظة باش تعرف السبب.' },
   tasker_plan_revenue_share: { title: 'تزادت حصة المداخيل', body: 'تزادت فالمحفظة ديالك حصة المداخيل ديال الباقة من هاد الحجز.' },
 };
 

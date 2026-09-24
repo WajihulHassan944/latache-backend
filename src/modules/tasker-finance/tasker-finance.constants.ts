@@ -17,6 +17,7 @@ export const PLATFORM_LEDGER_KIND = {
   CashPayableCreated: 'cash_payable_created',
   EarningDebtOffset: 'earning_debt_offset',
   ReceivableReversal: 'receivable_reversal',
+  SettlementPayment: 'settlement_payment',
 } as const;
 
 export const EARNING_LEDGER_KIND = {

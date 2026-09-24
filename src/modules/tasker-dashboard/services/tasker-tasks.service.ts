@@ -34,6 +34,7 @@ import { PlatformSettingsService } from '../../platform-settings/platform-settin
 import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { ReferralsService } from '../../referrals/services/referrals.service';
 import { PaymentsService } from '../../payments/payments.service';
+import { TaskerFinanceService } from '../../tasker-finance/tasker-finance.service';
 
 type TaskerBookingWithRelations = Prisma.BookingGetPayload<{
   include: {
@@ -64,6 +65,7 @@ export class TaskerTasksService {
     private readonly audit: AdminAuditService,
     private readonly referrals: ReferralsService,
     private readonly payments: PaymentsService,
+    private readonly taskerFinance: TaskerFinanceService,
   ) {}
 
   async list(taskerId: number, query: ListTaskerTasksQueryDto): Promise<TaskerTaskListView> {
@@ -135,6 +137,10 @@ export class TaskerTasksService {
       }
       // Cash is settled on site; an online booking already paid at acceptance (e.g.
       // admin-reassigned to this Tasker) must not ask the customer to pay again.
+      // The cash restriction is also enforced when accepting, not only when the
+      // customer books: a Tasker who crossed the debt limit while this request was
+      // pending must settle (POST /tasker-dashboard/wallet/platform-payables/settlements) first.
+      if (booking.paymentSource === 'cash') await this.taskerFinance.assertCashBookingAllowed(taskerId);
       const alreadyPaid = booking.capturedAt !== null && booking.capturedAmount !== null;
       const status = booking.paymentSource === 'cash' || alreadyPaid
         ? TASKER_BOOKING_STATUS.Confirmed

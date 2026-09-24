@@ -1296,7 +1296,7 @@ export class TaskerFinanceService {
 
   async taskerPlatformPayables(taskerId: number, query: EarningListQuery) {
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
-    const [account, receivables, totalItems, ledger] = await Promise.all([
+    const [account, receivables, totalItems, ledger, openSettlement, policy] = await Promise.all([
       this.platformAccount(taskerId),
       this.prisma.taskerPlatformReceivable.findMany({
         where: { taskerId },
@@ -1315,9 +1315,31 @@ export class TaskerFinanceService {
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: 100,
       }),
+      this.prisma.taskerPlatformSettlement.findFirst({
+        where: { taskerId, status: { in: ['pending_payment', 'pending_review'] } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.settings.taskerFinancePolicy(),
     ]);
     return {
       ...account,
+      // How the Tasker can pay this down (POST /tasker-dashboard/wallet/platform-payables/settlements).
+      settlement: {
+        methods: ['wallet', 'stripe', 'bank_transfer'],
+        cashRestrictionLimit:
+          policy.blockCashBookingsAtDebtLimit && policy.maximumOutstandingPlatformDebt > 0
+            ? policy.maximumOutstandingPlatformDebt
+            : null,
+        pending: openSettlement
+          ? {
+              id: openSettlement.id,
+              method: openSettlement.method,
+              status: openSettlement.status,
+              amount: money(openSettlement.amount),
+              createdAt: openSettlement.createdAt.toISOString(),
+            }
+          : null,
+      },
       page,
       limit,
       totalItems,
@@ -1338,6 +1360,135 @@ export class TaskerFinanceService {
         createdAt: entry.createdAt.toISOString(),
       })),
     };
+  }
+
+  /**
+   * Applies money the Tasker paid to Latache (PlatformPayableSettlementsService)
+   * against their cash platform payable: FIFO across open receivables (the same
+   * order as the automatic earnings offset), one idempotent platform-ledger entry
+   * per receivable, account balance decremented, cash restriction re-evaluated.
+   * Anything above the outstanding balance (e.g. the payable shrank through an
+   * earnings offset while a card payment was in flight) is credited to the
+   * Tasker wallet rather than kept. Lock order matches releaseMatureEarning:
+   * TaskerWallets, then TaskerPlatformAccounts.
+   */
+  async applyPayableSettlement(
+    transaction: Prisma.TransactionClient,
+    input: { taskerId: number; settlementId: string; amount: number; currency: string; reference: string },
+  ): Promise<{ applied: number; overpayment: number; outstandingAfter: number }> {
+    const amount = money(input.amount);
+    if (amount <= 0) throw new BadRequestException('Settlement amount must be positive');
+    await transaction.taskerWallet.upsert({
+      where: { taskerId: input.taskerId },
+      create: { taskerId: input.taskerId, currency: input.currency },
+      update: {},
+    });
+    await transaction.taskerPlatformAccount.upsert({
+      where: { taskerId: input.taskerId },
+      create: { taskerId: input.taskerId, currency: input.currency },
+      update: {},
+    });
+    await transaction.$queryRaw`
+      SELECT "taskerId" FROM "TaskerWallets" WHERE "taskerId" = ${input.taskerId} FOR UPDATE
+    `;
+    await transaction.$queryRaw`
+      SELECT "taskerId" FROM "TaskerPlatformAccounts" WHERE "taskerId" = ${input.taskerId} FOR UPDATE
+    `;
+    const account = await transaction.taskerPlatformAccount.findUniqueOrThrow({
+      where: { taskerId: input.taskerId },
+    });
+    if (account.currency !== input.currency) {
+      throw new ConflictException('Settlement currency does not match the Tasker platform account');
+    }
+    const applied = Math.min(amount, money(account.outstandingPayable));
+    let remaining = applied;
+    if (remaining > 0) {
+      const receivables = await transaction.taskerPlatformReceivable.findMany({
+        where: {
+          taskerId: input.taskerId,
+          outstandingAmount: { gt: 0 },
+          status: {
+            in: [
+              PLATFORM_RECEIVABLE_STATUS.Outstanding,
+              PLATFORM_RECEIVABLE_STATUS.PartiallySettled,
+              PLATFORM_RECEIVABLE_STATUS.PartiallyReversed,
+            ],
+          },
+        },
+        orderBy: [{ confirmedAt: 'asc' }, { id: 'asc' }],
+      });
+      const now = new Date();
+      for (const receivable of receivables) {
+        if (remaining <= 0) break;
+        const portion = Math.min(remaining, money(receivable.outstandingAmount));
+        const newOutstanding = money(money(receivable.outstandingAmount) - portion);
+        await transaction.taskerPlatformReceivable.update({
+          where: { id: receivable.id },
+          data: {
+            outstandingAmount: decimal(newOutstanding),
+            settledAmount: decimal(money(receivable.settledAmount) + portion),
+            status:
+              newOutstanding <= 0
+                ? PLATFORM_RECEIVABLE_STATUS.Settled
+                : PLATFORM_RECEIVABLE_STATUS.PartiallySettled,
+            settledAt: newOutstanding <= 0 ? now : null,
+          },
+        });
+        await transaction.taskerPlatformLedgerEntry.create({
+          data: {
+            taskerId: input.taskerId,
+            bookingId: receivable.bookingId,
+            receivableId: receivable.id,
+            kind: PLATFORM_LEDGER_KIND.SettlementPayment,
+            amount: decimal(portion),
+            payableDelta: decimal(-portion),
+            currency: input.currency,
+            description: `Platform payable settled by Tasker payment ${input.settlementId}`,
+            externalReference: input.reference,
+            idempotencyKey: `settlement:${input.settlementId}:receivable:${receivable.id}`,
+          },
+        });
+        remaining = money(remaining - portion);
+      }
+      if (remaining > 0.005) {
+        throw new ConflictException('Platform payable aggregate is inconsistent with receivable ledger');
+      }
+      await transaction.taskerPlatformAccount.update({
+        where: { taskerId: input.taskerId },
+        data: { outstandingPayable: { decrement: decimal(applied) } },
+      });
+    }
+    const overpayment = money(amount - applied);
+    if (overpayment > 0) {
+      await transaction.taskerWallet.update({
+        where: { taskerId: input.taskerId },
+        data: { availableBalance: { increment: decimal(overpayment) } },
+      });
+      await transaction.taskerWalletLedgerEntry.create({
+        data: {
+          taskerId: input.taskerId,
+          kind: WALLET_ENTRY_KIND.PlatformPayableOverpayment,
+          status: 'settled',
+          amount: decimal(overpayment),
+          availableDelta: decimal(overpayment),
+          pendingDelta: decimal(0),
+          currency: input.currency,
+          description: `Payment ${input.settlementId} exceeded the outstanding platform payable; excess credited`,
+          externalReference: input.reference,
+          idempotencyKey: `settlement:${input.settlementId}:overpayment`,
+        },
+      });
+    }
+    const outstandingAfter = money(money(account.outstandingPayable) - applied);
+    const policy = await this.settings.taskerFinancePolicy(transaction);
+    await this.applyRestrictionPolicy(
+      transaction,
+      input.taskerId,
+      outstandingAfter,
+      policy.maximumOutstandingPlatformDebt,
+      policy.blockCashBookingsAtDebtLimit,
+    );
+    return { applied, overpayment, outstandingAfter };
   }
 
   /**

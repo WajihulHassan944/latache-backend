@@ -43,6 +43,11 @@ import {
   StringIdParamDto,
 } from '../dto';
 import { TaskerWalletService } from '../services/tasker-wallet.service';
+import { PlatformPayableSettlementsService } from '../../tasker-finance/platform-payable-settlements.service';
+import {
+  CreatePlatformSettlementDto,
+  ListPlatformSettlementsQueryDto,
+} from '../../tasker-finance/dto/platform-settlement.dto';
 import { TaskerEarningsQueryDto } from '../../tasker-finance/dto/tasker-finance.dto';
 
 @ApiTags('13 Tasker Wallet & Payouts')
@@ -51,7 +56,10 @@ import { TaskerEarningsQueryDto } from '../../tasker-finance/dto/tasker-finance.
 @Roles(UserRole.Tasker)
 @Controller('tasker-dashboard/wallet')
 export class TaskerWalletController {
-  constructor(private readonly wallet: TaskerWalletService) {}
+  constructor(
+    private readonly wallet: TaskerWalletService,
+    private readonly settlements: PlatformPayableSettlementsService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -94,6 +102,50 @@ export class TaskerWalletController {
   })
   platformPayables(@CurrentUser() user: User, @Query() query: TaskerEarningsQueryDto) {
     return this.wallet.platformPayables(user.id, query);
+  }
+
+  @Post('platform-payables/settlements')
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique client-generated key; retrying with the same key returns the original settlement.',
+    example: 'settle-20260924-7f3a',
+  })
+  @ApiOperation({
+    summary: 'Pay the outstanding cash-commission payable to Latache',
+    description:
+      'wallet: debits available balance and applies immediately. stripe: returns clientSecret for a PaymentIntent to confirm in-app; applied by the verified webhook. bank_transfer: records a declared transfer (reference required) that finance confirms. One open settlement at a time; amount defaults to the full outstanding payable and cannot exceed it.',
+  })
+  createPlatformSettlement(
+    @CurrentUser() user: User,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() dto: CreatePlatformSettlementDto,
+  ) {
+    return this.settlements.create(user.id, dto, idempotencyKey ?? '');
+  }
+
+  @Get('platform-payables/settlements')
+  @ApiOperation({ summary: "List the tasker's payments to Latache" })
+  platformSettlements(@CurrentUser() user: User, @Query() query: ListPlatformSettlementsQueryDto) {
+    return this.settlements.list(
+      { taskerId: user.id, ...(query.status ? { status: query.status } : {}) },
+      query.page,
+      query.limit,
+    );
+  }
+
+  @Get('platform-payables/settlements/:id')
+  @ApiParam({ name: 'id', required: true, type: String })
+  @ApiOperation({ summary: 'Get one payment to Latache' })
+  platformSettlement(@CurrentUser() user: User, @Param() params: StringIdParamDto) {
+    return this.settlements.get(user.id, params.id);
+  }
+
+  @Post('platform-payables/settlements/:id/cancel')
+  @ApiParam({ name: 'id', required: true, type: String })
+  @ApiOperation({ summary: 'Cancel a pending card payment or an unconfirmed bank-transfer declaration' })
+  cancelPlatformSettlement(@CurrentUser() user: User, @Param() params: StringIdParamDto) {
+    return this.settlements.cancel(user.id, params.id);
   }
 
   @Get('payout-capabilities')

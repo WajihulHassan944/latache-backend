@@ -163,6 +163,7 @@ model User {
   referralRewards              ReferralReward[]            @relation("ReferralRewardRecipient")
   convertedGuestSessions       GuestSession[]              @relation("GuestSessionConvertedUser")
   rescheduleProposalsMade      RescheduleProposal[]        @relation("RescheduleProposalProposedBy")
+  platformSettlements          TaskerPlatformSettlement[]  @relation("TaskerPlatformSettlements")
 
   @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
   @@index([roles], type: Gin, map: "users_roles_gin_idx")
@@ -1945,6 +1946,42 @@ model TaskerPlatformReceivable {
   @@index([taskerId, status, createdAt], map: "tasker_platform_receivables_tasker_status_idx")
   @@index([status, isDisputed, disputeClearsAt], map: "tasker_platform_receivables_clearance_idx")
   @@map("TaskerPlatformReceivables")
+}
+
+/// A Tasker paying down their cash-commission platform payable (TaskerPlatformAccount.outstandingPayable).
+/// wallet: debited from available balance, completed at once.
+/// stripe: PaymentIntent the Tasker confirms in-app; completed by the verified webhook.
+/// bank_transfer / cash_deposit / other: offline payment - declared by the Tasker (pending_review)
+/// and approved by finance, or recorded directly by finance (completed).
+model TaskerPlatformSettlement {
+  id                String    @id @default(cuid()) @db.VarChar(40)
+  taskerId          Int
+  method            String    @db.VarChar(32)
+  status            String    @db.VarChar(32)
+  amount            Decimal   @db.Decimal(14, 2)
+  /// Portion applied to outstanding receivables; any excess is credited to the Tasker wallet.
+  appliedAmount     Decimal   @default(0) @db.Decimal(14, 2)
+  overpaymentAmount Decimal   @default(0) @db.Decimal(14, 2)
+  currency          String    @db.VarChar(3)
+  idempotencyKey    String    @db.VarChar(120)
+  providerReference String?   @unique(map: "TaskerPlatformSettlements_providerReference_key") @db.VarChar(255)
+  externalReference String?   @db.VarChar(255)
+  note              String?   @db.VarChar(1000)
+  adminNote         String?   @db.VarChar(1000)
+  failureReason     String?   @db.VarChar(1000)
+  createdById       Int
+  reviewedById      Int?
+  reviewedAt        DateTime? @db.Timestamptz(6)
+  completedAt       DateTime? @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  tasker User @relation("TaskerPlatformSettlements", fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerPlatformSettlements_taskerId_fkey")
+
+  @@unique([taskerId, idempotencyKey], map: "tasker_platform_settlements_tasker_idempotency_unique")
+  @@index([taskerId, createdAt], map: "tasker_platform_settlements_tasker_created_idx")
+  @@index([status, createdAt], map: "tasker_platform_settlements_status_created_idx")
+  @@map("TaskerPlatformSettlements")
 }
 
 model TaskerPlatformLedgerEntry {

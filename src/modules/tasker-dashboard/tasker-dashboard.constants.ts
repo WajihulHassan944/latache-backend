@@ -71,6 +71,8 @@ export const WALLET_ENTRY_KIND = {
   PlanRefund: 'plan_refund',
   PlanBonus: 'plan_bonus',
   PlanRevenueShare: 'plan_revenue_share',
+  PlatformPayableSettlement: 'platform_payable_settlement',
+  PlatformPayableOverpayment: 'platform_payable_overpayment',
 } as const;
 
 export const WITHDRAWAL_STATUS = {

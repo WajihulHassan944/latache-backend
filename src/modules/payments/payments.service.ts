@@ -20,6 +20,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { WALLET_ENTRY_KIND } from '../tasker-dashboard/tasker-dashboard.constants';
+import {
+  PlatformPayableSettlementsService,
+  SETTLEMENT_INTENT_KIND,
+} from '../tasker-finance/platform-payable-settlements.service';
 import { TaskerFinanceService } from '../tasker-finance/tasker-finance.service';
 import { ReferralsService } from '../referrals/services/referrals.service';
 import { DisputeLifecycleService } from '../disputes/dispute-lifecycle.service';
@@ -81,6 +85,7 @@ export class PaymentsService {
     private readonly referrals: ReferralsService,
     private readonly disputes: DisputeLifecycleService,
     private readonly realtime: RealtimeOutboxService,
+    private readonly platformSettlements: PlatformPayableSettlementsService,
   ) {
     this.minimumBillableMinutes = config.get<number>('payments.minimumBillableMinutes', 120);
     this.minimumWalletTopup = config.get<number>('payments.minimumWalletTopup', 5);
@@ -2127,6 +2132,8 @@ export class PaymentsService {
             await this.handleBookingIntent(transaction, intent, event.type);
           } else if (kind === ACCEPTANCE_CAPTURE_INTENT_KIND) {
             await this.handleAcceptanceIntent(transaction, intent, event.type);
+          } else if (kind === SETTLEMENT_INTENT_KIND) {
+            await this.platformSettlements.handleIntent(transaction, intent, event.type);
           }
         } else if (
           event.type === 'refund.created' ||
