@@ -46,6 +46,11 @@ export class TaskerFinanceService {
 
   async createPendingEarning(input: CreatePendingEarningInput): Promise<void> {
     const { booking, transaction } = input;
+    // An earning only exists after a settled payment, so the method is always known here.
+    if (!booking.paymentSource) {
+      throw new ConflictException('Cannot record an earning for a booking with no payment method');
+    }
+    const paymentSource = booking.paymentSource;
     const serviceAmount = money(booking.serviceAmount);
     const platformCommissionAmount = money(booking.platformFeeAmount);
     const taxAmount = money(booking.taxAmount);
@@ -99,7 +104,7 @@ export class TaskerFinanceService {
       data: {
         bookingId: booking.id,
         taskerId: booking.taskerId,
-        paymentSource: booking.paymentSource,
+        paymentSource,
         grossCustomerAmount: decimal(input.grossCustomerAmount),
         serviceAmount: decimal(serviceAmount),
         platformCommissionAmount: decimal(platformCommissionAmount),

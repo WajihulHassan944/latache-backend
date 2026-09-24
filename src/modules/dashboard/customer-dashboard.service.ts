@@ -24,14 +24,11 @@ export class CustomerDashboardService {
     const year = now.getUTCFullYear();
     const yearStart = new Date(Date.UTC(year, 0, 1));
     const yearEnd = new Date(Date.UTC(year + 1, 0, 1));
-    const activeStatuses = [
-      'pending',
-      'confirmed',
-      'en_route',
-      'arrived',
-      'in_progress',
-      'awaiting_customer_approval',
-    ];
+    // Work already under way (or awaiting the customer's sign-off) stays the
+    // next task regardless of its date; upcoming work counts from today on.
+    const ongoingStatuses = ['en_route', 'arrived', 'in_progress', 'awaiting_customer_approval'];
+    const upcomingStatuses = ['pending', 'awaiting_payment', 'confirmed'];
+    const activeStatuses = [...upcomingStatuses, ...ongoingStatuses];
 
     const [
       activeTasks,
@@ -51,10 +48,15 @@ export class CustomerDashboardService {
       this.prisma.booking.findFirst({
         where: {
           customerId,
-          status: { in: ['pending', 'confirmed', 'en_route', 'arrived'] },
-          bookingDate: {
-            gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())),
-          },
+          OR: [
+            { status: { in: ongoingStatuses } },
+            {
+              status: { in: upcomingStatuses },
+              bookingDate: {
+                gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())),
+              },
+            },
+          ],
         },
         include: {
           tasker: {

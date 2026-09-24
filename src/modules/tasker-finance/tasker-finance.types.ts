@@ -4,7 +4,7 @@ export interface CreatePendingEarningInput {
   booking: {
     id: number;
     taskerId: number;
-    paymentSource: string;
+    paymentSource: string | null;
     paymentCurrency: string;
     serviceAmount: Prisma.Decimal | null;
     platformFeeAmount: Prisma.Decimal;

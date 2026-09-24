@@ -65,8 +65,14 @@ describe('Tasker earning clearance and cash accounting architecture', () => {
     expect(finance).toContain('availableBalance: { increment:');
   });
 
-  it('enforces configurable debt thresholds at cash booking creation', () => {
-    expect(bookings).toContain('assertCashBookingAllowed');
+  it('enforces configurable debt thresholds when cash is actually chosen, not at booking creation', () => {
+    // Payment is chosen after acceptance, so creation must not validate payment at all.
+    const book = bookings.slice(bookings.indexOf('async book('), bookings.indexOf('async list('));
+    expect(book).not.toContain('assertCashBookingAllowed');
+    expect(book).not.toContain('assertPaymentMethodOwnedByCustomer');
+    // Enforced when the Tasker accepts a cash booking and when the customer picks cash.
+    expect(read('src/modules/tasker-dashboard/services/tasker-tasks.service.ts')).toContain('assertCashBookingAllowed');
+    expect(payments).toContain('assertCashBookingAllowed');
     expect(finance).toContain('maximumOutstandingPlatformDebt');
     expect(finance).toContain('blockCashBookingsAtDebtLimit');
     expect(finance).toContain(

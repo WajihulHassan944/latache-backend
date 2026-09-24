@@ -921,7 +921,8 @@ model Booking {
   reviewRequestSentAt       DateTime? @db.Timestamptz(6)
   estimatedDurationMinutes  Int       @default(120)
   extensionMinutes          Int       @default(0)
-  paymentSource             String    @default("stripe") @db.VarChar(32)
+  /// null until the customer chooses how to pay (at creation, or after the Tasker accepts).
+  paymentSource             String?   @db.VarChar(32)
   paymentStatus             String    @default("payment_method_required") @db.VarChar(48)
   paymentCurrency           String    @default("USD") @db.VarChar(3)
   stripePaymentMethodId     String?   @db.VarChar(255)

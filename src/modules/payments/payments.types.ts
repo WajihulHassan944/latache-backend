@@ -47,7 +47,8 @@ export interface PaymentTransactionListView {
 
 export interface BookingPaymentStatusView {
   bookingId: string;
-  source: string;
+  /** null until the customer chooses how to pay. */
+  source: string | null;
   status: string;
   currency: string;
   paymentMethodId: string | null;

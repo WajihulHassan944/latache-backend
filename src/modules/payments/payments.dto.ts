@@ -62,9 +62,13 @@ export class RetryBookingPaymentDto {
 }
 
 export class CompleteBookingPaymentDto {
-  @ApiProperty({ enum: ['wallet', 'stripe'] })
-  @IsIn(['wallet', 'stripe'])
-  source!: 'wallet' | 'stripe';
+  @ApiProperty({
+    enum: ['wallet', 'stripe', 'cash'],
+    description:
+      'How the customer pays for an accepted booking. May differ from (or set) the method chosen at booking time. cash confirms the booking without a charge; the Tasker collects on site.',
+  })
+  @IsIn(['wallet', 'stripe', 'cash'])
+  source!: 'wallet' | 'stripe' | 'cash';
 
   @ApiPropertyOptional({ example: 'pm_123' })
   @IsOptional()

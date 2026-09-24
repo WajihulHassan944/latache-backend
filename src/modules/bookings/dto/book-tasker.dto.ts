@@ -87,9 +87,9 @@ export class BookTaskerDto {
   @IsIn(['stripe', 'wallet', 'cash'])
   @ApiPropertyOptional({
     enum: ['stripe', 'wallet', 'cash'],
-    default: 'stripe',
+    nullable: true,
     description:
-      'Cash is paid directly to the Tasker and later requires an explicit, idempotent physical-collection confirmation. It is never treated as platform escrow.',
+      'Optional. Omit to choose the payment method after the Tasker accepts (POST /bookings/:id/complete-payment); the booking then has paymentSource null. Cash is paid directly to the Tasker and later requires an explicit, idempotent physical-collection confirmation.',
   })
   paymentSource?: 'stripe' | 'wallet' | 'cash';
 

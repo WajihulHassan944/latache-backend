@@ -1,3 +1,15 @@
+# 3.43.0
+
+- **Prepaid bookings now pay exactly for the work done.**
+  - At acceptance, card and wallet customers prepay the same estimate the quote shows: billable time × rate, plus platform fee, surcharge, tax, tip and donation. Previously it was the rate × the whole slot, with no fee or tax.
+  - At completion the real total is computed exactly as for cash. Any shortfall is charged; any unused prepayment is refunded to the original method (wallet immediately, card by Stripe partial refund with sweep retries). Before, a job shorter than the prepaid slot kept the whole prepayment: e.g. $52 paid, $26 owed, $26 neither refunded nor accounted.
+  - A self-healing reconciliation in the `payments.process-acceptance-refunds` sweep refunds already-settled over-captured bookings once and corrects their charged total.
+- **Payment method chosen after acceptance.**
+  - `POST /api/bookings` no longer defaults `paymentSource` to `stripe`. It is stored as `null` when omitted (`paymentStatus: payment_method_required`), and creation no longer runs the cash-debt check or any card validation.
+  - After the Tasker accepts, `POST /api/bookings/:id/complete-payment` accepts `source: wallet | stripe | cash`, can set or change the method (refused only while a card attempt is in flight), and `cash` confirms the booking without a charge, subject to the Tasker's cash restriction.
+  - `Booking.paymentSource` is now nullable (migration `20260924140000_booking_payment_source_optional`).
+- **Customer dashboard `nextTask`** now includes `in_progress` and `awaiting_customer_approval` (matching the active count), plus `awaiting_payment`. An ongoing task stays the next task regardless of its date. `awaiting_payment` is also counted as active.
+
 # 3.42.0
 
 - **Presence initial snapshot:** `otherParty` (PersonSummaryView) on `GET /api/conversations`, `/conversations/:conversationId`, `/conversations/with/:userId` and both message-list endpoints now includes `lastSeenAt: string | null` (ISO 8601, `null` if the person never connected). The client can derive online/offline on load; live `presence:*` events refine it, so the result no longer depends on which side connected first.

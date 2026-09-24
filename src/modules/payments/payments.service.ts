@@ -571,13 +571,17 @@ export class PaymentsService {
     return this.serializeBookingPayment(booking);
   }
 
-  /** Captures the estimated hourly amount after acceptance, before the booking becomes confirmed. */
+  /**
+   * After the Tasker accepts, the customer pays (or picks cash). Card/wallet prepay the
+   * full quoted estimate; the final settlement charges or refunds the difference.
+   */
   async completeAcceptancePayment(
     customerId: number,
     bookingId: number,
     dto: CompleteBookingPaymentDto,
   ): Promise<
     | { bookingId: number; status: 'confirmed'; capturedAmount: number; capturedAt: string }
+    | { bookingId: number; status: 'confirmed'; paymentSource: 'cash'; capturedAmount: number; capturedAt: null }
     | { requiresAction: true; clientSecret: string }
   > {
     const booking = await this.prisma.booking.findFirst({ where: { id: bookingId, customerId } });
@@ -589,9 +593,25 @@ export class PaymentsService {
       throw new ConflictException('Payment can only be completed after tasker acceptance');
     }
     if (booking.paymentSource !== dto.source) {
-      throw new ConflictException('Payment source must match the booking payment source');
+      // The method is chosen now (it may have been left unset, or the customer
+      // changed their mind). Switching is refused only while a card attempt for
+      // this booking is genuinely in flight, so money can't move on two rails.
+      const attempt = await this.prisma.paymentTransaction.findUnique({
+        where: { idempotencyKey: `acceptance-capture:${bookingId}` },
+      });
+      if (attempt && !['requires_payment_method', 'canceled', 'failed'].includes(attempt.status)) {
+        throw new ConflictException('A card payment for this booking is already in progress');
+      }
+      await this.prisma.booking.update({
+        where: { id: bookingId },
+        data: { paymentSource: dto.source, paymentStatus: PAYMENT_STATUS.Ready },
+      });
     }
-    const amount = roundMoney(Number(booking.hourlyRate) * (booking.estimatedDurationMinutes / 60));
+    if (dto.source === PAYMENT_SOURCE.Cash) {
+      if (booking.paymentDueAt !== null && booking.paymentDueAt <= new Date()) throw this.paymentWindowClosed();
+      return this.confirmAcceptedCashBooking(bookingId, customerId);
+    }
+    const amount = await this.acceptanceAmount(booking);
     // Past the deadline only an already-succeeded Stripe attempt may still land;
     // anything new is refused (the expiry sweep cancels the booking shortly).
     const paymentWindowClosed = booking.paymentDueAt !== null && booking.paymentDueAt <= new Date();
@@ -848,7 +868,7 @@ export class PaymentsService {
   }
 
   /** Sweep: retries card refunds for cancelled bookings still refund_pending. */
-  async processPendingAcceptanceRefunds(): Promise<{ refunded: number; failed: number }> {
+  async processPendingAcceptanceRefunds(): Promise<{ refunded: number; failed: number; reconciled: number }> {
     const rows = await this.prisma.booking.findMany({
       where: { status: 'cancelled', paymentStatus: PAYMENT_STATUS.RefundPending },
       select: { id: true },
@@ -861,7 +881,19 @@ export class PaymentsService {
       if (result === 'refunded') refunded += 1;
       if (result === 'failed') failed += 1;
     }
-    return { refunded, failed };
+    const pendingUnused = await this.prisma.paymentTransaction.findMany({
+      where: { kind: PAYMENT_TRANSACTION_KIND.Refund, provider: 'stripe', status: 'pending', idempotencyKey: { startsWith: 'acceptance-underuse-refund:' } },
+      select: { bookingId: true },
+      take: 50,
+    });
+    for (const row of pendingUnused) {
+      if (!row.bookingId) continue;
+      const result = await this.processUnusedPrepaymentRefund(row.bookingId);
+      if (result === 'refunded') refunded += 1;
+      if (result === 'failed') failed += 1;
+    }
+    const { refunded: reconciled } = await this.reconcileOverCapturedBookings();
+    return { refunded, failed, reconciled };
   }
 
   /**
@@ -988,14 +1020,6 @@ export class PaymentsService {
     }
 
     const billableMinutes = Math.max(this.minimumBillableMinutes, actualMinutes);
-    // hourlyRate is stored per hour, so normalize the captured monetary amount
-    // into minutes before calculating the exact overtime delta.
-    const alreadyPaidMinutes = booking.capturedAmount !== null && Number(booking.hourlyRate) > 0
-      ? (Number(booking.capturedAmount) / Number(booking.hourlyRate)) * 60
-      : 0;
-    const additionalBillableMinutes = Math.max(0, billableMinutes - alreadyPaidMinutes);
-    // Retain the full service value for payout accounting; the provider charge
-    // below is independently reduced to the exact prepaid-time delta.
     const rawServiceAmount = roundMoney(Number(booking.hourlyRate) * (billableMinutes / 60));
     const pricingCharges = await this.platformSettings.calculatePricingCharges({
       serviceAmount: rawServiceAmount,
@@ -1028,8 +1052,11 @@ export class PaymentsService {
             totalBeforeDiscount,
             currency: booking.paymentCurrency,
           });
+    // A prepaid (acceptance-captured) booking owes exactly what a cash customer
+    // would pay for the real work: the difference to the prepayment is charged
+    // if positive, refunded to the original method if negative.
     const totalAmount = booking.capturedAt
-      ? roundMoney(Number(booking.hourlyRate) * (additionalBillableMinutes / 60))
+      ? roundMoney(totalBeforeDiscount - Number(booking.capturedAmount))
       : roundMoney(totalBeforeDiscount - referralDiscount.amount);
 
     await this.prisma.booking.update({
@@ -1061,10 +1088,9 @@ export class PaymentsService {
       return { bookingId, status: PAYMENT_STATUS.CashConfirmationRequired };
     }
 
-    // The prepaid acceptance capture is settled into tasker finance after the
-    // work completes even when no overtime is due; it is never charged again.
-    if (booking.capturedAt && totalAmount <= 0) {
-      return this.settleCapturedBookingWithoutOvertime(bookingId);
+    // Prepayment covers the work: settle, and refund any unused part.
+    if (booking.capturedAt && totalAmount <= 0.005) {
+      return this.settleCapturedBooking(bookingId, totalBeforeDiscount, roundMoney(-totalAmount));
     }
 
     if (booking.paymentSource === PAYMENT_SOURCE.Wallet) {
@@ -1078,29 +1104,191 @@ export class PaymentsService {
     return this.createStripeBookingCharge(bookingId, totalAmount, serviceAmount + tipAmount);
   }
 
-  private async settleCapturedBookingWithoutOvertime(
+  /**
+   * Settles a booking whose acceptance prepayment covers the real total.
+   * `finalTotal` is what the customer actually owes (same formula as a cash
+   * booking); `unusedAmount` = prepaid - finalTotal goes back to the original
+   * method. The Tasker's earning is computed from the booking's final service
+   * amount either way, so it never depends on how much was prepaid.
+   */
+  private async settleCapturedBooking(
     bookingId: number,
+    finalTotal: number,
+    unusedAmount: number,
   ): Promise<PaymentOrchestrationResult> {
-    return this.prisma.$transaction(async (transaction) => {
+    const result = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
       const booking = await transaction.booking.findUniqueOrThrow({ where: { id: bookingId } });
       if (!booking.capturedAt || booking.capturedAmount === null) {
         throw new ConflictException('This booking has no acceptance-time capture');
       }
-      if (booking.paymentStatus === PAYMENT_STATUS.Paid) return { bookingId, status: PAYMENT_STATUS.Paid };
-      const settledAt = new Date();
+      if (booking.paymentStatus === PAYMENT_STATUS.Paid) return { bookingId, status: PAYMENT_STATUS.Paid, cardRefundPending: false };
       await transaction.booking.update({
         where: { id: bookingId },
-        data: { paymentStatus: PAYMENT_STATUS.Paid, totalChargedAmount: booking.capturedAmount, paidAt: settledAt, paymentFailureReason: null },
+        data: { paymentStatus: PAYMENT_STATUS.Paid, totalChargedAmount: moneyString(finalTotal), paidAt: new Date(), paymentFailureReason: null },
       });
       await this.creditTaskerWallet(
-        transaction, booking.taskerId, booking.id, Number(booking.serviceAmount ?? booking.capturedAmount),
+        transaction, booking.taskerId, booking.id, finalTotal,
         booking.paymentCurrency, `acceptance-capture:${bookingId}`,
       );
       await this.referrals.qualifyPaidBooking(transaction, booking.id);
-      await this.enqueuePaymentUpdate(bookingId, booking.status, 'no_overtime_payment_due', transaction, { paymentStatus: PAYMENT_STATUS.Paid });
-      return { bookingId, status: PAYMENT_STATUS.Paid };
+      const refund = unusedAmount > 0.005
+        ? await this.refundUnusedPrepayment(transaction, booking, unusedAmount)
+        : 'none';
+      await this.enqueuePaymentUpdate(bookingId, booking.status, unusedAmount > 0.005 ? 'unused_prepayment_refunded' : 'no_overtime_payment_due', transaction, { paymentStatus: PAYMENT_STATUS.Paid });
+      return { bookingId, status: PAYMENT_STATUS.Paid, cardRefundPending: refund === 'card_refund_pending' };
     });
+    if (result.cardRefundPending) await this.processUnusedPrepaymentRefund(bookingId);
+    return { bookingId: result.bookingId, status: result.status };
+  }
+
+  /**
+   * Returns prepaid money the booking did not use. Wallet: credited in this
+   * transaction. Card: a pending refund row is written here and the Stripe
+   * partial refund runs after commit (processUnusedPrepaymentRefund), retried by
+   * the acceptance-refund sweep until it succeeds. Idempotent per booking.
+   */
+  private async refundUnusedPrepayment(
+    transaction: Prisma.TransactionClient,
+    booking: { id: number; customerId: number; paymentSource: string | null; paymentCurrency: string },
+    amount: number,
+  ): Promise<'wallet_refunded' | 'card_refund_pending' | 'none'> {
+    const key = `acceptance-underuse-refund:${booking.id}`;
+    if (await transaction.paymentTransaction.findUnique({ where: { idempotencyKey: key } })) return 'none';
+    const value = roundMoney(amount);
+    if (booking.paymentSource === PAYMENT_SOURCE.Wallet) {
+      await this.ensureCustomerWallet(booking.customerId, transaction);
+      await transaction.$queryRaw`SELECT "customerId" FROM "CustomerWallets" WHERE "customerId" = ${booking.customerId} FOR UPDATE`;
+      await transaction.customerWallet.update({
+        where: { customerId: booking.customerId },
+        data: { availableBalance: { increment: moneyString(value) } },
+      });
+      await transaction.customerWalletLedgerEntry.create({
+        data: { customerId: booking.customerId, bookingId: booking.id, kind: CUSTOMER_WALLET_ENTRY_KIND.Refund, status: 'settled', amount: moneyString(value), balanceDelta: moneyString(value), currency: booking.paymentCurrency, description: `Unused prepaid time refunded for booking #${booking.id}`, providerReference: `wallet:${key}`, idempotencyKey: key },
+      });
+      await transaction.paymentTransaction.create({
+        data: { customerId: booking.customerId, bookingId: booking.id, kind: PAYMENT_TRANSACTION_KIND.Refund, provider: 'internal_wallet', providerReference: `wallet:${key}`, status: 'succeeded', amount: moneyString(value), currency: booking.paymentCurrency, idempotencyKey: key },
+      });
+      await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Unused prepaid time refunded', body: `Your task took less than the time you prepaid, so ${booking.paymentCurrency} ${value.toFixed(2)} was returned to your Latache wallet.`, entityType: 'booking', entityId: String(booking.id), templateKey: 'booking_unused_prepayment_refunded', audienceRole: UserRole.Customer }, transaction);
+      return 'wallet_refunded';
+    }
+    await transaction.paymentTransaction.create({
+      data: { customerId: booking.customerId, bookingId: booking.id, kind: PAYMENT_TRANSACTION_KIND.Refund, provider: 'stripe', status: 'pending', amount: moneyString(value), currency: booking.paymentCurrency, idempotencyKey: key },
+    });
+    return 'card_refund_pending';
+  }
+
+  /** Runs the Stripe partial refund for a pending unused-prepayment refund row. Idempotent. */
+  async processUnusedPrepaymentRefund(bookingId: number): Promise<'refunded' | 'skipped' | 'failed'> {
+    const key = `acceptance-underuse-refund:${bookingId}`;
+    const row = await this.prisma.paymentTransaction.findUnique({ where: { idempotencyKey: key } });
+    if (!row || row.status !== 'pending' || row.provider !== 'stripe') return 'skipped';
+    const capture = await this.prisma.paymentTransaction.findUnique({ where: { idempotencyKey: `acceptance-capture:${bookingId}` } });
+    if (!capture?.providerReference || capture.provider !== 'stripe') {
+      this.logger.error(`Unused-prepayment refund for booking ${bookingId} has no Stripe acceptance charge`);
+      return 'failed';
+    }
+    const amount = roundMoney(Number(row.amount));
+    try {
+      const refund = await this.stripeProvider.client().refunds.create(
+        { payment_intent: capture.providerReference, amount: toMinorUnits(amount), metadata: { kind: 'booking_unused_prepayment_refund', latacheBookingId: String(bookingId) } },
+        { idempotencyKey: `latache:${key}` },
+      );
+      await this.prisma.$transaction(async (transaction) => {
+        const claimed = await transaction.paymentTransaction.updateMany({
+          where: { id: row.id, status: 'pending' },
+          data: { providerReference: refund.id, status: this.mapRefundStatus(String(refund.status)) },
+        });
+        if (claimed.count === 1) {
+          await this.notifications.create(row.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Unused prepaid time refunded', body: `Your task took less than the time you prepaid, so ${row.currency} ${amount.toFixed(2)} is being refunded to your card.`, entityType: 'booking', entityId: String(bookingId), templateKey: 'booking_unused_prepayment_refunded', audienceRole: UserRole.Customer }, transaction);
+        }
+      });
+      return 'refunded';
+    } catch (error) {
+      this.logger.error(`Unused-prepayment refund for booking ${bookingId} failed: ${error instanceof Error ? error.message : String(error)}`);
+      return 'failed';
+    }
+  }
+
+  /**
+   * Self-healing reconciliation for bookings settled before the prepayment was
+   * reconciled against the real total (they kept the whole prepayment). For a
+   * completed, paid, prepaid booking whose charged total exceeds what the work
+   * actually cost, refund the difference once and correct the charged total.
+   */
+  async reconcileOverCapturedBookings(): Promise<{ refunded: number }> {
+    const candidates = await this.prisma.booking.findMany({
+      where: { status: 'completed', paymentStatus: PAYMENT_STATUS.Paid, capturedAt: { not: null }, capturedAmount: { not: null } },
+      select: { id: true },
+      take: 100,
+    });
+    let refunded = 0;
+    for (const { id } of candidates) {
+      const outcome = await this.prisma.$transaction(async (transaction) => {
+        await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${id} FOR UPDATE`;
+        const booking = await transaction.booking.findUniqueOrThrow({ where: { id } });
+        if (booking.serviceAmount === null || booking.totalChargedAmount === null) return 'none' as const;
+        const fair = roundMoney(
+          Number(booking.serviceAmount) + Number(booking.platformFeeAmount) + Number(booking.serviceSurchargeAmount) +
+          Number(booking.tipAmount) + Number(booking.donationAmount) + (booking.taxInclusive ? 0 : Number(booking.taxAmount)),
+        );
+        const excess = roundMoney(Number(booking.totalChargedAmount) - fair);
+        if (excess <= 0.005) return 'none' as const;
+        const result = await this.refundUnusedPrepayment(transaction, booking, excess);
+        if (result === 'none') return 'none' as const;
+        await transaction.booking.update({ where: { id }, data: { totalChargedAmount: moneyString(fair) } });
+        await transaction.taskerEarning.updateMany({ where: { bookingId: id }, data: { grossCustomerAmount: moneyString(fair) } });
+        return result;
+      });
+      if (outcome === 'card_refund_pending') await this.processUnusedPrepaymentRefund(id);
+      if (outcome !== 'none') refunded += 1;
+    }
+    return { refunded };
+  }
+
+  /**
+   * The customer chose cash after the Tasker accepted: nothing is charged now
+   * (cash is collected on site and settled through the platform payable), the
+   * booking is simply confirmed. Subject to the Tasker's cash restriction.
+   */
+  private async confirmAcceptedCashBooking(bookingId: number, customerId: number) {
+    const booking = await this.prisma.booking.findFirstOrThrow({ where: { id: bookingId, customerId } });
+    await this.taskerFinance.assertCashBookingAllowed(booking.taskerId);
+    const now = new Date();
+    await this.prisma.$transaction(async (transaction) => {
+      const claimed = await transaction.booking.updateMany({
+        where: { id: bookingId, status: 'awaiting_payment' },
+        data: { status: 'confirmed', confirmedAt: now, paymentSource: PAYMENT_SOURCE.Cash, paymentStatus: PAYMENT_STATUS.Ready, paymentFailureReason: null },
+      });
+      if (claimed.count === 0) throw new ConflictException('Booking payment state changed; reload and try again');
+      await this.notifications.create(booking.customerId, { category: 'tasks', type: 'task_confirmed', title: 'Booking confirmed', body: 'Your booking is confirmed. You will pay the Tasker in cash when the task is done.', entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
+      await this.notifications.create(booking.taskerId, { category: 'tasks', type: 'booking_payment_captured', title: 'Task confirmed - cash payment', body: `The customer chose to pay cash for booking #${bookingId}. Collect it on site when the task is done.`, entityType: 'booking', entityId: String(bookingId), templateKey: 'booking_cash_selected_tasker', audienceRole: UserRole.Tasker }, transaction);
+      await this.enqueuePaymentUpdate(bookingId, 'confirmed', 'cash_payment_selected', transaction, { paymentStatus: PAYMENT_STATUS.Ready });
+    });
+    return { bookingId, status: 'confirmed' as const, paymentSource: PAYMENT_SOURCE.Cash, capturedAmount: 0, capturedAt: null };
+  }
+
+  /**
+   * What the customer prepays at acceptance: the same estimate the quote shows
+   * (billable time x rate, plus platform fee, surcharge, tax, tip and donation).
+   * The final settlement then charges or refunds the difference to the real total.
+   */
+  private async acceptanceAmount(booking: {
+    hourlyRate: Prisma.Decimal; estimatedDurationMinutes: number; taskerId: number; serviceId: number;
+    bookingDate: Date; createdAt: Date; tipAmount: Prisma.Decimal; donationAmount: Prisma.Decimal;
+  }): Promise<number> {
+    const billableMinutes = Math.max(this.minimumBillableMinutes, booking.estimatedDurationMinutes);
+    const pricing = await this.platformSettings.calculatePricingCharges({
+      serviceAmount: roundMoney(Number(booking.hourlyRate) * (billableMinutes / 60)),
+      taskerId: booking.taskerId,
+      serviceId: booking.serviceId,
+      bookingDate: booking.bookingDate,
+      bookingCreatedAt: booking.createdAt,
+    });
+    return roundMoney(
+      pricing.serviceAmount + pricing.platformFeeAmount + pricing.serviceSurchargeAmount +
+      Number(booking.tipAmount) + Number(booking.donationAmount) + (pricing.taxInclusive ? 0 : pricing.taxAmount),
+    );
   }
 
   confirmCashCollection(input: ConfirmCashCollectionInput) {
@@ -3139,7 +3327,7 @@ export class PaymentsService {
 
   private serializeBookingPayment(booking: {
     id: number;
-    paymentSource: string;
+    paymentSource: string | null;
     paymentStatus: string;
     paymentCurrency: string;
     stripePaymentMethodId: string | null;

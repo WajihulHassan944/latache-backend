@@ -296,20 +296,14 @@ export class BookingsService {
       startTime: preflight.slot.startTime,
       slotMinutes: Math.max(1, preflightEnd - preflightStart),
     });
-    const paymentSource = dto.paymentSource ?? PAYMENT_SOURCE.Stripe;
-    if (paymentSource === PAYMENT_SOURCE.Cash) {
-      await this.taskerFinance.assertCashBookingAllowed(dto.taskerId);
-    }
-    let stripePaymentMethodId: string | null = null;
-    if (paymentSource === PAYMENT_SOURCE.Stripe) {
-      stripePaymentMethodId =
-        dto.stripePaymentMethodId ?? (await this.payments.defaultPaymentMethod(customerId));
-      // A card may be selected when the request is created, but it is deliberately
-      // optional: online payment is captured only after tasker acceptance.
-      if (stripePaymentMethodId) {
-        await this.payments.assertPaymentMethodOwnedByCustomer(customerId, stripePaymentMethodId);
-      }
-    }
+    // Payment is chosen after the Tasker accepts (POST /bookings/:id/complete-payment),
+    // so a booking may be created with no method at all (null = not chosen yet).
+    // Nothing payment-related is validated here: the cash restriction is enforced
+    // when the Tasker accepts / the customer picks cash, and card ownership when
+    // the customer actually pays.
+    const paymentSource = dto.paymentSource ?? null;
+    const stripePaymentMethodId =
+      paymentSource === PAYMENT_SOURCE.Stripe ? (dto.stripePaymentMethodId ?? null) : null;
 
     try {
       const booking = await this.prisma.$transaction(async (transaction) => {
@@ -397,7 +391,7 @@ export class BookingsService {
             status: 'pending',
             estimatedDurationMinutes,
             paymentSource,
-            paymentStatus: PAYMENT_STATUS.Ready,
+            paymentStatus: paymentSource ? PAYMENT_STATUS.Ready : PAYMENT_STATUS.PaymentMethodRequired,
             paymentCurrency: currency.code,
             workVerificationRequired: true,
             stripePaymentMethodId,
