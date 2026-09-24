@@ -56,8 +56,13 @@ export interface LatacheEmailLayoutParams {
   preheader: string;
   locale?: string;
   content: string;
-  securityTitle?: string;
-  securityBody?: string;
+  /**
+   * Security emphasis (shield artwork + "never share this code" panel). Only for
+   * emails that carry a secret: account OTPs and credential emails. Omit it for
+   * booking/dispute/finance emails, where a code/password warning is irrelevant.
+   * Pass {} for the default OTP wording, or a custom title/body.
+   */
+  securityNotice?: { title?: string; body?: string };
 }
 
 export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => {
@@ -67,8 +72,32 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
   const year = new Date().getUTCFullYear();
   const direction = rtl ? 'rtl' : 'ltr';
   const textAlign = rtl ? 'right' : 'left';
-  const securityTitle = params.securityTitle ?? copy.securityTitle;
-  const securityBody = params.securityBody ?? copy.securityBody;
+  const notice = params.securityNotice;
+  const securityPanel = notice
+    ? `<tr>
+            <td class="email-pad" style="padding:14px 56px 28px;background:#fffdf8">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #b9dcc1;border-radius:20px;background:#e8f6eb">
+                <tr>
+                  <td width="62" valign="middle" style="padding:18px 0 18px 20px;color:#17642a;font-size:32px;text-align:center;direction:ltr">✓</td>
+                  <td valign="middle" style="padding:16px 22px;color:#145a25;font-size:15px;line-height:22px;text-align:${textAlign}">
+                    <strong style="font-size:16px">${escapeHtml(notice.title ?? copy.securityTitle)}</strong><br>${escapeHtml(notice.body ?? copy.securityBody)}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>`
+    : `<tr><td style="padding:0 0 28px;background:#fffdf8;font-size:0;line-height:0">&nbsp;</td></tr>`;
+  const shield = notice
+    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%">
+                <tr>
+                  <td align="center" style="text-align:center;direction:ltr">
+                    <center>
+                      <img src="${LATACHE_EMAIL_ASSETS.shield.url}" width="190" align="center" alt="" style="display:block;width:190px;max-width:52%;height:auto;margin:-34px auto 2px;border:0;text-align:center">
+                    </center>
+                  </td>
+                </tr>
+              </table>`
+    : '';
 
   return `<!doctype html>
 <html lang="${locale}" dir="${direction}">
@@ -107,31 +136,12 @@ export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => 
             </td>
           </tr>
           <tr>
-            <td class="email-pad" style="padding:0 56px 14px;background:#fffdf8;text-align:center">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%">
-                <tr>
-                  <td align="center" style="text-align:center;direction:ltr">
-                    <center>
-                      <img src="${LATACHE_EMAIL_ASSETS.shield.url}" width="190" align="center" alt="" style="display:block;width:190px;max-width:52%;height:auto;margin:-34px auto 2px;border:0;text-align:center">
-                    </center>
-                  </td>
-                </tr>
-              </table>
+            <td class="email-pad" style="padding:${notice ? '0' : '36px'} 56px 14px;background:#fffdf8;text-align:center">
+              ${shield}
               ${params.content}
             </td>
           </tr>
-          <tr>
-            <td class="email-pad" style="padding:14px 56px 28px;background:#fffdf8">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #b9dcc1;border-radius:20px;background:#e8f6eb">
-                <tr>
-                  <td width="62" valign="middle" style="padding:18px 0 18px 20px;color:#17642a;font-size:32px;text-align:center;direction:ltr">✓</td>
-                  <td valign="middle" style="padding:16px 22px;color:#145a25;font-size:15px;line-height:22px;text-align:${textAlign}">
-                    <strong style="font-size:16px">${escapeHtml(securityTitle)}</strong><br>${escapeHtml(securityBody)}
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+          ${securityPanel}
           <tr>
             <td background="${LATACHE_EMAIL_ASSETS.footer.url}" valign="bottom" style="background-image:url('${LATACHE_EMAIL_ASSETS.footer.url}');background-position:center bottom;background-repeat:no-repeat;background-size:cover;text-align:center;padding-top:166px">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">

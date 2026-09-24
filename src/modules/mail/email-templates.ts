@@ -61,6 +61,7 @@ export const verificationEmailTemplate = (params: {
     documentTitle: copy.documentTitle,
     preheader: copy.preheader(params.otp),
     locale,
+    securityNotice: {},
     content: `<h1 class="email-title" style="margin:0;color:#60230c;font-family:Georgia,'Times New Roman',serif;font-size:46px;line-height:54px;text-align:center">${copy.title}</h1>
       <p style="margin:20px 0 18px;color:#a66229;font-size:21px;line-height:29px;text-align:center">${copy.greeting(name)}</p>
       <p style="margin:0;color:#563226;font-size:16px;line-height:25px;text-align:center">${copy.intro}</p>
@@ -112,6 +113,7 @@ export const passwordResetOtpTemplate = (params: {
     documentTitle: copy.documentTitle,
     preheader: copy.preheader(params.otp),
     locale,
+    securityNotice: {},
     content: `<h1 class="email-title" style="margin:0;color:#60230c;font-family:Georgia,'Times New Roman',serif;font-size:46px;line-height:54px;text-align:center">${copy.title}</h1>
       <p style="margin:20px 0 18px;color:#a66229;font-size:21px;line-height:29px;text-align:center">${copy.greeting(name)}</p>
       <p style="margin:0;color:#563226;font-size:16px;line-height:25px;text-align:center">${copy.intro}</p>
@@ -191,8 +193,7 @@ export const adminWelcomeTemplate = (params: {
     documentTitle: copy.documentTitle,
     preheader: copy.preheader,
     locale,
-    securityTitle: copy.securityTitle,
-    securityBody: copy.securityBody,
+    securityNotice: { title: copy.securityTitle, body: copy.securityBody },
     content: `<h1 class="email-title" style="margin:0;color:#60230c;font-family:Georgia,'Times New Roman',serif;font-size:42px;line-height:50px;text-align:center">${copy.title}</h1>
       <p style="margin:20px 0 12px;color:#a66229;font-size:21px;line-height:29px;text-align:center">${copy.greeting(escapeHtml(params.name))}</p>
       <p style="margin:0 0 18px;color:#563226;font-size:16px;line-height:25px;text-align:center">${copy.intro}</p>
@@ -228,17 +229,17 @@ export const emailPlainText = (
   const locale = normalizeEmailLocale(params.locale);
   if (type === 'verification') {
     if (locale === 'ar')
-      return `رمز التحقق الخاص بك في Latache هو ${params.otp}. تنتهي صلاحيته خلال ${params.expiryMinutes} دقائق.`;
+      return `رمز التحقق الخاص بك في Latache هو ${params.otp}. تنتهي صلاحيته خلال ${params.expiryMinutes} دقائق. لا تشارك هذا الرمز مع أي شخص.`;
     if (locale === 'ary')
-      return `كود التأكيد ديالك فـ Latache هو ${params.otp}. غادي تسالي الصلاحية ديالو من بعد ${params.expiryMinutes} دقايق.`;
-    return `Your Latache verification code is ${params.otp}. It expires in ${params.expiryMinutes} minutes.`;
+      return `كود التأكيد ديالك فـ Latache هو ${params.otp}. غادي تسالي الصلاحية ديالو من بعد ${params.expiryMinutes} دقايق. ماتشاركش هاد الكود مع حتى واحد.`;
+    return `Your Latache verification code is ${params.otp}. It expires in ${params.expiryMinutes} minutes. Never share this code with anyone.`;
   }
   if (type === 'password-reset') {
     if (locale === 'ar')
-      return `رمز إعادة تعيين كلمة مرور Latache هو ${params.otp}. تنتهي صلاحيته خلال ${params.expiryMinutes} دقائق.`;
+      return `رمز إعادة تعيين كلمة مرور Latache هو ${params.otp}. تنتهي صلاحيته خلال ${params.expiryMinutes} دقائق. لا تشارك هذا الرمز مع أي شخص، وتجاهل الرسالة إذا لم تطلبه.`;
     if (locale === 'ary')
-      return `كود تبديل الموط باس ديالك فـ Latache هو ${params.otp}. غادي تسالي الصلاحية ديالو من بعد ${params.expiryMinutes} دقايق.`;
-    return `Your Latache password reset code is ${params.otp}. It expires in ${params.expiryMinutes} minutes.`;
+      return `كود تبديل الموط باس ديالك فـ Latache هو ${params.otp}. غادي تسالي الصلاحية ديالو من بعد ${params.expiryMinutes} دقايق. ماتشاركش هاد الكود، وإلا ماطلبتيهش تجاهل هاد الإيميل.`;
+    return `Your Latache password reset code is ${params.otp}. It expires in ${params.expiryMinutes} minutes. Never share this code; ignore this email if you did not request it.`;
   }
   if (locale === 'ar')
     return `حساب مسؤول Latache جاهز. البريد الإلكتروني: ${params.email}. كلمة المرور المؤقتة: ${params.temporaryPassword}. غيّرها بعد تسجيل الدخول.`;
@@ -253,7 +254,11 @@ interface DisputeLifecycleCopy {
   intro: string;
   caseLabel: string;
   actionLabel: string;
+  cta: string;
 }
+
+/** Same short reference the admin and participant dispute screens show. */
+export const disputeReference = (id: string): string => `DSP-${id.slice(-6).toUpperCase()}`;
 
 const disputeLifecycleCopy: Record<EmailLocale, DisputeLifecycleCopy> = {
   en: {
@@ -262,6 +267,7 @@ const disputeLifecycleCopy: Record<EmailLocale, DisputeLifecycleCopy> = {
     intro: 'There is an update on a booking dispute linked to your Latache account.',
     caseLabel: 'Dispute',
     actionLabel: 'Update',
+    cta: 'Open the Latache app to view the dispute and respond if needed.',
   },
   ar: {
     subject: 'تحديث بشأن نزاعك في Latache',
@@ -269,6 +275,7 @@ const disputeLifecycleCopy: Record<EmailLocale, DisputeLifecycleCopy> = {
     intro: 'يوجد تحديث على نزاع حجز مرتبط بحسابك في Latache.',
     caseLabel: 'النزاع',
     actionLabel: 'التحديث',
+    cta: 'افتح تطبيق Latache للاطلاع على النزاع والرد إذا لزم الأمر.',
   },
   ary: {
     subject: 'تحديث على النزاع ديالك فـ Latache',
@@ -276,6 +283,7 @@ const disputeLifecycleCopy: Record<EmailLocale, DisputeLifecycleCopy> = {
     intro: 'كاين تحديث على نزاع ديال حجز مربوط بالحساب ديالك فـ Latache.',
     caseLabel: 'النزاع',
     actionLabel: 'التحديث',
+    cta: 'حل تطبيق Latache باش تشوف النزاع وتجاوب إلا كان خاصك.',
   },
 };
 
@@ -391,8 +399,9 @@ const localizedDisputeLifecycleEvent = (
 ): DisputeLifecycleEventCopy => {
   const configured = disputeLifecycleEventCopy[eventType]?.[locale];
   if (configured) return configured;
+  const readable = eventType.replaceAll('_', ' ');
   return {
-    label: eventType.replaceAll('_', ' '),
+    label: readable.charAt(0).toUpperCase() + readable.slice(1),
     // Admin/user-authored evidence requests and resolution summaries remain in their original language.
     body: originalDetail,
   };
@@ -410,7 +419,8 @@ export const disputeLifecycleEmailTemplate = (params: {
   const name = escapeHtml(params.name);
   const event = localizedDisputeLifecycleEvent(params.eventType, locale, params.detail);
   const detail = escapeHtml(event.body ?? params.detail);
-  const disputeId = escapeHtml(params.disputeId);
+  const reference = disputeReference(params.disputeId);
+  const disputeId = escapeHtml(reference);
   const eventType = escapeHtml(event.label);
   const greeting =
     locale === 'ar'
@@ -429,12 +439,13 @@ export const disputeLifecycleEmailTemplate = (params: {
         <tr><td style="padding:10px 12px;color:#8c551f;font-weight:bold">${copy.caseLabel}</td><td dir="ltr" style="padding:10px 12px;color:#4b2112;text-align:left">${disputeId}</td></tr>
         <tr><td style="padding:10px 12px;color:#8c551f;font-weight:bold">${copy.actionLabel}</td><td style="padding:10px 12px;color:#4b2112">${eventType}</td></tr>
       </table>
-      <p style="margin:0;color:#563226;font-size:15px;line-height:24px;text-align:${locale === 'en' ? 'left' : 'right'}">${detail}</p>`,
+      <p style="margin:0 0 16px;color:#563226;font-size:15px;line-height:24px;text-align:${locale === 'en' ? 'left' : 'right'}">${detail}</p>
+      <p style="margin:0;color:#a66229;font-size:13px;line-height:20px;text-align:center">${escapeHtml(copy.cta)}</p>`,
   });
   return {
     subject: copy.subject,
     html,
-    text: `${copy.subject}\n${copy.caseLabel}: ${params.disputeId}\n${copy.actionLabel}: ${event.label}\n${event.body ?? params.detail}`,
+    text: `${copy.subject}\n${copy.caseLabel}: ${reference}\n${copy.actionLabel}: ${event.label}\n${event.body ?? params.detail}\n\n${copy.cta}`,
   };
 };
 
@@ -470,7 +481,9 @@ const bookingLifecycleCopy: Record<EmailLocale, BookingLifecycleCopy> = {
  */
 export const bookingLifecycleEmailTemplate = (params: {
   name: string;
-  bookingId: string;
+  /** Notification entity. The "Booking #id" reference is shown only for entityType 'booking'. */
+  entityType?: string | null;
+  entityId?: string | null;
   title: string;
   body: string;
   locale?: string;
@@ -480,22 +493,29 @@ export const bookingLifecycleEmailTemplate = (params: {
   const name = escapeHtml(params.name);
   const title = escapeHtml(params.title);
   const body = escapeHtml(params.body);
-  const bookingId = escapeHtml(params.bookingId);
+  // Custom-time requests, paid plans and payable settlements reuse this template;
+  // their ids are internal cuids, and labelling them "Booking" was misleading.
+  const bookingId = params.entityType === 'booking' && params.entityId ? escapeHtml(params.entityId) : null;
+  const reference = bookingId
+    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:18px 0;border:1px solid #efd7ad;border-radius:16px;background:#fff5e4;font-size:14px">
+        <tr><td style="padding:10px 12px;color:#8c551f;font-weight:bold">${copy.bookingLabel}</td><td dir="ltr" style="padding:10px 12px;color:#4b2112;text-align:left">#${bookingId}</td></tr>
+      </table>`
+    : '<div style="height:6px;line-height:6px;font-size:0">&nbsp;</div>';
   const html = latacheEmailLayout({
     documentTitle: params.title,
     preheader: params.body,
     locale,
     content: `<h1 class="email-title" style="margin:0;color:#60230c;font-family:Georgia,'Times New Roman',serif;font-size:40px;line-height:48px;text-align:center">${title}</h1>
       <p style="margin:20px 0 12px;color:#a66229;font-size:21px;line-height:29px;text-align:center">${copy.greeting(name)}</p>
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:18px 0;border:1px solid #efd7ad;border-radius:16px;background:#fff5e4;font-size:14px">
-        <tr><td style="padding:10px 12px;color:#8c551f;font-weight:bold">${copy.bookingLabel}</td><td dir="ltr" style="padding:10px 12px;color:#4b2112;text-align:left">#${bookingId}</td></tr>
-      </table>
+      ${reference}
       <p style="margin:0 0 16px;color:#563226;font-size:16px;line-height:25px;text-align:${locale === 'en' ? 'left' : 'right'}">${body}</p>
       <p style="margin:0;color:#a66229;font-size:13px;line-height:20px;text-align:center">${escapeHtml(copy.cta)}</p>`,
   });
   return {
     subject: params.title,
     html,
-    text: `${params.title}\n${copy.bookingLabel}: #${params.bookingId}\n${params.body}`,
+    text: [params.title, bookingId ? `${copy.bookingLabel}: #${params.entityId}` : null, params.body, '', copy.cta]
+      .filter((line) => line !== null)
+      .join('\n'),
   };
 };

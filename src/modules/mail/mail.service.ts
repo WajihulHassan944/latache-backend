@@ -134,7 +134,8 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
   async sendBookingLifecycleEmail(params: {
     to: string;
     name: string;
-    bookingId: string;
+    entityType?: string | null;
+    entityId?: string | null;
     title: string;
     body: string;
     locale?: string;

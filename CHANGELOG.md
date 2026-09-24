@@ -1,3 +1,15 @@
+# 3.42.0
+
+- **Presence initial snapshot:** `otherParty` (PersonSummaryView) on `GET /api/conversations`, `/conversations/:conversationId`, `/conversations/with/:userId` and both message-list endpoints now includes `lastSeenAt: string | null` (ISO 8601, `null` if the person never connected). The client can derive online/offline on load; live `presence:*` events refine it, so the result no longer depends on which side connected first.
+  - `User.lastSeenAt` is now nullable with no default. Migration `20260924120000_user_last_seen_nullable` backfills never-connected users to `null` (rows still equal to `createdAt`).
+  - Presence now also stamps `lastSeenAt` on connect, so a first-ever connection isn't reported as never seen until the 60s heartbeat.
+- **FCM data-only pushes:** the outbound `messages:send` body no longer has a top-level `notification` block. `title`/`body` move into `data` (as strings), and every existing data field is unchanged. This stops the FCM-web duplicate (browser auto-display plus the app's own handlers). Metadata can no longer override `title`/`body`. Native mobile apps must render data-only messages themselves.
+- **Emails:**
+  - The "Your security is our priority / Never share this code or your password" panel and the shield artwork now appear only on the verification and password-reset OTP emails. The admin-welcome email keeps its own credential warning. Booking, payment, plan and dispute emails no longer show them.
+  - Notification emails show a `Booking #id` reference only when the email really is about a booking. Before, custom-time, plan and settlement emails labelled an internal id as a booking.
+  - Dispute emails show the short `DSP-XXXXXX` reference, a readable event label and an "open the app" line.
+  - OTP plain-text versions include the never-share line.
+
 # 3.41.0
 
 - **Taskers can now pay Latache the commission owed on cash bookings.** Previously the cash platform payable (`TaskerPlatformAccount.outstandingPayable`) could only shrink by being offset against future *online* earnings, so a cash-only Tasker had no way to settle, and once the (optional) cash restriction applied they were locked out permanently. New `TaskerPlatformSettlement` model with these endpoints:

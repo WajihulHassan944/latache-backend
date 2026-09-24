@@ -61,7 +61,8 @@ describe('MailService', () => {
   it('renders a booking lifecycle email reusing the notification title/body and escaping HTML', () => {
     const rendered = bookingLifecycleEmailTemplate({
       name: '<b>Sara</b>',
-      bookingId: '482',
+      entityType: 'booking',
+      entityId: '482',
       title: 'Task confirmed',
       body: 'Your tasker confirmed the booking.',
     });
@@ -76,7 +77,8 @@ describe('MailService', () => {
   it('renders an Arabic booking lifecycle email', () => {
     const rendered = bookingLifecycleEmailTemplate({
       name: 'سارة',
-      bookingId: '482',
+      entityType: 'booking',
+      entityId: '482',
       title: 'تم تأكيد المهمة',
       body: 'تم تأكيد المهمة بنجاح.',
       locale: 'ar',

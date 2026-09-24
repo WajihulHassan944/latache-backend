@@ -176,7 +176,7 @@ export class NotificationsService {
       include: {
         user: { select: { email: true, firstName: true, lastName: true, preferredLanguage: true } },
         notification: {
-          select: { id: true, title: true, body: true, templateKey: true, entityId: true },
+          select: { id: true, title: true, body: true, templateKey: true, entityType: true, entityId: true },
         },
       },
       orderBy: { createdAt: 'asc' },
@@ -198,7 +198,8 @@ export class NotificationsService {
         await this.mail.sendBookingLifecycleEmail({
           to: row.user.email,
           name: [row.user.firstName, row.user.lastName].filter(Boolean).join(' '),
-          bookingId: row.notification.entityId ?? row.notification.id,
+          entityType: row.notification.entityType,
+          entityId: row.notification.entityId,
           title: rendered.title,
           body: rendered.body,
           locale,
