@@ -16,6 +16,8 @@ export const PAYMENT_STATUS = {
   LegacyUntracked: 'legacy_untracked',
   PartiallyRefunded: 'partially_refunded',
   Refunded: 'refunded',
+  /** Booking cancelled after an acceptance card charge; the Stripe refund is in progress. */
+  RefundPending: 'refund_pending',
   CashConfirmationRequired: 'cash_confirmation_required',
   CashConfirmed: 'cash_confirmed',
 } as const;

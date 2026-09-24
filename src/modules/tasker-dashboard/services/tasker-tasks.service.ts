@@ -33,6 +33,7 @@ import { RedisService } from '../../../infrastructure/redis/redis.service';
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { ReferralsService } from '../../referrals/services/referrals.service';
+import { PaymentsService } from '../../payments/payments.service';
 
 type TaskerBookingWithRelations = Prisma.BookingGetPayload<{
   include: {
@@ -62,6 +63,7 @@ export class TaskerTasksService {
     private readonly platformSettings: PlatformSettingsService,
     private readonly audit: AdminAuditService,
     private readonly referrals: ReferralsService,
+    private readonly payments: PaymentsService,
   ) {}
 
   async list(taskerId: number, query: ListTaskerTasksQueryDto): Promise<TaskerTaskListView> {
@@ -131,7 +133,10 @@ export class TaskerTasksService {
       if (booking.status !== TASKER_BOOKING_STATUS.Pending) {
         throw new ConflictException('Only pending tasks can be confirmed');
       }
-      const status = booking.paymentSource === 'cash'
+      // Cash is settled on site; an online booking already paid at acceptance (e.g.
+      // admin-reassigned to this Tasker) must not ask the customer to pay again.
+      const alreadyPaid = booking.capturedAt !== null && booking.capturedAmount !== null;
+      const status = booking.paymentSource === 'cash' || alreadyPaid
         ? TASKER_BOOKING_STATUS.Confirmed
         : TASKER_BOOKING_STATUS.AwaitingPayment;
       const paymentDueAt =
@@ -198,6 +203,7 @@ export class TaskerTasksService {
   }
 
   async cancel(taskerId: number, bookingId: number, dto: CancelTaskDto): Promise<TaskerTaskView> {
+    let refundOutcome = 'none' as 'none' | 'wallet_refunded' | 'card_refund_pending';
     const updated = await this.prisma.$transaction(async (transaction) => {
       const booking = await this.lockOwnedBooking(taskerId, bookingId, transaction);
       if (
@@ -241,6 +247,12 @@ export class TaskerTasksService {
         },
         transaction,
       );
+      // A customer who already paid at acceptance is refunded in full.
+      refundOutcome = await this.payments.refundAcceptanceCaptureOnCancel(
+        bookingId,
+        `Tasker cancelled booking: ${dto.reason}`,
+        transaction,
+      );
       await this.audit.record(
         {
           actorId: taskerId,
@@ -256,6 +268,7 @@ export class TaskerTasksService {
       await this.enqueueBookingUpdate(bookingId, 'cancelled', 'tasker_cancelled', transaction);
       return row;
     });
+    if (refundOutcome === 'card_refund_pending') await this.payments.processAcceptanceRefund(bookingId);
     return this.serialize(updated);
   }
 

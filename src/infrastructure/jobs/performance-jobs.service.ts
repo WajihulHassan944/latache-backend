@@ -16,6 +16,7 @@ import { GuestService } from '../../modules/guest/guest.service';
 import { NotificationsService } from '../../modules/notifications/notifications.service';
 import { CustomTimeRequestsService } from '../../modules/bookings/custom-time-requests.service';
 import { TaskerPlansService } from '../../modules/tasker-plans/tasker-plans.service';
+import { PaymentsService } from '../../modules/payments/payments.service';
 
 const JOB_NAMES = {
   ReleaseEarnings: 'finance.release-mature',
@@ -25,6 +26,7 @@ const JOB_NAMES = {
   AutoCompleteBookings: 'bookings.auto-complete',
   ExpirePendingBookings: 'bookings.expire-pending',
   ExpireAwaitingPaymentBookings: 'bookings.expire-awaiting-payment',
+  ProcessAcceptanceRefunds: 'payments.process-acceptance-refunds',
   MaintainReferrals: 'referrals.maintain',
   MaintainDisputes: 'disputes.maintain',
   MaintainElite: 'elite.maintain',
@@ -76,6 +78,7 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly notificationsService: NotificationsService,
     private readonly customTimeRequests: CustomTimeRequestsService,
     private readonly taskerPlans: TaskerPlansService,
+    private readonly payments: PaymentsService,
   ) {
     this.enabled = this.config.get<boolean>('jobs.enabled', false);
     this.workerEnabled = this.config.get<boolean>('jobs.workerEnabled', false);
@@ -257,6 +260,11 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { name: JOB_NAMES.ExpireAwaitingPaymentBookings, data: {} },
       ),
       queue.upsertJobScheduler(
+        'process-acceptance-refunds-v1',
+        { every: this.config.get<number>('payments.acceptanceRefundSweepMs', 120_000) },
+        { name: JOB_NAMES.ProcessAcceptanceRefunds, data: {} },
+      ),
+      queue.upsertJobScheduler(
         'expire-custom-time-requests-v1',
         { every: this.config.get<number>('customTimeRequests.sweepIntervalMs', 60_000) },
         { name: JOB_NAMES.ExpireCustomTimeRequests, data: {} },
@@ -324,6 +332,8 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return { deleted: await this.storageDeletion.processPending() };
       case JOB_NAMES.AutoCompleteBookings:
         return this.bookings.autoCompleteDueBookings();
+      case JOB_NAMES.ProcessAcceptanceRefunds:
+        return this.payments.processPendingAcceptanceRefunds();
       case JOB_NAMES.ExpireAwaitingPaymentBookings:
         return this.bookings.expireDueAwaitingPaymentBookings();
       case JOB_NAMES.ExpirePendingBookings:

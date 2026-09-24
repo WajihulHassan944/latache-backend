@@ -4,6 +4,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -66,6 +67,7 @@ type StripeDisputeWithPaymentIntent = Stripe.Dispute & {
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
   private readonly minimumBillableMinutes: number;
   private readonly minimumWalletTopup: number;
 
@@ -740,6 +742,107 @@ export class PaymentsService {
       });
       await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `Your payment for booking #${bookingId} arrived after the booking was cancelled, so ${booking.paymentCurrency} ${amount.toFixed(2)} is being refunded to your card.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
     }
+  }
+
+  /**
+   * Every cancellation path (customer, Tasker, admin) calls this inside its
+   * cancellation transaction, after the booking row is locked. If the customer
+   * already paid at acceptance, the full captured amount goes back to the
+   * original method (no cancellation fee policy exists yet):
+   * - wallet: credited in this same transaction;
+   * - card: marked refund_pending here, then refunded via Stripe by
+   *   processAcceptanceRefund() after commit (and retried by the sweep).
+   */
+  async refundAcceptanceCaptureOnCancel(
+    bookingId: number,
+    reason: string,
+    transaction: Prisma.TransactionClient,
+  ): Promise<'none' | 'wallet_refunded' | 'card_refund_pending'> {
+    const booking = await transaction.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    if (!booking.capturedAt || booking.capturedAmount === null) return 'none';
+    if (
+      booking.paymentStatus === PAYMENT_STATUS.Refunded ||
+      booking.paymentStatus === PAYMENT_STATUS.RefundPending
+    ) {
+      return 'none';
+    }
+    const amount = roundMoney(Number(booking.capturedAmount));
+    if (amount <= 0) return 'none';
+    if (booking.paymentSource === PAYMENT_SOURCE.Wallet) {
+      const key = `acceptance-refund:${bookingId}`;
+      if (await transaction.customerWalletLedgerEntry.findUnique({ where: { idempotencyKey: key } })) return 'none';
+      await this.ensureCustomerWallet(booking.customerId, transaction);
+      await transaction.$queryRaw`SELECT "customerId" FROM "CustomerWallets" WHERE "customerId" = ${booking.customerId} FOR UPDATE`;
+      await transaction.customerWallet.update({
+        where: { customerId: booking.customerId },
+        data: { availableBalance: { increment: moneyString(amount) } },
+      });
+      await transaction.customerWalletLedgerEntry.create({
+        data: { customerId: booking.customerId, bookingId, kind: CUSTOMER_WALLET_ENTRY_KIND.Refund, status: 'settled', amount: moneyString(amount), balanceDelta: moneyString(amount), currency: booking.paymentCurrency, description: `Refund for cancelled booking #${bookingId}`, providerReference: `wallet:acceptance-refund:${bookingId}`, idempotencyKey: key },
+      });
+      await transaction.paymentTransaction.create({
+        data: { customerId: booking.customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.Refund, provider: 'internal_wallet', providerReference: `wallet:acceptance-refund:${bookingId}`, status: 'succeeded', amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: key, failureReason: reason.slice(0, 500) },
+      });
+      await transaction.booking.update({ where: { id: bookingId }, data: { paymentStatus: PAYMENT_STATUS.Refunded } });
+      await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `${booking.paymentCurrency} ${amount.toFixed(2)} for cancelled booking #${bookingId} was returned to your Latache wallet.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
+      return 'wallet_refunded';
+    }
+    await transaction.booking.update({ where: { id: bookingId }, data: { paymentStatus: PAYMENT_STATUS.RefundPending } });
+    return 'card_refund_pending';
+  }
+
+  /** Stripe refund for a cancelled, card-paid booking left refund_pending. Idempotent; safe to retry. */
+  async processAcceptanceRefund(bookingId: number): Promise<'refunded' | 'skipped' | 'failed'> {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking || booking.paymentStatus !== PAYMENT_STATUS.RefundPending || booking.capturedAmount === null) return 'skipped';
+    const capture = await this.prisma.paymentTransaction.findUnique({ where: { idempotencyKey: `acceptance-capture:${bookingId}` } });
+    if (!capture?.providerReference || capture.provider !== 'stripe') {
+      this.logger.error(`Booking ${bookingId} is refund_pending but has no Stripe acceptance charge`);
+      return 'failed';
+    }
+    const amount = roundMoney(Number(booking.capturedAmount));
+    try {
+      const refund = await this.stripeProvider.client().refunds.create(
+        { payment_intent: capture.providerReference, amount: toMinorUnits(amount), metadata: { kind: 'booking_acceptance_cancel_refund', latacheBookingId: String(bookingId) } },
+        { idempotencyKey: `latache:acceptance-refund:${bookingId}` },
+      );
+      await this.prisma.$transaction(async (transaction) => {
+        await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+        await transaction.paymentTransaction.upsert({
+          where: { idempotencyKey: `acceptance-refund:${bookingId}` },
+          create: { customerId: booking.customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.Refund, provider: 'stripe', providerReference: refund.id, status: this.mapRefundStatus(String(refund.status)), amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: `acceptance-refund:${bookingId}` },
+          update: { providerReference: refund.id, status: this.mapRefundStatus(String(refund.status)) },
+        });
+        const claimed = await transaction.booking.updateMany({
+          where: { id: bookingId, paymentStatus: PAYMENT_STATUS.RefundPending },
+          data: { paymentStatus: PAYMENT_STATUS.Refunded },
+        });
+        if (claimed.count === 1) {
+          await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `${booking.paymentCurrency} ${amount.toFixed(2)} for cancelled booking #${bookingId} is being refunded to your card.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
+        }
+      });
+      return 'refunded';
+    } catch (error) {
+      this.logger.error(`Acceptance refund for booking ${bookingId} failed: ${error instanceof Error ? error.message : String(error)}`);
+      return 'failed';
+    }
+  }
+
+  /** Sweep: retries card refunds for cancelled bookings still refund_pending. */
+  async processPendingAcceptanceRefunds(): Promise<{ refunded: number; failed: number }> {
+    const rows = await this.prisma.booking.findMany({
+      where: { status: 'cancelled', paymentStatus: PAYMENT_STATUS.RefundPending },
+      select: { id: true },
+      take: 50,
+    });
+    let refunded = 0;
+    let failed = 0;
+    for (const row of rows) {
+      const result = await this.processAcceptanceRefund(row.id);
+      if (result === 'refunded') refunded += 1;
+      if (result === 'failed') failed += 1;
+    }
+    return { refunded, failed };
   }
 
   /**

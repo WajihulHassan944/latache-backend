@@ -507,6 +507,7 @@ export class BookingsService {
   }
 
   async cancelCustomer(customerId: number, bookingId: number, dto: CancelBookingDto) {
+    let refundOutcome = 'none' as 'none' | 'wallet_refunded' | 'card_refund_pending';
     const updated = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
       const booking = await transaction.booking.findFirst({ where: { id: bookingId, customerId } });
@@ -537,6 +538,12 @@ export class BookingsService {
         },
         include: BOOKING_INCLUDE,
       });
+      // Money already captured at acceptance goes back to the customer.
+      refundOutcome = await this.payments.refundAcceptanceCaptureOnCancel(
+        bookingId,
+        `Customer cancelled booking: ${dto.reason}`,
+        transaction,
+      );
       await this.notifications.create(
         booking.taskerId,
         {
@@ -564,7 +571,23 @@ export class BookingsService {
       await this.enqueueBookingUpdate(bookingId, 'cancelled', 'customer_cancelled', transaction);
       return row;
     });
-    return this.serialize(updated, customerId);
+    return this.serializeAfterCancellationRefund(updated, customerId, refundOutcome);
+  }
+
+  /**
+   * After a cancellation commits: run the Stripe refund for a card-paid booking
+   * (the sweep retries if Stripe is unavailable) and return the fresh row so the
+   * response shows the refund state rather than the pre-refund snapshot.
+   */
+  private async serializeAfterCancellationRefund(
+    row: UnifiedBookingWithRelations,
+    viewerId: number,
+    outcome: 'none' | 'wallet_refunded' | 'card_refund_pending',
+  ) {
+    if (outcome === 'none') return this.serialize(row, viewerId);
+    if (outcome === 'card_refund_pending') await this.payments.processAcceptanceRefund(row.id);
+    const fresh = await this.prisma.booking.findUniqueOrThrow({ where: { id: row.id }, include: BOOKING_INCLUDE });
+    return this.serialize(fresh, viewerId);
   }
 
   async reschedule(customerId: number, bookingId: number, dto: RescheduleBookingDto) {
@@ -1019,13 +1042,24 @@ export class BookingsService {
           cancellationReason: `Automatically expired after ${pendingMinutes} minutes without a Tasker response`,
         },
       });
+      // Normally nothing was charged yet; a reassigned booking may already have
+      // been paid at acceptance, and that money goes back (card refunds are
+      // completed by the payments.process-acceptance-refunds sweep).
+      const refund = await this.payments.refundAcceptanceCaptureOnCancel(
+        bookingId,
+        'Booking automatically expired: no Tasker response',
+        transaction,
+      );
       await this.notifications.create(
         booking.customerId,
         {
           category: 'tasks',
           type: 'booking_expired_no_response',
           title: 'Booking request expired',
-          body: 'No Tasker responded to your booking request in time, so it was automatically cancelled. You were not charged.',
+          body:
+            refund === 'none'
+              ? 'No Tasker responded to your booking request in time, so it was automatically cancelled. You were not charged.'
+              : 'No Tasker responded to your booking request in time, so it was automatically cancelled. Your payment is being refunded in full.',
           entityType: 'booking',
           entityId: String(bookingId),
         },
@@ -3022,6 +3056,8 @@ export class BookingsService {
         minimumTaskPrice: pricing.minimumTaskPrice,
         minimumTaskPriceApplied: pricing.minimumTaskPriceApplied,
         commissionRatePercent: pricing.commissionRatePercent,
+        paidPlanId: pricing.paidPlanId,
+        paidPlanFeeApplied: pricing.paidPlanFeeApplied,
         taxRatePercent: pricing.taxRatePercent,
         taxInclusive: pricing.taxInclusive,
       },

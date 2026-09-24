@@ -10,6 +10,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PAYMENT_STATUS } from '../../payments/payments.constants';
+import { PaymentsService } from '../../payments/payments.service';
 import { RealtimeOutboxService } from '../../realtime/realtime-outbox.service';
 import { ReferralsService } from '../../referrals/services/referrals.service';
 import type { AdminBookingActionDto, AdminBookingsQueryDto } from '../dto';
@@ -58,6 +59,7 @@ export class AdminBookingsService {
     private readonly audit: AdminAuditService,
     private readonly realtime: RealtimeOutboxService,
     private readonly referrals: ReferralsService,
+    private readonly payments: PaymentsService,
   ) {}
 
   async list(query: AdminBookingsQueryDto) {
@@ -401,6 +403,7 @@ export class AdminBookingsService {
     if (reason.length < 5)
       throw new ConflictException('A meaningful cancellation reason is required');
 
+    let refundOutcome = 'none' as 'none' | 'wallet_refunded' | 'card_refund_pending';
     const updated = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${id} FOR UPDATE`;
       const booking = await transaction.booking.findUnique({
@@ -418,9 +421,9 @@ export class AdminBookingsService {
           'Resolve active booking disputes before administrative cancellation',
         );
       }
-      if (!['pending', 'confirmed', 'en_route', 'arrived'].includes(booking.status)) {
+      if (!['pending', 'awaiting_payment', 'confirmed', 'en_route', 'arrived'].includes(booking.status)) {
         throw new ConflictException(
-          'Only pending, accepted, en-route, or arrived bookings can be administratively cancelled',
+          'Only pending, awaiting-payment, accepted, en-route, or arrived bookings can be administratively cancelled',
         );
       }
       if (
@@ -442,6 +445,12 @@ export class AdminBookingsService {
           cancellationReason: reason,
         },
       });
+      // Money captured at acceptance is returned in full to the original method.
+      refundOutcome = await this.payments.refundAcceptanceCaptureOnCancel(
+        id,
+        `Administrator cancelled booking: ${reason}`,
+        transaction,
+      );
       await transaction.userAvailability.updateMany({
         where: { id: booking.availabilityId },
         data: { isBooked: false },
@@ -500,6 +509,11 @@ export class AdminBookingsService {
       );
       return row;
     });
+    if (refundOutcome === 'card_refund_pending') await this.payments.processAcceptanceRefund(updated.id);
+    const paymentStatus =
+      refundOutcome === 'none'
+        ? updated.paymentStatus
+        : (await this.prisma.booking.findUniqueOrThrow({ where: { id: updated.id }, select: { paymentStatus: true } })).paymentStatus;
 
     return {
       bookingId: String(updated.id),
@@ -507,6 +521,8 @@ export class AdminBookingsService {
       status: updated.status,
       cancelledAt: updated.cancelledAt?.toISOString() ?? null,
       cancellationReason: updated.cancellationReason,
+      paymentStatus,
+      refund: refundOutcome === 'none' ? null : refundOutcome === 'wallet_refunded' ? 'wallet' : 'card',
     };
   }
 
@@ -821,7 +837,7 @@ export class AdminBookingsService {
       ACTIVE_DISPUTE_STATUSES.includes(complaint.status as never),
     );
     if (
-      ['pending', 'confirmed', 'en_route', 'arrived'].includes(status) &&
+      ['pending', 'awaiting_payment', 'confirmed', 'en_route', 'arrived'].includes(status) &&
       !hasActiveDispute &&
       ![PAYMENT_STATUS.Paid, PAYMENT_STATUS.PartiallyRefunded, PAYMENT_STATUS.Refunded].includes(
         paymentStatus as never,
