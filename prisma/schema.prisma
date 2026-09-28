@@ -927,6 +927,9 @@ model Booking {
   /// Estimate the customer pays at acceptance (quote formula). Set at creation, refreshed on
   /// reschedule, locked in when the Tasker accepts; complete-payment charges exactly its total.
   paymentEstimate           Json?     @db.JsonB
+  /// Overtime approval figures (DurationReviewQuote) computed when the timer exceeded the
+  /// authorized time; approving charges exactly its `proposed` breakdown.
+  durationReview            Json?     @db.JsonB
   /// Requested outside the Tasker's listed availability (carried on a dedicated isCustom slot).
   isCustomTime              Boolean   @default(false)
   paymentStatus             String    @default("payment_method_required") @db.VarChar(48)

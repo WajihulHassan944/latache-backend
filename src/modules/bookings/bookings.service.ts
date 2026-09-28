@@ -27,7 +27,7 @@ import { Prisma, type RescheduleProposal, type User } from '../../generated/pris
 import { NotificationsService } from '../notifications/notifications.service';
 import { PAYMENT_SOURCE, PAYMENT_STATUS } from '../payments/payments.constants';
 import { PaymentsService } from '../payments/payments.service';
-import type { PaymentEstimate } from '../payments/payments.types';
+import type { DurationReviewQuote, PaymentEstimate } from '../payments/payments.types';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import { TaskerFinanceService } from '../tasker-finance/tasker-finance.service';
@@ -935,6 +935,7 @@ export class BookingsService {
         where: { id: bookingId },
         data: { extensionMinutes: { increment: dto.minutes } },
       });
+      const estimate = await this.payments.refreshPaymentEstimate(bookingId, transaction);
       await this.notifications.create(
         booking.taskerId,
         {
@@ -970,8 +971,9 @@ export class BookingsService {
       await this.enqueueBookingUpdate(bookingId, booking.status, 'duration_extended', transaction, {
         extensionMinutes: updated.extensionMinutes,
         addedByRole: user.role,
+        ...(estimate ? { estimateTotal: estimate.total } : {}),
       });
-      return { booking: updated, request: null };
+      return { booking: updated, request: null, estimate };
     });
     return {
       bookingId: String(bookingId),
@@ -981,6 +983,10 @@ export class BookingsService {
       extensionMinutes: result.booking.extensionMinutes,
       authorizedDurationMinutes: result.booking.estimatedDurationMinutes + result.booking.extensionMinutes,
       extensionRequest: result.request ? this.serializeExtensionRequest(result.request) : null,
+      /** Updated payment.estimate after added minutes; unchanged (stored) for a pending request. */
+      estimate: 'estimate' in result
+        ? result.estimate
+        : (result.booking.paymentEstimate as unknown as PaymentEstimate | null),
     };
   }
 
@@ -1023,6 +1029,10 @@ export class BookingsService {
             data: { extensionMinutes: { increment: request.minutes } },
           })
         : booking;
+      // Approved minutes raise the authorized time, so the estimate goes up with them.
+      const estimate = dto.approve
+        ? await this.payments.refreshPaymentEstimate(bookingId, transaction)
+        : null;
       await this.notifications.create(
         booking.taskerId,
         {
@@ -1063,7 +1073,11 @@ export class BookingsService {
         booking.status,
         dto.approve ? 'duration_extended' : 'extension_rejected',
         transaction,
-        { extensionRequestId: request.id, extensionMinutes: updated.extensionMinutes },
+        {
+          extensionRequestId: request.id,
+          extensionMinutes: updated.extensionMinutes,
+          ...(estimate ? { estimateTotal: estimate.total } : {}),
+        },
       );
       return { expired: false as const };
     });
@@ -1158,6 +1172,8 @@ export class BookingsService {
           paymentFailureReason: null,
         },
       });
+      // Authorized time now covers the worked time; the estimate matches the approved total.
+      await this.payments.refreshPaymentEstimate(bookingId, transaction);
       await this.notifications.create(
         booking.taskerId,
         {
@@ -3408,6 +3424,11 @@ export class BookingsService {
           estimate && booking.status === 'awaiting_payment' && booking.capturedAt === null &&
           booking.paymentSource !== PAYMENT_SOURCE.Cash
             ? estimate.total
+            : null,
+        // Overtime approval figures (current / proposed / additional), only while in review.
+        durationReview:
+          booking.paymentStatus === PAYMENT_STATUS.ReviewRequiredDurationExceeded
+            ? (booking.durationReview as unknown as DurationReviewQuote | null)
             : null,
       },
       counts: {

@@ -1,3 +1,18 @@
+# 3.46.0
+
+- **Estimates stay accurate through extra time.**
+  - `payment.estimate` now prices `max(minimum billable, booked minutes + approved extra minutes)`.
+  - It is recalculated in the same transaction whenever minutes are added: a customer's own `/extend`, an approved Tasker request, and post-work `duration-review/approve`. A declined request leaves it unchanged.
+  - The new figures reach the app immediately: the customer's response includes the updated booking/`estimate`, and the realtime `booking:updated` event (`duration_extended`) carries `estimateTotal`.
+  - Pricing is shared with the final settlement, so fees and tax move with the service amount. Example: +30 min at $45/h adds $22.50 of service.
+- **No more missing estimates.** The backfill sweep now also covers `en_route`, `arrived`, `in_progress`, `awaiting_customer_approval` and `completed` bookings, as long as there is no final charge (`totalChargedAmount IS NULL`). A booking with a final charge is never re-estimated.
+- **Structured overtime approval figures.**
+  - When `payment.status` is `review_required_duration_exceeded`, `payment.durationReview` appears on the booking view, the payment status view and the finish/complete payment result. It contains `actualMinutes`, `authorizedMinutes`, `additionalMinutes`, and `current` / `proposed` breakdowns (service, platform fee, surcharge, tax, tip, donation, total).
+  - It also has `additionalAmount`, `currentTotal`, `proposedTotal`, `alreadyPaid` and `remainingAmount`.
+  - Stored as `Booking.durationReview` (migration `20260928120000_booking_duration_review`).
+  - Approving charges exactly the `proposed` figures (as long as the worked time and tip/donation are unchanged), even if pricing settings changed in between.
+  - `failureReason` stays plain explanatory text.
+
 # 3.45.0
 
 - **Ringing stops on the callee's phone when a call is cancelled or rejected.** Before, only `call:state` went out over the socket, so a closed or asleep app kept ringing until the call expired (up to 60s).

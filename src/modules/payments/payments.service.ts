@@ -39,7 +39,9 @@ import {
 import { CompleteBookingPaymentDto, ListPaymentTransactionsQueryDto, RetryBookingPaymentDto } from './payments.dto';
 import type {
   BookingPaymentStatusView,
+  DurationReviewQuote,
   PaymentEstimate,
+  PriceBreakdown,
   BookingRefundRequest,
   BookingRefundResult,
   ConfirmManualCashDisputeRefundInput,
@@ -58,6 +60,27 @@ import { StripeService } from './stripe.service';
 const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 const moneyString = (value: number): string => roundMoney(value).toFixed(2);
 const toMinorUnits = (value: number): number => Math.round(roundMoney(value) * 100);
+/** Booking fields that determine its price. */
+type PricingInput = {
+  hourlyRate: Prisma.Decimal | number | string;
+  taskerId: number;
+  serviceId: number;
+  bookingDate: Date;
+  createdAt: Date;
+  tipAmount: Prisma.Decimal | number | string;
+  donationAmount: Prisma.Decimal | number | string;
+};
+const withoutRates = (priced: PriceBreakdown): PriceBreakdown => ({
+  billableMinutes: priced.billableMinutes,
+  serviceAmount: priced.serviceAmount,
+  platformFeeAmount: priced.platformFeeAmount,
+  serviceSurchargeAmount: priced.serviceSurchargeAmount,
+  taxAmount: priced.taxAmount,
+  taxInclusive: priced.taxInclusive,
+  tipAmount: priced.tipAmount,
+  donationAmount: priced.donationAmount,
+  total: priced.total,
+});
 /** Stripe metadata.kind for the post-acceptance capture PaymentIntent (completeAcceptancePayment). */
 const ACCEPTANCE_CAPTURE_INTENT_KIND = 'booking_acceptance_capture';
 
@@ -618,9 +641,10 @@ export class PaymentsService {
     }
     // Charge exactly what the booking shows as amountDue (locked in at acceptance).
     const stored = booking.paymentEstimate as unknown as PaymentEstimate | null;
+    // (An awaiting_payment booking has no final charge, so the refresh always estimates.)
     const amount = stored && typeof stored.total === 'number'
       ? stored.total
-      : (await this.refreshPaymentEstimate(bookingId)).total;
+      : ((await this.refreshPaymentEstimate(bookingId)) ?? (await this.bookingEstimate(booking))).total;
     // Past the deadline only an already-succeeded Stripe attempt may still land;
     // anything new is refused (the expiry sweep cancels the booking shortly).
     const paymentWindowClosed = booking.paymentDueAt !== null && booking.paymentDueAt <= new Date();
@@ -1003,6 +1027,8 @@ export class PaymentsService {
     const actualMinutes = Math.max(1, Math.ceil(elapsedSeconds / 60));
     const authorizedMinutes = booking.estimatedDurationMinutes + booking.extensionMinutes;
     if (actualMinutes > authorizedMinutes) {
+      // Structured figures for the approval screen; failureReason stays explanatory text.
+      const durationReview = await this.buildDurationReviewQuote(booking, authorizedMinutes, actualMinutes);
       await this.prisma.booking.update({
         where: { id: bookingId },
         data: {
@@ -1010,6 +1036,7 @@ export class PaymentsService {
           paymentFailureReason:
             `Actual task duration (${actualMinutes} minutes) exceeds the customer-authorized ` +
             `duration (${authorizedMinutes} minutes).`,
+          durationReview: durationReview as unknown as Prisma.InputJsonValue,
         },
       });
       await this.notifications.create(booking.customerId, {
@@ -1022,36 +1049,38 @@ export class PaymentsService {
       });
       await this.enqueuePaymentUpdate(bookingId, booking.status, 'duration_review_required', undefined, {
         paymentStatus: PAYMENT_STATUS.ReviewRequiredDurationExceeded,
+        durationReview: durationReview as unknown as Prisma.InputJsonValue,
       });
       return {
         bookingId,
         status: PAYMENT_STATUS.ReviewRequiredDurationExceeded,
+        durationReview,
       };
     }
 
-    const billableMinutes = Math.max(this.minimumBillableMinutes, actualMinutes);
-    const rawServiceAmount = roundMoney(Number(booking.hourlyRate) * (billableMinutes / 60));
-    const pricingCharges = await this.platformSettings.calculatePricingCharges({
-      serviceAmount: rawServiceAmount,
-      taskerId: booking.taskerId,
-      serviceId: booking.serviceId,
-      bookingDate: booking.bookingDate,
-      bookingCreatedAt: booking.createdAt,
-    });
+    // An approved overtime review charges exactly the figures the customer approved,
+    // as long as the worked time and tip/donation are unchanged since the quote.
+    const review = booking.durationReview as unknown as DurationReviewQuote | null;
+    const lockedReview =
+      review &&
+      review.actualMinutes === actualMinutes &&
+      review.proposed.tipAmount === roundMoney(Number(booking.tipAmount)) &&
+      review.proposed.donationAmount === roundMoney(Number(booking.donationAmount))
+        ? review
+        : null;
+    const pricingCharges = lockedReview
+      ? {
+          ...lockedReview.proposed,
+          commissionRatePercent: lockedReview.commissionRatePercent,
+          taxRatePercent: lockedReview.taxRatePercent,
+        }
+      : await this.priceBillableMinutes(booking, Math.max(this.minimumBillableMinutes, actualMinutes));
     const serviceAmount = pricingCharges.serviceAmount;
     const platformFeeAmount = pricingCharges.platformFeeAmount;
     const taxAmount = pricingCharges.taxAmount;
     const serviceSurchargeAmount = pricingCharges.serviceSurchargeAmount;
-    const tipAmount = Number(booking.tipAmount);
-    const donationAmount = Number(booking.donationAmount);
-    const totalBeforeDiscount = roundMoney(
-      serviceAmount +
-        platformFeeAmount +
-        serviceSurchargeAmount +
-        tipAmount +
-        donationAmount +
-        (pricingCharges.taxInclusive ? 0 : taxAmount),
-    );
+    const tipAmount = pricingCharges.tipAmount;
+    const totalBeforeDiscount = pricingCharges.total;
     const referralDiscount =
       booking.paymentSource === PAYMENT_SOURCE.Cash || booking.capturedAt
         ? { amount: 0, percent: 0 }
@@ -1283,11 +1312,15 @@ export class PaymentsService {
    * (billable time x rate, plus platform fee, surcharge, tax, tip and donation).
    * The final settlement then charges or refunds the difference to the real total.
    */
-  async bookingEstimate(booking: {
-    hourlyRate: Prisma.Decimal | number | string; estimatedDurationMinutes: number; taskerId: number; serviceId: number;
-    bookingDate: Date; createdAt: Date; tipAmount: Prisma.Decimal | number | string; donationAmount: Prisma.Decimal | number | string;
-  }): Promise<PaymentEstimate> {
-    const billableMinutes = Math.max(this.minimumBillableMinutes, booking.estimatedDurationMinutes);
+  /**
+   * Prices `billableMinutes` of this booking exactly as the final settlement does
+   * (rate x time, platform fee, surcharge, tax, tip, donation). Shared by the estimate,
+   * the overtime quote and finalizeCompletedBooking so all three always agree.
+   */
+  private async priceBillableMinutes(
+    booking: PricingInput,
+    billableMinutes: number,
+  ): Promise<PriceBreakdown & { commissionRatePercent: number; taxRatePercent: number }> {
     const pricing = await this.platformSettings.calculatePricingCharges({
       serviceAmount: roundMoney(Number(booking.hourlyRate) * (billableMinutes / 60)),
       taskerId: booking.taskerId,
@@ -1310,28 +1343,92 @@ export class PaymentsService {
         pricing.serviceAmount + pricing.platformFeeAmount + pricing.serviceSurchargeAmount +
         tipAmount + donationAmount + (pricing.taxInclusive ? 0 : pricing.taxAmount),
       ),
-      calculatedAt: new Date().toISOString(),
+      commissionRatePercent: pricing.commissionRatePercent,
+      taxRatePercent: pricing.taxRatePercent,
     };
   }
 
-  /** Recomputes and stores Booking.paymentEstimate from the booking's current terms. */
-  async refreshPaymentEstimate(bookingId: number, transaction?: Prisma.TransactionClient): Promise<PaymentEstimate> {
+  /**
+   * The quote formula for the booking's authorized time: booked slot plus approved
+   * extra minutes, never less than the minimum billable time. At acceptance (no
+   * extensions yet) this is exactly what card/wallet prepays.
+   */
+  async bookingEstimate(booking: PricingInput & { estimatedDurationMinutes: number; extensionMinutes: number }): Promise<PaymentEstimate> {
+    const billableMinutes = Math.max(
+      this.minimumBillableMinutes,
+      booking.estimatedDurationMinutes + booking.extensionMinutes,
+    );
+    const priced = withoutRates(await this.priceBillableMinutes(booking, billableMinutes));
+    return { ...priced, calculatedAt: new Date().toISOString() };
+  }
+
+  /**
+   * Recomputes and stores Booking.paymentEstimate from the booking's current terms.
+   * A booking with a final charge (totalChargedAmount set) keeps its stored estimate:
+   * the charge is authoritative and is never re-estimated.
+   */
+  async refreshPaymentEstimate(bookingId: number, transaction?: Prisma.TransactionClient): Promise<PaymentEstimate | null> {
     const db = transaction ?? this.prisma;
     const booking = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    if (booking.totalChargedAmount !== null) {
+      return booking.paymentEstimate as unknown as PaymentEstimate | null;
+    }
     const estimate = await this.bookingEstimate(booking);
     await db.booking.update({ where: { id: bookingId }, data: { paymentEstimate: estimate as unknown as Prisma.InputJsonValue } });
     return estimate;
   }
 
-  /** Self-healing: active bookings created before estimates existed get one. */
+  /**
+   * Self-healing: every booking still without a final charge gets an estimate,
+   * including ones already under way or completed when estimates were introduced.
+   */
   async backfillPaymentEstimates(): Promise<number> {
     const rows = await this.prisma.booking.findMany({
-      where: { status: { in: ['pending', 'awaiting_payment', 'confirmed'] }, paymentEstimate: { equals: Prisma.DbNull } },
+      where: {
+        status: { in: ['pending', 'awaiting_payment', 'confirmed', 'en_route', 'arrived', 'in_progress', 'awaiting_customer_approval', 'completed'] },
+        totalChargedAmount: null,
+        paymentEstimate: { equals: Prisma.DbNull },
+      },
       select: { id: true },
       take: 100,
     });
     for (const row of rows) await this.refreshPaymentEstimate(row.id);
     return rows.length;
+  }
+
+  /**
+   * Overtime approval figures: price of the authorized time vs the actually worked
+   * time, with the same pricing as the final settlement.
+   */
+  private async buildDurationReviewQuote(
+    booking: PricingInput & { capturedAmount: Prisma.Decimal | null; paymentCurrency: string },
+    authorizedMinutes: number,
+    actualMinutes: number,
+  ): Promise<DurationReviewQuote> {
+    const current = withoutRates(
+      await this.priceBillableMinutes(booking, Math.max(this.minimumBillableMinutes, authorizedMinutes)),
+    );
+    const { commissionRatePercent, taxRatePercent, ...proposed } = await this.priceBillableMinutes(
+      booking,
+      Math.max(this.minimumBillableMinutes, actualMinutes),
+    );
+    const alreadyPaid = booking.capturedAmount === null ? 0 : roundMoney(Number(booking.capturedAmount));
+    return {
+      actualMinutes,
+      authorizedMinutes,
+      additionalMinutes: actualMinutes - authorizedMinutes,
+      current,
+      proposed,
+      additionalAmount: roundMoney(proposed.total - current.total),
+      currentTotal: current.total,
+      proposedTotal: proposed.total,
+      alreadyPaid,
+      remainingAmount: roundMoney(Math.max(0, proposed.total - alreadyPaid)),
+      currency: booking.paymentCurrency,
+      commissionRatePercent,
+      taxRatePercent,
+      calculatedAt: new Date().toISOString(),
+    };
   }
 
   confirmCashCollection(input: ConfirmCashCollectionInput) {
@@ -3380,6 +3477,7 @@ export class PaymentsService {
     status: string;
     capturedAt: Date | null;
     paymentEstimate: Prisma.JsonValue | null;
+    durationReview: Prisma.JsonValue | null;
     paymentSource: string | null;
     paymentStatus: string;
     paymentCurrency: string;
@@ -3428,6 +3526,10 @@ export class PaymentsService {
         estimate && booking.status === 'awaiting_payment' && booking.capturedAt === null &&
         booking.paymentSource !== PAYMENT_SOURCE.Cash
           ? estimate.total
+          : null,
+      durationReview:
+        booking.paymentStatus === PAYMENT_STATUS.ReviewRequiredDurationExceeded
+          ? (booking.durationReview as unknown as DurationReviewQuote | null)
           : null,
     };
   }

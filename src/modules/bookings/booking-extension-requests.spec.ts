@@ -56,27 +56,34 @@ const setup = (opts: { status?: string; existingPending?: typeof pendingRequest 
   const realtime = { enqueueBooking: jest.fn() } as unknown as RealtimeOutboxService;
   const audit = { record: jest.fn() } as unknown as AdminAuditService;
   const config = { get: (_key: string, fallback: unknown) => fallback } as unknown as ConfigService;
+  const payments = { refreshPaymentEstimate: jest.fn().mockResolvedValue({ total: 129.38 }) };
   const service = new BookingsService(
-    prisma, {} as never, {} as never, notifications, config, {} as never, realtime,
+    prisma, {} as never, payments as never, notifications, config, {} as never, realtime,
     {} as never, audit, {} as never, {} as never, {} as never, {} as never, {} as never,
   );
   jest
     .spyOn(service as unknown as { serialize: () => unknown }, 'serialize')
     .mockReturnValue({ id: '7' });
-  return { service, tx, notifications };
+  return { service, tx, notifications, payments, realtime };
+};
+
+const lastRealtimePayload = (realtime: RealtimeOutboxService) => {
+  const calls = (realtime.enqueueBooking as jest.Mock).mock.calls;
+  return calls[calls.length - 1][2];
 };
 
 const user = (id: number, role: UserRole) => ({ id, role }) as unknown as User;
 
 describe('BookingsService extra task time', () => {
   it('a Tasker request adds no minutes and notifies the customer', async () => {
-    const { service, tx, notifications } = setup();
+    const { service, tx, notifications, payments } = setup();
     const result = await service.extend(user(TASKER_ID, UserRole.Tasker), 7, { minutes: 30 });
 
     expect(result.outcome).toBe('pending_customer_approval');
     expect(result.extensionMinutes).toBe(0);
     expect(result.extensionRequest).toMatchObject({ minutes: 30, status: 'pending' });
     expect(tx.booking.update).not.toHaveBeenCalled();
+    expect(payments.refreshPaymentEstimate).not.toHaveBeenCalled();
     expect(notifications.create).toHaveBeenCalledWith(
       CUSTOMER_ID,
       expect.objectContaining({ type: 'task_time_extension_requested' }),
@@ -91,17 +98,20 @@ describe('BookingsService extra task time', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('a customer extension is applied immediately', async () => {
-    const { service, tx } = setup();
+  it('a customer extension is applied immediately and refreshes the estimate', async () => {
+    const { service, tx, payments, realtime } = setup();
     const result = await service.extend(user(CUSTOMER_ID, UserRole.Customer), 7, { minutes: 30 });
 
     expect(result.outcome).toBe('added');
     expect(result.extensionMinutes).toBe(30);
     expect(tx.bookingExtensionRequest.create).not.toHaveBeenCalled();
+    expect(payments.refreshPaymentEstimate).toHaveBeenCalledWith(7, tx);
+    expect(result.estimate).toEqual({ total: 129.38 });
+    expect(lastRealtimePayload(realtime)).toMatchObject({ reason: 'duration_extended', estimateTotal: 129.38 });
   });
 
-  it('customer approval adds the requested minutes', async () => {
-    const { service, tx } = setup({ existingPending: pendingRequest });
+  it('customer approval adds the requested minutes and refreshes the estimate', async () => {
+    const { service, tx, payments, realtime } = setup({ existingPending: pendingRequest });
     await service.respondExtensionRequest(CUSTOMER_ID, 7, 'ext_1', { approve: true });
 
     expect(tx.bookingExtensionRequest.update).toHaveBeenCalledWith(
@@ -110,16 +120,20 @@ describe('BookingsService extra task time', () => {
     expect(tx.booking.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { extensionMinutes: { increment: 30 } } }),
     );
+    expect(payments.refreshPaymentEstimate).toHaveBeenCalledWith(7, tx);
+    expect(lastRealtimePayload(realtime)).toMatchObject({ reason: 'duration_extended', estimateTotal: 129.38 });
   });
 
-  it('customer decline adds nothing', async () => {
-    const { service, tx } = setup({ existingPending: pendingRequest });
+  it('customer decline adds nothing and leaves the estimate unchanged', async () => {
+    const { service, tx, payments, realtime } = setup({ existingPending: pendingRequest });
     await service.respondExtensionRequest(CUSTOMER_ID, 7, 'ext_1', { approve: false });
 
     expect(tx.bookingExtensionRequest.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'rejected' }) }),
     );
     expect(tx.booking.update).not.toHaveBeenCalled();
+    expect(payments.refreshPaymentEstimate).not.toHaveBeenCalled();
+    expect(lastRealtimePayload(realtime)).not.toHaveProperty('estimateTotal');
   });
 
   it('a request left over after the task ended expires instead of applying', async () => {

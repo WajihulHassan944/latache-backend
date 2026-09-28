@@ -60,6 +60,47 @@ export interface PaymentEstimate {
   calculatedAt: string;
 }
 
+/** One priced time block: billable minutes x rate plus fees, tax, tip and donation. */
+export interface PriceBreakdown {
+  billableMinutes: number;
+  serviceAmount: number;
+  platformFeeAmount: number;
+  serviceSurchargeAmount: number;
+  taxAmount: number;
+  taxInclusive: boolean;
+  tipAmount: number;
+  donationAmount: number;
+  total: number;
+}
+
+/**
+ * Stored on Booking.durationReview when the timer exceeds the authorized time, and
+ * returned as payment.durationReview while payment.status is
+ * review_required_duration_exceeded. Approving charges exactly `proposed`.
+ */
+export interface DurationReviewQuote {
+  actualMinutes: number;
+  authorizedMinutes: number;
+  additionalMinutes: number;
+  /** Price of the authorized time (what the customer agreed to). */
+  current: PriceBreakdown;
+  /** Price of the actually worked time (what approval charges in total). */
+  proposed: PriceBreakdown;
+  /** proposed.total - current.total */
+  additionalAmount: number;
+  currentTotal: number;
+  proposedTotal: number;
+  /** Already captured at acceptance (card/wallet); 0 for cash or unpaid. */
+  alreadyPaid: number;
+  /** max(0, proposedTotal - alreadyPaid), before any referral discount applied at charge time. */
+  remainingAmount: number;
+  currency: string;
+  /** Rates used, so the settlement records the same figures. */
+  commissionRatePercent: number;
+  taxRatePercent: number;
+  calculatedAt: string;
+}
+
 export interface BookingPaymentStatusView {
   bookingId: string;
   /** null until the customer chooses how to pay. */
@@ -86,6 +127,8 @@ export interface BookingPaymentStatusView {
   estimate: PaymentEstimate | null;
   /** What complete-payment charges right now; null when nothing is due (not accepted, paid, or cash). */
   amountDue: number | null;
+  /** Overtime approval figures; non-null only while status is review_required_duration_exceeded. */
+  durationReview: DurationReviewQuote | null;
 }
 
 export interface WalletTopupIntentView {
@@ -111,6 +154,8 @@ export interface PaymentOrchestrationResult {
   status: string;
   paymentIntentId?: string;
   clientSecret?: string | null;
+  /** Present when status is review_required_duration_exceeded. */
+  durationReview?: DurationReviewQuote;
 }
 
 export interface BookingRefundRequest {
