@@ -15,6 +15,7 @@ import {
   ListConversationsQueryDto,
   ListMessagesQueryDto,
   MarkConversationReadDto,
+  RejectConversationCallDto,
   SendMessageDto,
 } from './conversations.dto';
 import { ConversationsService } from './conversations.service';
@@ -190,6 +191,24 @@ export class ConversationsController {
     @Param() params: ConversationCallParamDto,
   ): Promise<ConversationCallView> {
     return this.conversations.getCall(user, params.bookingId, params.callId);
+  }
+
+  @Post(':bookingId/calls/:callId/reject')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @ApiParam({ name: 'callId', required: true, type: String, description: 'Conversation call ID.' })
+  @ApiOperation({
+    summary: 'Callee declines a ringing call (REST twin of socket call:reject)',
+    description:
+      'For a Decline tapped while the app is closed, without opening a socket. Same rules as call:reject: ' +
+      'only the callee, only while ringing (409 otherwise; repeating a reject returns the rejected call). ' +
+      'The caller is notified by the same call:state event, and the callee gets a data-only call_ended push.',
+  })
+  rejectCall(
+    @CurrentUser() user: User,
+    @Param() params: ConversationCallParamDto,
+    @Body() dto: RejectConversationCallDto,
+  ): Promise<ConversationCallView> {
+    return this.conversations.rejectCall(user, params.bookingId, params.callId, dto.reason);
   }
 
   @Get(':conversationId')

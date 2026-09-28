@@ -8,6 +8,7 @@ import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import type { NotificationListView, NotificationView } from './notifications.types';
 import { LocaleService } from '../localization/locale.service';
 import { NotificationTemplateService } from './notification-template.service';
+import { PUSH_ONLY_NOTIFICATION_TYPES } from '../fcm/fcm.constants';
 import { FcmService } from '../fcm/fcm.service';
 import { MailService } from '../mail/mail.service';
 
@@ -20,6 +21,11 @@ import { MailService } from '../mail/mail.service';
  * dedicated email pipeline (see DisputeLifecycleService) and are excluded here to
  * avoid double-emailing the same event.
  */
+/** Push-only rows (e.g. call_ended) never show in the list or unread counts. */
+const VISIBLE_IN_LIST: Prisma.TaskNotificationWhereInput = {
+  type: { notIn: [...PUSH_ONLY_NOTIFICATION_TYPES] },
+};
+
 const EMAIL_NOTIFIED_TYPES = new Set<string>([
   'booking_requested',
   'task_confirmed',
@@ -235,6 +241,7 @@ export class NotificationsService {
     const where: Prisma.TaskNotificationWhereInput = {
       userId,
       OR: [{ audienceRole: null }, { audienceRole: activeRole }],
+      AND: [VISIBLE_IN_LIST],
       ...(query.category && query.category !== 'all' ? { category: query.category } : {}),
       ...(query.unread ? { readAt: null } : {}),
     };
@@ -253,7 +260,7 @@ export class NotificationsService {
       }),
       this.prisma.taskNotification.count({ where }),
       this.prisma.taskNotification.count({
-        where: { userId, readAt: null, OR: [{ audienceRole: null }, { audienceRole: activeRole }] },
+        where: { userId, readAt: null, OR: [{ audienceRole: null }, { audienceRole: activeRole }], AND: [VISIBLE_IN_LIST] },
       }),
     ]);
     const hasMore = query.cursor ? items.length > limit : offset + items.length < totalItems;
@@ -274,7 +281,7 @@ export class NotificationsService {
   async unreadCount(userId: number, activeRole: UserRole): Promise<{ unreadCount: number }> {
     return {
       unreadCount: await this.prisma.taskNotification.count({
-        where: { userId, readAt: null, OR: [{ audienceRole: null }, { audienceRole: activeRole }] },
+        where: { userId, readAt: null, OR: [{ audienceRole: null }, { audienceRole: activeRole }], AND: [VISIBLE_IN_LIST] },
       }),
     };
   }
@@ -303,7 +310,7 @@ export class NotificationsService {
     return this.prisma.$transaction(async (transaction) => {
       const readAt = new Date();
       const result = await transaction.taskNotification.updateMany({
-        where: { userId, readAt: null, OR: [{ audienceRole: null }, { audienceRole: activeRole }] },
+        where: { userId, readAt: null, OR: [{ audienceRole: null }, { audienceRole: activeRole }], AND: [VISIBLE_IN_LIST] },
         data: { readAt },
       });
       if (result.count > 0) {

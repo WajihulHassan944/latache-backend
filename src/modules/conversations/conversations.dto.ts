@@ -197,6 +197,15 @@ export class ConversationCallParamDto extends BookingConversationParamDto {
   callId!: string;
 }
 
+export class RejectConversationCallDto {
+  @ApiPropertyOptional({ example: 'declined', maxLength: 120, description: 'Defaults to "declined".' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 120)
+  reason?: string;
+}
+
 export class ListConversationCallsQueryDto {
   @ApiPropertyOptional({ enum: ['voice', 'video'] })
   @IsOptional()

@@ -13,6 +13,7 @@ import { UserRole } from '../../common/enums/user-role.enum';
 import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
+import { CALL_ENDED_NOTIFICATION_TYPE } from '../fcm/fcm.constants';
 import { FcmService } from '../fcm/fcm.service';
 import { realtimeRoom } from './realtime.constants';
 import type {
@@ -25,6 +26,9 @@ import type {
 } from './realtime.types';
 
 const ACTIVE_CALL_STATUSES = ['ringing', 'accepted'] as const;
+
+/** Who performs a call action: a socket identity or an authenticated REST user. */
+type CallActorIdentity = Pick<RealtimeSocketIdentity, 'userId' | 'role'>;
 
 const CALL_INCLUDE = {
   initiator: {
@@ -350,7 +354,7 @@ export class RealtimeCallsService {
   }
 
   async reject(
-    identity: RealtimeSocketIdentity,
+    identity: CallActorIdentity,
     payload: CallActionPayload,
   ): Promise<ConversationCallView> {
     const call = await this.requireCall(payload.callId);
@@ -359,6 +363,23 @@ export class RealtimeCallsService {
       throw new ForbiddenException('Only the call recipient can reject this call');
     }
     return this.finishRinging(call, identity.userId, 'rejected', payload.reason ?? 'declined');
+  }
+
+  /**
+   * REST twin of socket call:reject (POST /conversations/:bookingId/calls/:callId/reject)
+   * so a Decline tapped from a closed app needs no background socket connection.
+   * Same rules and the same call:state emission as the socket path.
+   */
+  async rejectForBooking(
+    userId: number,
+    role: UserRole,
+    bookingId: number,
+    callId: string,
+    reason?: string,
+  ): Promise<ConversationCallView> {
+    const call = await this.requireCall(callId);
+    if (call.bookingId !== bookingId) throw new NotFoundException('Call not found');
+    return this.reject({ userId, role }, { callId, ...(reason ? { reason } : {}) });
   }
 
   async cancel(
@@ -483,9 +504,52 @@ export class RealtimeCallsService {
         include: CALL_INCLUDE,
       });
       await this.enqueueState(transaction, row);
+      await this.enqueueCallEndedPush(transaction, row, status);
       return row;
     });
     return this.toView(updated, viewerId);
+  }
+
+  /**
+   * call:state only reaches a connected socket. A closed/asleep callee app would keep
+   * ringing until expiry, so send a data-only `call_ended` push (high priority, 60s TTL
+   * via FcmService's call policy). The notification row exists only to carry the FCM
+   * delivery: it is stored as read and excluded from the notification list.
+   */
+  private async enqueueCallEndedPush(
+    transaction: Prisma.TransactionClient,
+    call: CallRecord,
+    status: 'rejected' | 'cancelled',
+  ): Promise<void> {
+    const recipientRole =
+      call.recipientId === call.booking.customerId ? UserRole.Customer : UserRole.Tasker;
+    const notification = await transaction.taskNotification.create({
+      data: {
+        userId: call.recipientId,
+        audienceRole: recipientRole,
+        category: 'messages',
+        type: CALL_ENDED_NOTIFICATION_TYPE,
+        title: 'Call ended',
+        body: status === 'rejected' ? 'The call was declined.' : 'The caller cancelled the call.',
+        entityType: 'conversation_call',
+        entityId: call.id,
+        readAt: new Date(),
+        metadata: {
+          callId: call.id,
+          bookingId: String(call.bookingId),
+          callType: call.type,
+          status,
+        },
+      },
+    });
+    await this.fcm.enqueueNotification(
+      call.recipientId,
+      notification.id,
+      notification.title,
+      notification.body,
+      recipientRole,
+      transaction,
+    );
   }
 
   private async finishSystemCall(
@@ -508,6 +572,8 @@ export class RealtimeCallsService {
         include: CALL_INCLUDE,
       });
       await this.enqueueState(transaction, call);
+      // Only a ringing call is system-cancelled (accepted ones end); stop the ringing.
+      if (status === 'cancelled') await this.enqueueCallEndedPush(transaction, call, 'cancelled');
     });
   }
 
@@ -538,7 +604,8 @@ export class RealtimeCallsService {
           body: `You missed a ${call.type} call from ${this.displayName(call.initiator)}.`,
           entityType: 'conversation_call',
           entityId: call.id,
-          metadata: { bookingId: String(call.bookingId), callType: call.type },
+          // callId lets the app stop the ringing (entityId carries it too).
+          metadata: { callId: call.id, bookingId: String(call.bookingId), callType: call.type },
         },
       });
       await this.enqueueUserRole(
@@ -645,7 +712,7 @@ export class RealtimeCallsService {
     return { id: -1 };
   }
 
-  private assertCallIdentityRole(identity: RealtimeSocketIdentity, call: CallRecord): void {
+  private assertCallIdentityRole(identity: CallActorIdentity, call: CallRecord): void {
     const matchesRole =
       (identity.role === UserRole.Customer && call.booking.customerId === identity.userId) ||
       (identity.role === UserRole.Tasker && call.booking.taskerId === identity.userId);

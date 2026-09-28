@@ -1,3 +1,15 @@
+# 3.45.0
+
+- **Ringing stops on the callee's phone when a call is cancelled or rejected.** Before, only `call:state` went out over the socket, so a closed or asleep app kept ringing until the call expired (up to 60s).
+  - The callee now also gets a data-only FCM push: `type: "call_ended"`, `callId`, `bookingId`, `callType`, `status` (`cancelled` | `rejected`), plus the usual `title`/`body`/`entityType`/`entityId`/`notificationId`.
+  - It uses the same high priority and 60s TTL as the incoming-call push.
+  - It is sent on caller cancel, callee reject (socket or REST), and system cancellation of a ringing call.
+  - The push-only notification row is stored as read and excluded from `GET /api/notifications` and unread counts.
+- **`POST /api/conversations/:bookingId/calls/:callId/reject`** (`{ reason? }`) is the REST twin of socket `call:reject`, so Decline works from a closed app without opening a socket.
+  - Same rules: only the callee, only while ringing (409 otherwise). Repeating a reject returns the rejected call.
+  - The caller gets the same `call:state` event.
+- The missed-call push now also carries `callId` in `data` (`entityId` still carries it).
+
 # 3.44.0
 
 - **Amount to pay is now in the booking response.** The acceptance estimate is stored on `Booking.paymentEstimate` (migration `20260925090000_booking_payment_estimate`).

@@ -128,3 +128,35 @@ describe('FcmService.send incoming call push', () => {
     expect(message.apns).toMatchObject({ headers: { 'apns-priority': '10' } });
   });
 });
+
+describe('FcmService.send call_ended push', () => {
+  const ended = {
+    title: 'Call ended',
+    body: 'The caller cancelled the call.',
+    type: 'call_ended',
+    category: 'messages',
+    entityType: 'conversation_call',
+    entityId: 'cm-call-id',
+    metadata: { callId: 'cm-call-id', bookingId: '482', callType: 'voice', status: 'cancelled' },
+  };
+
+  it('is data-only with callId, bookingId and status as strings', async () => {
+    const { message } = await captureSend(ended as never);
+    expect(message).not.toHaveProperty('notification');
+    expect(message.data).toMatchObject({
+      type: 'call_ended',
+      callId: 'cm-call-id',
+      bookingId: '482',
+      status: 'cancelled',
+      entityType: 'conversation_call',
+      entityId: 'cm-call-id',
+    });
+    expect(Object.values(message.data).every((value) => typeof value === 'string')).toBe(true);
+  });
+
+  it('uses the incoming-call policy: high priority, 60 second TTL', async () => {
+    const { message } = await captureSend(ended as never);
+    expect(message.android).toEqual({ priority: 'high', ttl: '60s' });
+    expect(message.apns).toMatchObject({ headers: { 'apns-priority': '10' } });
+  });
+});

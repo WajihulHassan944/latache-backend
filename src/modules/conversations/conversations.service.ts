@@ -318,6 +318,10 @@ export class ConversationsService {
     return this.calls.get(user.id, bookingId, callId, user.role as UserRole);
   }
 
+  rejectCall(user: User, bookingId: number, callId: string, reason?: string): Promise<ConversationCallView> {
+    return this.calls.rejectForBooking(user.id, user.role as UserRole, bookingId, callId, reason);
+  }
+
   async sendToUser(user: User, otherUserId: number, dto: SendMessageDto): Promise<ConversationMessageView> {
     const pair = await this.resolveOtherUserRole(user, otherUserId);
     const conversation = await this.findOrCreateConversation(pair.customerId, pair.taskerId);

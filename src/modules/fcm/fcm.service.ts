@@ -3,6 +3,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { CALL_ENDED_NOTIFICATION_TYPE } from './fcm.constants';
 import type { RegisterFcmTokenDto } from './fcm.dto';
 
 type ClaimedDelivery = {
@@ -254,7 +255,7 @@ export class FcmService {
     type: string | null,
     category: string | null,
   ): { androidPriority: 'high' | 'normal'; apnsPriority: '5' | '10'; ttlSeconds?: number } {
-    const isCall = !!type && /_call$/.test(type);
+    const isCall = !!type && (/_call$/.test(type) || type === CALL_ENDED_NOTIFICATION_TYPE);
     const isMessage = category === 'messages' && !isCall;
     if (isCall) {
       return { androidPriority: 'high', apnsPriority: '10', ttlSeconds: 60 };
