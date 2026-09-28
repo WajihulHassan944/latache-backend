@@ -27,6 +27,7 @@ import { Prisma, type RescheduleProposal, type User } from '../../generated/pris
 import { NotificationsService } from '../notifications/notifications.service';
 import { PAYMENT_SOURCE, PAYMENT_STATUS } from '../payments/payments.constants';
 import { PaymentsService } from '../payments/payments.service';
+import type { PaymentEstimate } from '../payments/payments.types';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import { TaskerFinanceService } from '../tasker-finance/tasker-finance.service';
@@ -49,6 +50,7 @@ import {
   ExtendBookingDto,
   ListUnifiedBookingsQueryDto,
   RescheduleBookingDto,
+  RespondExtensionRequestDto,
   UpdateBookingBillingDto,
 } from './dto/booking-actions.dto';
 import { BookTaskerDto } from './dto/book-tasker.dto';
@@ -107,6 +109,12 @@ const BOOKING_INCLUDE = {
     where: { status: 'pending' },
     take: 1,
     select: { id: true, proposedByRole: true, proposedDate: true, proposedTime: true, note: true, createdAt: true },
+  },
+  extensionRequests: {
+    where: { status: 'pending' },
+    orderBy: { createdAt: 'desc' },
+    take: 1,
+    select: { id: true, requestedByRole: true, minutes: true, note: true, status: true, createdAt: true },
   },
   _count: { select: { messages: true, complaints: true, reviews: true } },
 } as const;
@@ -194,9 +202,10 @@ export class BookingsService {
       dto.customTimeRequestId && requesterId
         ? { requestId: dto.customTimeRequestId, customerId: requesterId }
         : undefined,
+      dto.customTime !== false,
     );
     const currency = await this.platformSettings.currencyContext();
-    return this.quoteView(
+    const view = await this.quoteView(
       this.platformSettings.convertUsdAmount(Number(context.taskerService.hourlyRate), currency),
       context.slot.startTime,
       context.slot.endTime,
@@ -208,6 +217,7 @@ export class BookingsService {
       dateOnlyToDate(dto.date),
       currency.code,
     );
+    return { ...view, isCustomTime: context.isCustomTime };
   }
 
   async sendCustomerReminder(customerId: number, bookingId: number) {
@@ -288,6 +298,7 @@ export class BookingsService {
       dto.time,
       undefined,
       customTime,
+      dto.customTime !== false,
     );
     const preflightStart = parseTimeToMinutes(preflight.slot.startTime) ?? 0;
     const preflightEnd = parseTimeToMinutes(preflight.slot.endTime) ?? preflightStart;
@@ -330,6 +341,7 @@ export class BookingsService {
           dto.time,
           transaction,
           customTime,
+          dto.customTime !== false,
         );
         const currency = await this.platformSettings.currencyContext(transaction);
         const bookingHourlyRate = this.platformSettings.convertUsdAmount(
@@ -338,8 +350,10 @@ export class BookingsService {
         );
         let availabilityId: number;
         if (context.slot.id === null) {
-          // Custom-time booking: carried on a dedicated, already-booked slot that is
-          // never offered as open availability (isCustom).
+          // Custom-time booking (no open listed slot at this time, or a legacy accepted
+          // CustomTimeRequest): carried on a dedicated, already-booked slot that is never
+          // offered as open availability (isCustom). It skips claimSlot, so confirm()
+          // re-checks for overlapping bookings (CUSTOM_TIME_SLOT_CONFLICT).
           const customSlot = await transaction.userAvailability.create({
             data: {
               userId: context.tasker.id,
@@ -390,6 +404,7 @@ export class BookingsService {
             locationArea: dto.location.area ?? null,
             status: 'pending',
             estimatedDurationMinutes,
+            isCustomTime: context.isCustomTime,
             paymentSource,
             paymentStatus: paymentSource ? PAYMENT_STATUS.Ready : PAYMENT_STATUS.PaymentMethodRequired,
             paymentCurrency: currency.code,
@@ -409,8 +424,10 @@ export class BookingsService {
           {
             category: 'tasks',
             type: 'booking_requested',
-            title: 'New booking request',
-            body: `A customer requested ${context.service.name ?? 'a service'} for ${dto.date} at ${context.slot.startTime}.`,
+            title: context.isCustomTime ? 'New custom time request' : 'New booking request',
+            body: context.isCustomTime
+              ? `A customer requested ${context.service.name ?? 'a service'} for ${dto.date} at ${context.slot.startTime}, outside your listed availability.`
+              : `A customer requested ${context.service.name ?? 'a service'} for ${dto.date} at ${context.slot.startTime}.`,
             entityType: 'booking',
             entityId: String(created.id),
           },
@@ -428,13 +445,15 @@ export class BookingsService {
               serviceId: context.service.id,
               date: dto.date,
               time: context.slot.startTime,
+              isCustomTime: context.isCustomTime,
               ...(dto.customTimeRequestId ? { customTimeRequestId: dto.customTimeRequestId } : {}),
             },
           },
           transaction,
         );
         await this.enqueueBookingUpdate(created.id, 'pending', 'booking_created', transaction);
-        return created;
+        const estimate = await this.payments.refreshPaymentEstimate(created.id, transaction);
+        return { ...created, paymentEstimate: estimate as unknown as Prisma.JsonValue };
       });
       return this.serialize(booking, customerId);
     } catch (error) {
@@ -622,6 +641,8 @@ export class BookingsService {
           endTime: slot.endTime,
           estimatedDurationMinutes: Math.max(1, end - start),
           rescheduledAt: new Date(),
+          // Rescheduling always lands on an open listed slot.
+          isCustomTime: false,
           status: 'pending',
           confirmedAt: null,
         },
@@ -640,7 +661,8 @@ export class BookingsService {
         transaction,
       );
       await this.enqueueBookingUpdate(bookingId, 'pending', 'customer_rescheduled', transaction);
-      return row;
+      const estimate = await this.payments.refreshPaymentEstimate(bookingId, transaction);
+      return { ...row, paymentEstimate: estimate as unknown as Prisma.JsonValue };
     });
     return this.serialize(updated, customerId);
   }
@@ -791,10 +813,13 @@ export class BookingsService {
           endTime: slot.endTime,
           estimatedDurationMinutes: Math.max(1, end - start),
           rescheduledAt: new Date(),
+          // Rescheduling always lands on an open listed slot.
+          isCustomTime: false,
           status: 'pending',
           confirmedAt: null,
         },
       });
+      await this.payments.refreshPaymentEstimate(bookingId, transaction);
       const accepted = await transaction.rescheduleProposal.update({
         where: { id: existing.id },
         data: { status: 'accepted', respondedAt: new Date() },
@@ -833,11 +858,16 @@ export class BookingsService {
     };
   }
 
+  /**
+   * Customer: the payer adds minutes directly (authorization ceiling only, no charge now).
+   * Tasker: creates a pending request; nothing is added until the customer approves it
+   * via respondExtensionRequest(). One pending request per booking at a time.
+   */
   async extend(user: User, bookingId: number, dto: ExtendBookingDto) {
     if (![UserRole.Customer, UserRole.Tasker].includes(user.role as UserRole)) {
       throw new ForbiddenException('Only booking participants can extend task time');
     }
-    const row = await this.prisma.$transaction(async (transaction) => {
+    const result = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
       const booking = await transaction.booking.findUnique({ where: { id: bookingId } });
       if (!booking) throw new NotFoundException('Booking not found');
@@ -851,19 +881,67 @@ export class BookingsService {
         );
       }
 
+      if (isTasker) {
+        const pending = await transaction.bookingExtensionRequest.findFirst({
+          where: { bookingId, status: 'pending' },
+        });
+        if (pending) {
+          throw new ConflictException({
+            code: 'EXTENSION_REQUEST_PENDING',
+            message: 'An extra-time request is already waiting for the customer',
+          });
+        }
+        const request = await transaction.bookingExtensionRequest.create({
+          data: {
+            bookingId,
+            requestedById: user.id,
+            requestedByRole: 'tasker',
+            minutes: dto.minutes,
+            note: dto.note ?? null,
+          },
+        });
+        await this.notifications.create(
+          booking.customerId,
+          {
+            category: 'tasks',
+            type: 'task_time_extension_requested',
+            title: 'Extra time requested',
+            body: `Your Tasker is asking for ${dto.minutes} more minutes. Approve or decline the request.`,
+            entityType: 'booking',
+            entityId: String(bookingId),
+            metadata: { extensionRequestId: request.id, requestedMinutes: dto.minutes },
+          },
+          transaction,
+        );
+        await this.audit.record(
+          {
+            actorId: user.id,
+            targetUserId: booking.customerId,
+            action: 'booking_extension_requested',
+            entityType: 'booking',
+            entityId: bookingId,
+            metadata: { extensionRequestId: request.id, requestedMinutes: dto.minutes },
+          },
+          transaction,
+        );
+        await this.enqueueBookingUpdate(bookingId, booking.status, 'extension_requested', transaction, {
+          extensionRequestId: request.id,
+          requestedMinutes: dto.minutes,
+        });
+        return { booking, request };
+      }
+
       const updated = await transaction.booking.update({
         where: { id: bookingId },
         data: { extensionMinutes: { increment: dto.minutes } },
       });
-
-      const otherUserId = isCustomer ? booking.taskerId : booking.customerId;
       await this.notifications.create(
-        otherUserId,
+        booking.taskerId,
         {
           category: 'tasks',
           type: 'task_time_extended',
           title: 'Task time extended',
-          body: `${dto.minutes} additional minutes were added by the ${isCustomer ? 'Customer' : 'Tasker'}.`,
+          body: `${dto.minutes} additional minutes were added by the Customer.`,
           entityType: 'booking',
           entityId: String(bookingId),
           metadata: {
@@ -877,7 +955,7 @@ export class BookingsService {
       await this.audit.record(
         {
           actorId: user.id,
-          targetUserId: otherUserId,
+          targetUserId: booking.taskerId,
           action: 'booking_duration_extended',
           entityType: 'booking',
           entityId: bookingId,
@@ -893,13 +971,148 @@ export class BookingsService {
         extensionMinutes: updated.extensionMinutes,
         addedByRole: user.role,
       });
-      return updated;
+      return { booking: updated, request: null };
     });
     return {
       bookingId: String(bookingId),
-      estimatedDurationMinutes: row.estimatedDurationMinutes,
-      extensionMinutes: row.extensionMinutes,
-      authorizedDurationMinutes: row.estimatedDurationMinutes + row.extensionMinutes,
+      /** added = minutes applied now; pending_customer_approval = nothing applied yet. */
+      outcome: result.request ? ('pending_customer_approval' as const) : ('added' as const),
+      estimatedDurationMinutes: result.booking.estimatedDurationMinutes,
+      extensionMinutes: result.booking.extensionMinutes,
+      authorizedDurationMinutes: result.booking.estimatedDurationMinutes + result.booking.extensionMinutes,
+      extensionRequest: result.request ? this.serializeExtensionRequest(result.request) : null,
+    };
+  }
+
+  /** Customer approves (minutes are added) or declines a Tasker's pending extra-time request. */
+  async respondExtensionRequest(
+    customerId: number,
+    bookingId: number,
+    requestId: string,
+    dto: RespondExtensionRequestDto,
+  ) {
+    const outcome = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findFirst({ where: { id: bookingId, customerId } });
+      if (!booking) throw new NotFoundException('Booking not found');
+      const request = await transaction.bookingExtensionRequest.findFirst({
+        where: { id: requestId, bookingId },
+      });
+      if (!request) throw new NotFoundException('Extra-time request not found');
+      if (request.status !== 'pending') {
+        throw new ConflictException('This extra-time request has already been responded to');
+      }
+      const now = new Date();
+      if (booking.status !== 'in_progress') {
+        // The task moved on (completed/cancelled); the request can no longer apply.
+        await transaction.bookingExtensionRequest.update({
+          where: { id: request.id },
+          data: { status: 'expired', respondedAt: now },
+        });
+        return { expired: true as const };
+      }
+
+      const status = dto.approve ? 'approved' : 'rejected';
+      await transaction.bookingExtensionRequest.update({
+        where: { id: request.id },
+        data: { status, respondedAt: now },
+      });
+      const updated = dto.approve
+        ? await transaction.booking.update({
+            where: { id: bookingId },
+            data: { extensionMinutes: { increment: request.minutes } },
+          })
+        : booking;
+      await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'tasks',
+          type: dto.approve ? 'task_time_extension_approved' : 'task_time_extension_rejected',
+          title: dto.approve ? 'Extra time approved' : 'Extra time declined',
+          body: dto.approve
+            ? `The customer approved ${request.minutes} more minutes.`
+            : `The customer declined your request for ${request.minutes} more minutes.`,
+          entityType: 'booking',
+          entityId: String(bookingId),
+          metadata: {
+            extensionRequestId: request.id,
+            requestedMinutes: request.minutes,
+            extensionMinutes: updated.extensionMinutes,
+          },
+        },
+        transaction,
+      );
+      await this.audit.record(
+        {
+          actorId: customerId,
+          targetUserId: booking.taskerId,
+          action: dto.approve ? 'booking_duration_extended' : 'booking_extension_rejected',
+          entityType: 'booking',
+          entityId: bookingId,
+          metadata: {
+            actorRole: 'customer',
+            extensionRequestId: request.id,
+            addedMinutes: dto.approve ? request.minutes : 0,
+            extensionMinutes: updated.extensionMinutes,
+          },
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(
+        bookingId,
+        booking.status,
+        dto.approve ? 'duration_extended' : 'extension_rejected',
+        transaction,
+        { extensionRequestId: request.id, extensionMinutes: updated.extensionMinutes },
+      );
+      return { expired: false as const };
+    });
+    if (outcome.expired) {
+      throw new ConflictException('Extra time can be approved only while the task is in progress');
+    }
+    return this.serialize(
+      await this.prisma.booking.findUniqueOrThrow({ where: { id: bookingId }, include: BOOKING_INCLUDE }),
+      customerId,
+    );
+  }
+
+  /** The Tasker withdraws their own pending extra-time request. */
+  async cancelExtensionRequest(taskerId: number, bookingId: number, requestId: string) {
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findFirst({ where: { id: bookingId, taskerId } });
+      if (!booking) throw new NotFoundException('Booking not found');
+      const request = await transaction.bookingExtensionRequest.findFirst({
+        where: { id: requestId, bookingId },
+      });
+      if (!request) throw new NotFoundException('Extra-time request not found');
+      if (request.status !== 'pending') {
+        throw new ConflictException('This extra-time request has already been responded to');
+      }
+      await transaction.bookingExtensionRequest.update({
+        where: { id: request.id },
+        data: { status: 'cancelled', respondedAt: new Date() },
+      });
+      await this.enqueueBookingUpdate(bookingId, booking.status, 'extension_request_cancelled', transaction, {
+        extensionRequestId: request.id,
+      });
+    });
+    return this.serialize(
+      await this.prisma.booking.findUniqueOrThrow({ where: { id: bookingId }, include: BOOKING_INCLUDE }),
+      taskerId,
+    );
+  }
+
+  private serializeExtensionRequest(request: {
+    id: string; requestedByRole: string; minutes: number; note: string | null; status: string; createdAt: Date;
+  }) {
+    return {
+      id: request.id,
+      requestedByRole: request.requestedByRole,
+      minutes: request.minutes,
+      note: request.note,
+      status: request.status,
+      createdAt: request.createdAt.toISOString(),
     };
   }
 
@@ -1707,6 +1920,8 @@ export class BookingsService {
             : {}),
         },
       });
+      // Tip/donation are part of the acceptance amount until it has been paid.
+      if (row.capturedAt === null) await this.payments.refreshPaymentEstimate(bookingId, transaction);
       await this.enqueueBookingUpdate(bookingId, row.status, 'billing_updated', transaction, {
         tipAmount: Number(row.tipAmount),
         donationAmount: Number(row.donationAmount),
@@ -2890,6 +3105,7 @@ export class BookingsService {
     time: string,
     transaction?: Prisma.TransactionClient,
     customTime?: { requestId: string; customerId: number },
+    allowCustomTime = true,
   ) {
     const db = (transaction ?? this.prisma) as Prisma.TransactionClient;
     const tasker = await db.user.findFirst({
@@ -2920,19 +3136,21 @@ export class BookingsService {
     const requestedMinutes = parseTimeToMinutes(time);
     if (requestedMinutes === null) throw new ConflictException('Requested date/time is unavailable');
 
+    // slot.id === null = custom time: book() carries it on a dedicated, never-offered
+    // isCustom slot, and the Tasker accepts/rejects it like any pending booking.
+    const customSlot = () => ({
+      id: null,
+      startTime: formatMinutesAs24Hour(requestedMinutes),
+      endTime: formatMinutesAs24Hour(Math.min(requestedMinutes + this.minimumBillableMinutes, 23 * 60 + 59)),
+    });
     let slot: { id: number | null; startTime: string; endTime: string };
     if (customTime) {
-      // An accepted custom-time request replaces the open-slot match for this one booking.
+      // Legacy two-phase flow: an accepted custom-time request for this exact booking.
       await this.customTimeRequests.assertUsableForBooking(
         { ...customTime, taskerId, serviceSlug, date, time },
         transaction,
       );
-      const end = Math.min(requestedMinutes + this.minimumBillableMinutes, 23 * 60 + 59);
-      slot = {
-        id: null,
-        startTime: formatMinutesAs24Hour(requestedMinutes),
-        endTime: formatMinutesAs24Hour(end),
-      };
+      slot = customSlot();
     } else {
       const availability = await db.userAvailability.findMany({
         where: { userId: taskerId, date: dateOnlyToDate(date), isBooked: false, isCustom: false },
@@ -2940,13 +3158,14 @@ export class BookingsService {
       const match = availability.find(
         (item) => parseTimeToMinutes(item.startTime) === requestedMinutes,
       );
-      if (!match) throw new ConflictException('Requested date/time is unavailable');
-      slot = match;
+      if (match) slot = match;
+      else if (allowCustomTime) slot = customSlot();
+      else throw new ConflictException('Requested date/time is unavailable');
     }
     if (this.isPastSlotStart(date, slot.startTime))
       throw new ConflictException('Requested date/time is unavailable');
     await this.assertTaskerTimeFree(db, taskerId, date, slot);
-    return { tasker, service, option, taskerService, slot };
+    return { tasker, service, option, taskerService, slot, isCustomTime: slot.id === null };
   }
 
   /**
@@ -3086,6 +3305,7 @@ export class BookingsService {
 
   private serialize(booking: UnifiedBookingWithRelations, viewerId: number) {
     const viewerRole = booking.customerId === viewerId ? 'customer' : 'tasker';
+    const estimate = booking.paymentEstimate as unknown as PaymentEstimate | null;
 
     const counterparty =
       viewerRole === 'customer'
@@ -3111,6 +3331,7 @@ export class BookingsService {
       id: String(booking.id),
       status: booking.status,
       viewerRole,
+      isCustomTime: booking.isCustomTime,
       service: {
         id: String(booking.service.id),
         name: booking.service.name,
@@ -3180,6 +3401,14 @@ export class BookingsService {
         referralDiscountPercent: Number(booking.referralDiscountPercent),
         totalChargedAmount:
           booking.totalChargedAmount === null ? null : Number(booking.totalChargedAmount),
+        // Quote-formula breakdown; estimate.total is what card/wallet pays at acceptance.
+        estimate,
+        // What POST /bookings/:id/complete-payment charges right now (null when nothing is due now).
+        amountDue:
+          estimate && booking.status === 'awaiting_payment' && booking.capturedAt === null &&
+          booking.paymentSource !== PAYMENT_SOURCE.Cash
+            ? estimate.total
+            : null,
       },
       counts: {
         messages: booking._count.messages,
@@ -3203,6 +3432,10 @@ export class BookingsService {
             createdAt: booking.rescheduleProposals[0].createdAt.toISOString(),
           }
         : null,
+      pendingExtensionRequest:
+        booking.status === 'in_progress' && booking.extensionRequests[0]
+          ? this.serializeExtensionRequest(booking.extensionRequests[0])
+          : null,
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt.toISOString(),
     };

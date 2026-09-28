@@ -1,3 +1,25 @@
+# 3.44.0
+
+- **Amount to pay is now in the booking response.** The acceptance estimate is stored on `Booking.paymentEstimate` (migration `20260925090000_booking_payment_estimate`).
+  - It is computed at creation, refreshed on reschedule, on an accepted reschedule proposal and on tip/donation changes until paid, and locked in when the Tasker accepts. `POST /api/bookings/:id/complete-payment` charges exactly its total.
+  - The booking view's `payment` and `GET /api/payments/bookings/:bookingId` add `estimate` (breakdown plus `total`) and `amountDue`. `amountDue` is the amount complete-payment charges now, or `null` when nothing is due: not accepted yet, already paid, or cash.
+  - Active bookings created before this release are backfilled by the settlement sweep.
+- **Extra task time needs customer approval.**
+  - A Tasker's `POST /api/bookings/:id/extend` now creates a pending `BookingExtensionRequest` (migration `20260928090000_booking_extension_requests`), adds no minutes, and notifies the customer. The response includes `outcome: pending_customer_approval` and `extensionRequest`.
+  - The customer approves or declines with `POST /api/bookings/:id/extension-requests/:requestId/respond` (`{ approve }`). Only approval adds the minutes. The Tasker can withdraw a request with `POST .../:requestId/cancel`.
+  - One pending request per booking (409 `EXTENSION_REQUEST_PENDING`). A request still pending after the task left `in_progress` expires on response (409).
+  - A customer's own `/extend` still adds minutes immediately (`outcome: added`).
+  - The booking view and the Tasker task view show `pendingExtensionRequest` while the task is in progress.
+- **Custom-time bookings go through the normal request/accept flow.**
+  - `POST /api/bookings` and `/bookings/quote` accept a date/time outside the Tasker's listed availability with no prior custom-time request. The booking is carried on a dedicated, never-offered `isCustom` slot and is a normal `pending` booking.
+  - Optional `customTime: false` keeps the strict open-slot requirement (409).
+  - `isCustomTime` is on the booking view, the Tasker task view and the quote. Migration `20260928100000_booking_custom_time_flag` backfills existing custom-slot bookings.
+  - Tasker confirm refuses a custom-time booking that overlaps another non-cancelled booking that day: 409 `CUSTOM_TIME_SLOT_CONFLICT` with `conflictingBookingId`.
+  - `POST /api/taskers/:taskerId/custom-time-request` and `POST /api/custom-time-requests/:requestId/respond` are marked deprecated. They still work for older clients.
+- **Taskers can save cards** for plan checkout ("Card on File"). `POST /api/payments/setup-intent`, `GET /api/payments/methods` and `PATCH /api/payments/methods/:id/default` accept Customer or Tasker sessions and require an active profile for the session's role. The rest of `/api/payments` stays customer-only. Shapes are unchanged.
+- **Incoming call pushes carry everything needed for native ringing.** The data-only `incoming_voice_call` push now includes `callId`, `callerId`, `callerName`, `callerAvatar` and `expiresAt`, in addition to `bookingId`, `callType`, `type` and `notificationId`. All values are strings, with high priority and a 60s TTL as before.
+- Lint is clean across `src`, `test`, `prisma` and `scripts`: non-null assertions and `any` removed, unused variables and imports dropped. No behavior change.
+
 # 3.43.0
 
 - **Prepaid bookings now pay exactly for the work done.**

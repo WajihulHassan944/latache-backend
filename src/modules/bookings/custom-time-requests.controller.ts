@@ -29,8 +29,11 @@ export class CustomTimeRequestsController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiParam({ name: 'taskerId', required: true, type: Number })
   @ApiOperation({
+    deprecated: true,
     summary: 'Ask a Tasker for a date/time outside their listed availability',
     description:
+      'DEPRECATED: POST /bookings now accepts a date/time outside listed availability directly and creates a ' +
+      'pending booking with isCustomTime=true. Kept working for older clients. ' +
       'Creates a pending request the Tasker must accept or reject before expiresAt. One pending request per customer/tasker pair. On acceptance, book via POST /bookings/quote and POST /bookings with customTimeRequestId before the new expiresAt.',
   })
   create(
@@ -65,7 +68,13 @@ export class CustomTimeRequestsController {
   @Post('custom-time-requests/:requestId/respond')
   @Roles(UserRole.Tasker)
   @ApiParam({ name: 'requestId', required: true, type: String })
-  @ApiOperation({ summary: 'Tasker accepts or rejects a pending custom time request' })
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Tasker accepts or rejects a pending custom time request',
+    description:
+      'DEPRECATED: custom-time bookings now arrive as normal pending bookings (isCustomTime=true); accept them ' +
+      'with the regular booking confirm/reject actions.',
+  })
   respond(
     @CurrentUser() user: User,
     @Param() params: CustomTimeRequestParamDto,

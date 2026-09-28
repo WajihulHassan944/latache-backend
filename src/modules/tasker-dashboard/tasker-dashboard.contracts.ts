@@ -42,6 +42,8 @@ export interface TaskActionView {
 export interface TaskerTaskView {
   id: string;
   status: string;
+  /** Requested outside the Tasker's listed availability ("Custom Request" badge). */
+  isCustomTime: boolean;
   date: string;
   startTime: string;
   endTime: string;
@@ -76,6 +78,15 @@ export interface TaskerTaskView {
     cancelledAt: string | null;
     cancellationReason: string | null;
   };
+  /** Only while in_progress: extra time the Tasker asked for, awaiting the customer. */
+  pendingExtensionRequest: {
+    id: string;
+    requestedByRole: string;
+    minutes: number;
+    note: string | null;
+    status: string;
+    createdAt: string;
+  } | null;
   actions: TaskActionView;
 }
 

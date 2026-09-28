@@ -45,6 +45,21 @@ export interface PaymentTransactionListView {
   items: PaymentTransactionView[];
 }
 
+/** Stored on Booking.paymentEstimate and returned as payment.estimate. */
+export interface PaymentEstimate {
+  billableMinutes: number;
+  serviceAmount: number;
+  platformFeeAmount: number;
+  serviceSurchargeAmount: number;
+  taxAmount: number;
+  taxInclusive: boolean;
+  tipAmount: number;
+  donationAmount: number;
+  /** What the customer pays at acceptance (card/wallet); cash pays the final total on site. */
+  total: number;
+  calculatedAt: string;
+}
+
 export interface BookingPaymentStatusView {
   bookingId: string;
   /** null until the customer chooses how to pay. */
@@ -67,6 +82,10 @@ export interface BookingPaymentStatusView {
   totalChargedAmount: number | null;
   failureReason: string | null;
   paidAt: string | null;
+  /** Quote-formula breakdown; estimate.total is what card/wallet pays at acceptance. */
+  estimate: PaymentEstimate | null;
+  /** What complete-payment charges right now; null when nothing is due (not accepted, paid, or cash). */
+  amountDue: number | null;
 }
 
 export interface WalletTopupIntentView {

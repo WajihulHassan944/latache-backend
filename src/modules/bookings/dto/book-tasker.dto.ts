@@ -138,4 +138,14 @@ export class BookTaskerDto {
   @IsString()
   @Length(1, 40)
   customTimeRequestId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Inferred by default: a date/time matching an open listed slot books that slot; any other time becomes ' +
+      'a custom-time request (isCustomTime=true) the Tasker accepts or rejects like any pending booking. ' +
+      'Send false to require an open listed slot instead (409 when there is none).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  customTime?: boolean;
 }

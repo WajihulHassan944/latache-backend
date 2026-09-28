@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { ConfigService } from '@nestjs/config';
 import { dateOnlyFromDate, dateOnlyToDate, todayDateOnly } from '../../../common/utils/date.util';
 import { normalizePagination } from '../../../common/utils/pagination.util';
-import { parseTimeToMinutes } from '../../../common/utils/time.util';
+import { parseTimeToMinutes, rangesOverlap } from '../../../common/utils/time.util';
 import { PrismaService } from '../../../database/prisma.service';
 import { Prisma } from '../../../generated/prisma/client';
 import type {
@@ -50,6 +50,9 @@ type TaskerBookingWithRelations = Prisma.BookingGetPayload<{
     };
     service: { select: { id: true; name: true; slug: true; icon: true } };
     workSession: true;
+    extensionRequests: {
+      select: { id: true; requestedByRole: true; minutes: true; note: true; status: true; createdAt: true };
+    };
   };
 }>;
 
@@ -135,6 +138,27 @@ export class TaskerTasksService {
       if (booking.status !== TASKER_BOOKING_STATUS.Pending) {
         throw new ConflictException('Only pending tasks can be confirmed');
       }
+      // A custom-time booking never went through claimSlot, so make sure accepting it
+      // cannot double-book the Tasker against another live booking that day.
+      if (booking.isCustomTime) {
+        const sameDay = await transaction.booking.findMany({
+          where: {
+            taskerId,
+            bookingDate: booking.bookingDate,
+            id: { not: bookingId },
+            status: { not: TASKER_BOOKING_STATUS.Cancelled },
+          },
+          select: { id: true, startTime: true, endTime: true },
+        });
+        const conflict = sameDay.find((other) => rangesOverlap(other, booking));
+        if (conflict) {
+          throw new ConflictException({
+            code: 'CUSTOM_TIME_SLOT_CONFLICT',
+            message: 'This custom time overlaps another booking on the same day. Reject one of them first.',
+            conflictingBookingId: String(conflict.id),
+          });
+        }
+      }
       // Cash is settled on site; an online booking already paid at acceptance (e.g.
       // admin-reassigned to this Tasker) must not ask the customer to pay again.
       // The cash restriction is also enforced when accepting, not only when the
@@ -149,6 +173,8 @@ export class TaskerTasksService {
         status === TASKER_BOOKING_STATUS.AwaitingPayment
           ? await this.paymentDeadline(booking.bookingDate, booking.startTime, transaction)
           : null;
+      // Lock in the amount the customer is asked to pay (complete-payment charges exactly this).
+      if (!alreadyPaid) await this.payments.refreshPaymentEstimate(bookingId, transaction);
       const row = await transaction.booking.update({
         where: { id: bookingId },
         data: {
@@ -774,6 +800,12 @@ export class TaskerTasksService {
       },
       service: { select: { id: true, name: true, slug: true, icon: true } },
       workSession: true,
+      extensionRequests: {
+        where: { status: 'pending' },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { id: true, requestedByRole: true, minutes: true, note: true, status: true, createdAt: true },
+      },
     } as const;
   }
 
@@ -862,6 +894,7 @@ export class TaskerTasksService {
     return {
       id: String(booking.id),
       status: booking.status,
+      isCustomTime: booking.isCustomTime,
       date: dateOnlyFromDate(booking.bookingDate),
       startTime: booking.startTime,
       endTime: booking.endTime,
@@ -906,6 +939,17 @@ export class TaskerTasksService {
         cancelledAt: toIso(booking.cancelledAt),
         cancellationReason: booking.cancellationReason,
       },
+      pendingExtensionRequest:
+        booking.status === TASKER_BOOKING_STATUS.InProgress && booking.extensionRequests[0]
+          ? {
+              id: booking.extensionRequests[0].id,
+              requestedByRole: booking.extensionRequests[0].requestedByRole,
+              minutes: booking.extensionRequests[0].minutes,
+              note: booking.extensionRequests[0].note,
+              status: booking.extensionRequests[0].status,
+              createdAt: booking.extensionRequests[0].createdAt.toISOString(),
+            }
+          : null,
       actions: this.actions(booking.status, booking.workSession?.status ?? null),
     };
   }

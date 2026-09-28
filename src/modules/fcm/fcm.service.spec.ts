@@ -85,3 +85,46 @@ describe('FcmService.send payload (data-only)', () => {
     expect(message.apns).toBeDefined();
   });
 });
+
+describe('FcmService.send incoming call push', () => {
+  const call = {
+    title: 'Incoming voice call',
+    body: 'Sarah Al-Mansouri is calling you.',
+    type: 'incoming_voice_call',
+    category: 'messages',
+    entityType: 'conversation_call',
+    entityId: 'cm-call-id',
+    metadata: {
+      callId: 'cm-call-id',
+      bookingId: '482',
+      callType: 'voice',
+      callerId: '27',
+      callerName: 'Sarah Al-Mansouri',
+      callerAvatar: 'https://example.com/avatar.jpg',
+      expiresAt: '2026-09-28T10:00:45.000Z',
+    },
+  };
+
+  it('is data-only with every call field as a string', async () => {
+    const { message } = await captureSend(call as never);
+    expect(message).not.toHaveProperty('notification');
+    expect(message.data).toMatchObject({
+      type: 'incoming_voice_call',
+      callId: 'cm-call-id',
+      bookingId: '482',
+      callType: 'voice',
+      callerId: '27',
+      callerName: 'Sarah Al-Mansouri',
+      callerAvatar: 'https://example.com/avatar.jpg',
+      expiresAt: '2026-09-28T10:00:45.000Z',
+      notificationId: 'n1',
+    });
+    expect(Object.values(message.data).every((value) => typeof value === 'string')).toBe(true);
+  });
+
+  it('uses high priority with a 60 second TTL', async () => {
+    const { message } = await captureSend(call as never);
+    expect(message.android).toEqual({ priority: 'high', ttl: '60s' });
+    expect(message.apns).toMatchObject({ headers: { 'apns-priority': '10' } });
+  });
+});

@@ -30,8 +30,10 @@ import {
   BookingQuoteDto,
   CancelBookingDto,
   ExtendBookingDto,
+  ExtensionRequestParamDto,
   ListUnifiedBookingsQueryDto,
   RescheduleBookingDto,
+  RespondExtensionRequestDto,
   UpdateBookingBillingDto,
 } from './dto/booking-actions.dto';
 import { BookTaskerDto } from './dto/book-tasker.dto';
@@ -221,8 +223,12 @@ export class BookingsController {
   @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Customer, UserRole.Tasker)
   @ApiOperation({
-    summary: 'Customer or Tasker extends authorized task time',
-    description: 'This extends the billing authorization ceiling; it does not charge immediately.',
+    summary: 'Customer adds task time, or Tasker requests extra time',
+    description:
+      'Only while in_progress. Customer: minutes are added immediately (outcome=added). Tasker: creates a ' +
+      'pending request (outcome=pending_customer_approval) and adds nothing until the customer approves it via ' +
+      'POST :bookingId/extension-requests/:requestId/respond. One pending request at a time (409 ' +
+      'EXTENSION_REQUEST_PENDING). This raises the billing authorization ceiling; it does not charge immediately.',
   })
   extend(
     @CurrentUser() user: User,
@@ -230,6 +236,33 @@ export class BookingsController {
     @Body() dto: ExtendBookingDto,
   ) {
     return this.bookings.extend(user, params.bookingId, dto);
+  }
+
+  @Post(':bookingId/extension-requests/:requestId/respond')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @ApiParam({ name: 'requestId', required: true, type: String, description: 'Extension request ID.' })
+  @Roles(UserRole.Customer)
+  @ApiOperation({
+    summary: 'Customer approves or declines a Tasker extra-time request',
+    description:
+      'approve=true adds the requested minutes to timing.extensionMinutes; approve=false leaves timing unchanged. ' +
+      'Returns the updated booking.',
+  })
+  respondExtensionRequest(
+    @CurrentUser() user: User,
+    @Param() params: ExtensionRequestParamDto,
+    @Body() dto: RespondExtensionRequestDto,
+  ) {
+    return this.bookings.respondExtensionRequest(user.id, params.bookingId, params.requestId, dto);
+  }
+
+  @Post(':bookingId/extension-requests/:requestId/cancel')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @ApiParam({ name: 'requestId', required: true, type: String, description: 'Extension request ID.' })
+  @Roles(UserRole.Tasker)
+  @ApiOperation({ summary: 'Tasker withdraws their pending extra-time request' })
+  cancelExtensionRequest(@CurrentUser() user: User, @Param() params: ExtensionRequestParamDto) {
+    return this.bookings.cancelExtensionRequest(user.id, params.bookingId, params.requestId);
   }
 
   @Post(':bookingId/duration-review/approve')

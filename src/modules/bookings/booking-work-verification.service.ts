@@ -9,13 +9,17 @@ import { ConfigService } from '@nestjs/config';
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { PrismaService } from '../../database/prisma.service';
-import { Prisma, type User } from '../../generated/prisma/client';
+import { Prisma, type BookingWorkProof, type User } from '../../generated/prisma/client';
 import { AdminAuditService } from '../admin-audit/admin-audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import { TASK_TIMER_STATUS } from '../tasker-dashboard/tasker-dashboard.constants';
 import { UploadsService } from '../uploads/uploads.service';
 import type { WorkOtpDto, WorkProofDto } from './dto/work-verification.dto';
+
+type BookingWithVerification = Prisma.BookingGetPayload<{
+  include: { workProofs: true; workSession: true };
+}>;
 
 const FRONT_DOOR = 'front_door';
 const COMPLETION = 'completion';
@@ -48,7 +52,7 @@ export class BookingWorkVerificationService {
       include: { workProofs: { orderBy: { createdAt: 'asc' } }, workSession: true },
     });
     this.assertParticipant(user, booking);
-    return this.serializeState(booking!);
+    return this.serializeState(booking);
   }
 
   async attachFrontDoor(user: User, bookingId: number, dto: WorkProofDto) {
@@ -382,8 +386,8 @@ export class BookingWorkVerificationService {
     return this.state({ ...user, role } as User, bookingId);
   }
 
-  private serializeState(booking: any) {
-    const proof = (kind: string) => booking.workProofs?.find((item: any) => item.kind === kind) ?? null;
+  private serializeState(booking: BookingWithVerification) {
+    const proof = (kind: string) => booking.workProofs.find((item) => item.kind === kind) ?? null;
     const frontDoor = proof(FRONT_DOOR);
     const completion = proof(COMPLETION);
     return {
@@ -407,7 +411,7 @@ export class BookingWorkVerificationService {
     };
   }
 
-  private proofView(row: any) {
+  private proofView(row: BookingWorkProof) {
     return {
       id: row.id,
       kind: row.kind,
@@ -419,7 +423,10 @@ export class BookingWorkVerificationService {
     };
   }
 
-  private assertParticipant(user: User, booking: any): void {
+  private assertParticipant<T extends { customerId: number; taskerId: number }>(
+    user: User,
+    booking: T | null,
+  ): asserts booking is T {
     if (!booking) throw new NotFoundException('Booking not found');
     const allowed = user.role === UserRole.Customer
       ? booking.customerId === user.id

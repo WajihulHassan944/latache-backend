@@ -165,6 +165,7 @@ model User {
   referralRewards              ReferralReward[]            @relation("ReferralRewardRecipient")
   convertedGuestSessions       GuestSession[]              @relation("GuestSessionConvertedUser")
   rescheduleProposalsMade      RescheduleProposal[]        @relation("RescheduleProposalProposedBy")
+  extensionRequestsMade        BookingExtensionRequest[]   @relation("BookingExtensionRequestedBy")
   platformSettlements          TaskerPlatformSettlement[]  @relation("TaskerPlatformSettlements")
 
   @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
@@ -923,6 +924,11 @@ model Booking {
   extensionMinutes          Int       @default(0)
   /// null until the customer chooses how to pay (at creation, or after the Tasker accepts).
   paymentSource             String?   @db.VarChar(32)
+  /// Estimate the customer pays at acceptance (quote formula). Set at creation, refreshed on
+  /// reschedule, locked in when the Tasker accepts; complete-payment charges exactly its total.
+  paymentEstimate           Json?     @db.JsonB
+  /// Requested outside the Tasker's listed availability (carried on a dedicated isCustom slot).
+  isCustomTime              Boolean   @default(false)
   paymentStatus             String    @default("payment_method_required") @db.VarChar(48)
   paymentCurrency           String    @default("USD") @db.VarChar(3)
   stripePaymentMethodId     String?   @db.VarChar(255)
@@ -976,6 +982,7 @@ model Booking {
   referralQualifications Referral[]
   referralRewards        ReferralReward[]
   rescheduleProposals    RescheduleProposal[]
+  extensionRequests      BookingExtensionRequest[]
 
   @@index([availabilityId], map: "bookings_availability_idx")
   @@index([customerId, bookingDate], map: "bookings_customer_date_idx")
@@ -1017,6 +1024,28 @@ model RescheduleProposal {
   @@index([bookingId, status], map: "reschedule_proposals_booking_status_idx")
   @@index([proposedById], map: "reschedule_proposals_proposed_by_idx")
   @@map("RescheduleProposals")
+}
+
+/// Extra task time requested by the Tasker; Booking.extensionMinutes only grows once the customer approves.
+model BookingExtensionRequest {
+  id              String    @id @default(cuid()) @db.VarChar(40)
+  bookingId       Int
+  requestedById   Int
+  requestedByRole String    @default("tasker") @db.VarChar(24)
+  minutes         Int
+  note            String?   @db.VarChar(500)
+  /// pending | approved | rejected | cancelled | expired
+  status          String    @default("pending") @db.VarChar(32)
+  respondedAt     DateTime? @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  booking     Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "BookingExtensionRequests_bookingId_fkey")
+  requestedBy User    @relation("BookingExtensionRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "BookingExtensionRequests_requestedById_fkey")
+
+  @@index([bookingId, status], map: "booking_extension_requests_booking_status_idx")
+  @@index([requestedById], map: "booking_extension_requests_requested_by_idx")
+  @@map("BookingExtensionRequests")
 }
 
 model ServiceOption {

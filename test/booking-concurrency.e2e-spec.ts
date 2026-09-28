@@ -126,6 +126,7 @@ describe('Booking slot concurrency (e2e)', () => {
       isVerified: true,
       isAdmin: false,
       role: UserRole.Customer,
+      roles: [UserRole.Customer],
       permissions: [],
       sessionId,
     };

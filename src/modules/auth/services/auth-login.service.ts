@@ -118,7 +118,8 @@ export class AuthLoginService {
       });
     }
 
-    if (available.length === 1) return available[0]!;
+    const [onlyRole] = available;
+    if (available.length === 1 && onlyRole) return onlyRole;
     const primary = user.role as UserRole;
     if (available.includes(primary)) return primary;
     const administrative = available.find((role) => ADMINISTRATIVE_ROLES.includes(role));

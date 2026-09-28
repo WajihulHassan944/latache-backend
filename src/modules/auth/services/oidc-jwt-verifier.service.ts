@@ -29,9 +29,9 @@ export class OidcJwtVerifierService {
     const parts = input.token.split('.');
     if (parts.length !== 3) throw new UnauthorizedException('Invalid social identity token');
 
-    const [encodedHeader, encodedPayload, encodedSignature] = parts;
-    const header = this.decodeJson<JwtHeader>(encodedHeader!);
-    const payload = this.decodeJson<OidcJwtPayload>(encodedPayload!);
+    const [encodedHeader = '', encodedPayload = '', encodedSignature = ''] = parts;
+    const header = this.decodeJson<JwtHeader>(encodedHeader);
+    const payload = this.decodeJson<OidcJwtPayload>(encodedPayload);
     if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) {
       throw new UnauthorizedException('Invalid social identity token');
     }
@@ -46,7 +46,7 @@ export class OidcJwtVerifierService {
     }
     const publicKey = createPublicKey({ key, format: 'jwk' });
     const signed = Buffer.from(`${encodedHeader}.${encodedPayload}`, 'utf8');
-    const signature = Buffer.from(encodedSignature!, 'base64url');
+    const signature = Buffer.from(encodedSignature, 'base64url');
     if (!verify('RSA-SHA256', signed, publicKey, signature)) {
       throw new UnauthorizedException('Invalid social identity token');
     }

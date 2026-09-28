@@ -39,6 +39,7 @@ import {
 import { CompleteBookingPaymentDto, ListPaymentTransactionsQueryDto, RetryBookingPaymentDto } from './payments.dto';
 import type {
   BookingPaymentStatusView,
+  PaymentEstimate,
   BookingRefundRequest,
   BookingRefundResult,
   ConfirmManualCashDisputeRefundInput,
@@ -68,6 +69,9 @@ type StripeDisputeWithPaymentIntent = Stripe.Dispute & {
   is_charge_refundable?: boolean;
 };
 
+
+/** Roles that may keep saved cards: customers (bookings) and Taskers (plan checkout). */
+export type CardHolderRole = 'customer' | 'tasker';
 
 @Injectable()
 export class PaymentsService {
@@ -116,8 +120,8 @@ export class PaymentsService {
     return this.stripeProvider.isEnabled();
   }
 
-  async createSetupIntent(customerId: number): Promise<SetupIntentView> {
-    const stripeCustomerId = await this.ensureStripeCustomer(customerId);
+  async createSetupIntent(customerId: number, role: CardHolderRole = 'customer'): Promise<SetupIntentView> {
+    const stripeCustomerId = await this.ensureStripeCustomer(customerId, role);
     const intent = await this.stripeProvider.client().setupIntents.create(
       {
         customer: stripeCustomerId,
@@ -125,7 +129,7 @@ export class PaymentsService {
         payment_method_types: ['card'],
         metadata: {
           latacheCustomerId: String(customerId),
-          purpose: 'future_booking_payment',
+          purpose: role === 'tasker' ? 'future_tasker_plan_payment' : 'future_booking_payment',
         },
       },
       { idempotencyKey: `latache:setup:${customerId}:${Date.now()}` },
@@ -140,8 +144,8 @@ export class PaymentsService {
     };
   }
 
-  async listPaymentMethods(customerId: number): Promise<SavedPaymentMethodView[]> {
-    const stripeCustomerId = await this.ensureStripeCustomer(customerId);
+  async listPaymentMethods(customerId: number, role: CardHolderRole = 'customer'): Promise<SavedPaymentMethodView[]> {
+    const stripeCustomerId = await this.ensureStripeCustomer(customerId, role);
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: customerId },
       select: { defaultStripePaymentMethodId: true },
@@ -165,8 +169,9 @@ export class PaymentsService {
   async setDefaultPaymentMethod(
     customerId: number,
     paymentMethodId: string,
+    role: CardHolderRole = 'customer',
   ): Promise<SavedPaymentMethodView> {
-    const stripeCustomerId = await this.ensureStripeCustomer(customerId);
+    const stripeCustomerId = await this.ensureStripeCustomer(customerId, role);
     const method = await this.assertStripePaymentMethodOwnership(stripeCustomerId, paymentMethodId);
     await this.stripeProvider.client().customers.update(stripeCustomerId, {
       invoice_settings: { default_payment_method: paymentMethodId },
@@ -611,7 +616,11 @@ export class PaymentsService {
       if (booking.paymentDueAt !== null && booking.paymentDueAt <= new Date()) throw this.paymentWindowClosed();
       return this.confirmAcceptedCashBooking(bookingId, customerId);
     }
-    const amount = await this.acceptanceAmount(booking);
+    // Charge exactly what the booking shows as amountDue (locked in at acceptance).
+    const stored = booking.paymentEstimate as unknown as PaymentEstimate | null;
+    const amount = stored && typeof stored.total === 'number'
+      ? stored.total
+      : (await this.refreshPaymentEstimate(bookingId)).total;
     // Past the deadline only an already-succeeded Stripe attempt may still land;
     // anything new is refused (the expiry sweep cancels the booking shortly).
     const paymentWindowClosed = booking.paymentDueAt !== null && booking.paymentDueAt <= new Date();
@@ -893,6 +902,7 @@ export class PaymentsService {
       if (result === 'failed') failed += 1;
     }
     const { refunded: reconciled } = await this.reconcileOverCapturedBookings();
+    await this.backfillPaymentEstimates();
     return { refunded, failed, reconciled };
   }
 
@@ -1269,14 +1279,14 @@ export class PaymentsService {
   }
 
   /**
-   * What the customer prepays at acceptance: the same estimate the quote shows
+   * What the customer pays at acceptance: the same estimate the quote shows
    * (billable time x rate, plus platform fee, surcharge, tax, tip and donation).
    * The final settlement then charges or refunds the difference to the real total.
    */
-  private async acceptanceAmount(booking: {
-    hourlyRate: Prisma.Decimal; estimatedDurationMinutes: number; taskerId: number; serviceId: number;
-    bookingDate: Date; createdAt: Date; tipAmount: Prisma.Decimal; donationAmount: Prisma.Decimal;
-  }): Promise<number> {
+  async bookingEstimate(booking: {
+    hourlyRate: Prisma.Decimal | number | string; estimatedDurationMinutes: number; taskerId: number; serviceId: number;
+    bookingDate: Date; createdAt: Date; tipAmount: Prisma.Decimal | number | string; donationAmount: Prisma.Decimal | number | string;
+  }): Promise<PaymentEstimate> {
     const billableMinutes = Math.max(this.minimumBillableMinutes, booking.estimatedDurationMinutes);
     const pricing = await this.platformSettings.calculatePricingCharges({
       serviceAmount: roundMoney(Number(booking.hourlyRate) * (billableMinutes / 60)),
@@ -1285,10 +1295,43 @@ export class PaymentsService {
       bookingDate: booking.bookingDate,
       bookingCreatedAt: booking.createdAt,
     });
-    return roundMoney(
-      pricing.serviceAmount + pricing.platformFeeAmount + pricing.serviceSurchargeAmount +
-      Number(booking.tipAmount) + Number(booking.donationAmount) + (pricing.taxInclusive ? 0 : pricing.taxAmount),
-    );
+    const tipAmount = roundMoney(Number(booking.tipAmount));
+    const donationAmount = roundMoney(Number(booking.donationAmount));
+    return {
+      billableMinutes,
+      serviceAmount: pricing.serviceAmount,
+      platformFeeAmount: pricing.platformFeeAmount,
+      serviceSurchargeAmount: pricing.serviceSurchargeAmount,
+      taxAmount: pricing.taxAmount,
+      taxInclusive: pricing.taxInclusive,
+      tipAmount,
+      donationAmount,
+      total: roundMoney(
+        pricing.serviceAmount + pricing.platformFeeAmount + pricing.serviceSurchargeAmount +
+        tipAmount + donationAmount + (pricing.taxInclusive ? 0 : pricing.taxAmount),
+      ),
+      calculatedAt: new Date().toISOString(),
+    };
+  }
+
+  /** Recomputes and stores Booking.paymentEstimate from the booking's current terms. */
+  async refreshPaymentEstimate(bookingId: number, transaction?: Prisma.TransactionClient): Promise<PaymentEstimate> {
+    const db = transaction ?? this.prisma;
+    const booking = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
+    const estimate = await this.bookingEstimate(booking);
+    await db.booking.update({ where: { id: bookingId }, data: { paymentEstimate: estimate as unknown as Prisma.InputJsonValue } });
+    return estimate;
+  }
+
+  /** Self-healing: active bookings created before estimates existed get one. */
+  async backfillPaymentEstimates(): Promise<number> {
+    const rows = await this.prisma.booking.findMany({
+      where: { status: { in: ['pending', 'awaiting_payment', 'confirmed'] }, paymentEstimate: { equals: Prisma.DbNull } },
+      select: { id: true },
+      take: 100,
+    });
+    for (const row of rows) await this.refreshPaymentEstimate(row.id);
+    return rows.length;
   }
 
   confirmCashCollection(input: ConfirmCashCollectionInput) {
@@ -3216,7 +3259,12 @@ export class PaymentsService {
     return refund.id;
   }
 
-  private async ensureStripeCustomer(customerId: number): Promise<string> {
+  /**
+   * One Stripe Customer per User, shared by both roles (a dual-role user sees the same
+   * saved cards). Taskers use it for plan checkout. The caller's active role must be
+   * enabled and its profile active.
+   */
+  private async ensureStripeCustomer(customerId: number, role: CardHolderRole = 'customer'): Promise<string> {
     const user = await this.prisma.user.findUnique({
       where: { id: customerId },
       select: {
@@ -3224,6 +3272,7 @@ export class PaymentsService {
         role: true,
         roles: true,
         customerProfile: { select: { status: true } },
+        taskerProfile: { select: { status: true } },
         email: true,
         firstName: true,
         lastName: true,
@@ -3232,8 +3281,9 @@ export class PaymentsService {
         stripeCustomerId: true,
       },
     });
-    if (!user || !user.roles.includes('customer') || user.customerProfile?.status !== 'active') {
-      throw new NotFoundException('Customer account not found');
+    const profileStatus = role === 'tasker' ? user?.taskerProfile?.status : user?.customerProfile?.status;
+    if (!user || !user.roles.includes(role) || profileStatus !== 'active') {
+      throw new NotFoundException(role === 'tasker' ? 'Tasker account not found' : 'Customer account not found');
     }
     if (user.stripeCustomerId) return user.stripeCustomerId;
 
@@ -3327,6 +3377,9 @@ export class PaymentsService {
 
   private serializeBookingPayment(booking: {
     id: number;
+    status: string;
+    capturedAt: Date | null;
+    paymentEstimate: Prisma.JsonValue | null;
     paymentSource: string | null;
     paymentStatus: string;
     paymentCurrency: string;
@@ -3347,6 +3400,7 @@ export class PaymentsService {
     paymentFailureReason: string | null;
     paidAt: Date | null;
   }): BookingPaymentStatusView {
+    const estimate = booking.paymentEstimate as unknown as PaymentEstimate | null;
     return {
       bookingId: String(booking.id),
       source: booking.paymentSource,
@@ -3369,6 +3423,12 @@ export class PaymentsService {
         booking.totalChargedAmount === null ? null : Number(booking.totalChargedAmount),
       failureReason: booking.paymentFailureReason,
       paidAt: booking.paidAt?.toISOString() ?? null,
+      estimate,
+      amountDue:
+        estimate && booking.status === 'awaiting_payment' && booking.capturedAt === null &&
+        booking.paymentSource !== PAYMENT_SOURCE.Cash
+          ? estimate.total
+          : null,
     };
   }
 }

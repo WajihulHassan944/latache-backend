@@ -65,13 +65,39 @@ export class ExtendBookingDto {
     example: 30,
     minimum: 1,
     maximum: 240,
-    description: 'Additional minutes explicitly authorized by the customer.',
+    description:
+      'Additional minutes. From the customer they are added immediately; from the Tasker they ' +
+      'create a pending request that adds nothing until the customer approves it.',
   })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(240)
   minutes!: number;
+
+  @ApiPropertyOptional({ example: 'The cabinet needs one more coat.', maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @Length(1, 500)
+  note?: string;
+}
+
+export class ExtensionRequestParamDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  bookingId!: number;
+
+  @ApiProperty({ example: 'cm123abc456def' })
+  @IsString()
+  @Length(1, 40)
+  requestId!: string;
+}
+
+export class RespondExtensionRequestDto {
+  @ApiProperty({ example: true, description: 'true adds the requested minutes; false declines them.' })
+  @IsBoolean()
+  approve!: boolean;
 }
 
 export class UpdateBookingBillingDto {
@@ -144,4 +170,13 @@ export class BookingQuoteDto {
   @IsString()
   @Length(1, 40)
   customTimeRequestId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Same as POST /bookings: inferred by default (no open listed slot at this time = custom time); ' +
+      'false requires an open listed slot.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  customTime?: boolean;
 }

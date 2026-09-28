@@ -218,7 +218,7 @@ export class ContentManagementService {
     this.validateTranslations(dto.translations);
     try {
       const updated = await this.prisma.$transaction(async (transaction) => {
-        const row = await transaction.contentPage.update({
+        await transaction.contentPage.update({
           where: { id },
           data: {
             ...(dto.slug !== undefined ? { slug: dto.slug.toLowerCase() } : {}),
@@ -326,7 +326,7 @@ export class ContentManagementService {
     if (!block) throw new NotFoundException('Content block not found');
     this.validateTranslations(dto.translations);
     const row = await this.prisma.$transaction(async (transaction) => {
-      const updated = await transaction.contentBlock.update({
+      await transaction.contentBlock.update({
         where: { id: blockId },
         data: {
           ...(dto.type !== undefined ? { type: dto.type } : {}),

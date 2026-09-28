@@ -164,9 +164,11 @@ export class SocialAuthService {
       }
 
       await this.roles.assertSelectable(user, selectedRole, transaction);
+      // Unreachable: identity was either found or created above; narrows the type.
+      if (!identity) throw new ForbiddenException('Linked Latache account is unavailable');
       const now = new Date();
       await transaction.socialAuthIdentity.update({
-        where: { id: identity!.id },
+        where: { id: identity.id },
         data: {
           providerEmail: verified.email,
           emailVerified: verified.emailVerified,

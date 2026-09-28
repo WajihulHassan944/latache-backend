@@ -25,7 +25,7 @@ import {
   PaymentMethodParamDto,
   RetryBookingPaymentDto,
 } from './payments.dto';
-import { PaymentsService } from './payments.service';
+import { PaymentsService, type CardHolderRole } from './payments.service';
 import type {
   BookingPaymentStatusView,
   CustomerWithdrawalView,
@@ -44,30 +44,41 @@ import type {
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
+  // Card routes are shared with Taskers (plan checkout "Card on File"); every other
+  // /payments route stays customer-only via the controller-level @Roles.
   @Post('setup-intent')
+  @Roles(UserRole.Customer, UserRole.Tasker)
   @ApiOperation({
-    summary: 'Create a Stripe SetupIntent for a saved card',
+    summary: 'Create a Stripe SetupIntent for a saved card (Customer or Tasker)',
     description:
-      'Saves a card for future booking charges without charging it now. The frontend confirms the SetupIntent with Stripe.js/SDK.',
+      'Saves a card for future charges (customer bookings, Tasker plan checkout) without charging it now. ' +
+      'The frontend confirms the SetupIntent with Stripe.js/SDK.',
   })
   createSetupIntent(@CurrentUser() user: User): Promise<SetupIntentView> {
-    return this.payments.createSetupIntent(user.id);
+    return this.payments.createSetupIntent(user.id, this.cardHolderRole(user));
   }
 
   @Get('methods')
-  @ApiOperation({ summary: 'List saved Stripe card payment methods' })
+  @Roles(UserRole.Customer, UserRole.Tasker)
+  @ApiOperation({ summary: 'List saved Stripe card payment methods (Customer or Tasker)' })
   methods(@CurrentUser() user: User): Promise<SavedPaymentMethodView[]> {
-    return this.payments.listPaymentMethods(user.id);
+    return this.payments.listPaymentMethods(user.id, this.cardHolderRole(user));
   }
 
   @Patch('methods/:id/default')
+  @Roles(UserRole.Customer, UserRole.Tasker)
   @ApiParam({ name: 'id', required: true, type: String, description: 'Saved payment method ID.', example: 'pm_123' })
-  @ApiOperation({ summary: 'Set the customer default card' })
+  @ApiOperation({ summary: 'Set the default saved card (Customer or Tasker)' })
   defaultMethod(
     @CurrentUser() user: User,
     @Param() params: PaymentMethodParamDto,
   ): Promise<SavedPaymentMethodView> {
-    return this.payments.setDefaultPaymentMethod(user.id, params.id);
+    return this.payments.setDefaultPaymentMethod(user.id, params.id, this.cardHolderRole(user));
+  }
+
+  /** request.user.role is the role selected by the session's access token. */
+  private cardHolderRole(user: User): CardHolderRole {
+    return user.role === UserRole.Tasker ? 'tasker' : 'customer';
   }
 
   @Delete('methods/:id')

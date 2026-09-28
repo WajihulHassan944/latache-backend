@@ -266,9 +266,16 @@ export class RealtimeCallsService {
             body: `${callerName} is calling you.`,
             entityType: 'conversation_call',
             entityId: created.id,
+            // Everything the app needs to ring natively from a data-only push while
+            // backgrounded/killed (FcmService stringifies values; notificationId is added there).
             metadata: {
+              callId: created.id,
               bookingId: String(created.bookingId),
               callType: created.type,
+              callerId: String(created.initiator.id),
+              callerName,
+              callerAvatar: created.initiator.profilePicture ?? '',
+              expiresAt: created.expiresAt.toISOString(),
             },
           },
         });

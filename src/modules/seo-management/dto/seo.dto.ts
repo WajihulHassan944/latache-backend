@@ -1,6 +1,5 @@
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Length, Max, Min, Matches } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
 
 const PATH = /^\/(?:[^\s?#]*)?$/;
 const LOCALE = /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/;
