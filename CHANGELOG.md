@@ -1,3 +1,8 @@
+# 3.48.0
+
+- **Taskers can remove a saved card.** `DELETE /api/payments/methods/:id` was still `@Roles(Customer)`-only, so a Tasker who added a card (or Card on File plan checkout) could list cards and set a default but never detach one — including a mistaken or expired card. Ownership is unchanged: `assertStripePaymentMethodOwnership` already scopes to the session's Stripe customer.
+- **Clear error when a Tasker/Customer profile isn't active yet.** `POST /api/payments/setup-intent` (and the other card routes) returned a bare 404 `"Tasker account not found"` when the caller's profile wasn't `active`, which the app surfaced as a generic failure. They now return 403 with `code: "TASKER_PROFILE_NOT_ACTIVE"` / `"CUSTOMER_PROFILE_NOT_ACTIVE"` and a message the client can show verbatim (e.g. "still under review").
+
 # 3.47.0
 
 - **RBAC audit fix: `customers.read_sensitive` / `taskers.read_sensitive` are now actually enforced.**

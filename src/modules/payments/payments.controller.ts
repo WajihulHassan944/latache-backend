@@ -82,13 +82,14 @@ export class PaymentsController {
   }
 
   @Delete('methods/:id')
+  @Roles(UserRole.Customer, UserRole.Tasker)
   @ApiParam({ name: 'id', required: true, type: String, description: 'Saved payment method ID.', example: 'pm_123' })
-  @ApiOperation({ summary: 'Detach a saved card that is not used by an active booking' })
+  @ApiOperation({ summary: 'Detach a saved card that is not used by an active booking (Customer or Tasker)' })
   deleteMethod(
     @CurrentUser() user: User,
     @Param() params: PaymentMethodParamDto,
   ): Promise<{ deleted: true; id: string }> {
-    return this.payments.detachPaymentMethod(user.id, params.id);
+    return this.payments.detachPaymentMethod(user.id, params.id, this.cardHolderRole(user));
   }
 
   @Get('wallet')

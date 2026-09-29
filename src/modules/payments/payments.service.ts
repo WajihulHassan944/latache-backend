@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -217,8 +218,9 @@ export class PaymentsService {
   async detachPaymentMethod(
     customerId: number,
     paymentMethodId: string,
+    role: CardHolderRole = 'customer',
   ): Promise<{ deleted: true; id: string }> {
-    const stripeCustomerId = await this.ensureStripeCustomer(customerId);
+    const stripeCustomerId = await this.ensureStripeCustomer(customerId, role);
     await this.assertStripePaymentMethodOwnership(stripeCustomerId, paymentMethodId);
 
     const inUse = await this.prisma.booking.count({
@@ -3380,7 +3382,13 @@ export class PaymentsService {
     });
     const profileStatus = role === 'tasker' ? user?.taskerProfile?.status : user?.customerProfile?.status;
     if (!user || !user.roles.includes(role) || profileStatus !== 'active') {
-      throw new NotFoundException(role === 'tasker' ? 'Tasker account not found' : 'Customer account not found');
+      throw new ForbiddenException({
+        code: role === 'tasker' ? 'TASKER_PROFILE_NOT_ACTIVE' : 'CUSTOMER_PROFILE_NOT_ACTIVE',
+        message:
+          role === 'tasker'
+            ? 'Your Tasker account is still under review and cannot be used for payments yet.'
+            : 'Your Customer account is not active.',
+      });
     }
     if (user.stripeCustomerId) return user.stripeCustomerId;
 
