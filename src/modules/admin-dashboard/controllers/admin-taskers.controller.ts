@@ -53,8 +53,11 @@ export class AdminTaskersController {
   @Get()
   @Permissions('taskers.read')
   @ApiOperation({ summary: 'List Taskers for Tasker Management' })
-  list(@Query() query: ListAdminTaskersDto) {
-    return this.taskers.list(query);
+  @ApiForbiddenResponse({
+    description: 'Missing taskers.read, or missing taskers.read_sensitive when filtering by ipAddress.',
+  })
+  list(@CurrentUser() actor: User, @Query() query: ListAdminTaskersDto) {
+    return this.taskers.list(actor, query);
   }
 
   @Get('pending-verification')
@@ -64,8 +67,11 @@ export class AdminTaskersController {
     description:
       'The queue is based on real pending-approval/onboarding state. Background-check and insurance provider results are not invented and remain null until such providers are integrated.',
   })
-  pending(@Query() query: ListAdminTaskersDto) {
-    return this.taskers.pendingVerification(query);
+  @ApiForbiddenResponse({
+    description: 'Missing taskers.read, or missing taskers.read_sensitive when filtering by ipAddress.',
+  })
+  pending(@CurrentUser() actor: User, @Query() query: ListAdminTaskersDto) {
+    return this.taskers.pendingVerification(actor, query);
   }
 
   @Get('performance')

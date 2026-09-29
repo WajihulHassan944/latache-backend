@@ -1,3 +1,9 @@
+# 3.47.0
+
+- **RBAC audit fix: `customers.read_sensitive` / `taskers.read_sensitive` are now actually enforced.**
+  - Both permissions existed in the RBAC catalog and were documented on `GET /api/admin/customers?ipAddress=/nearLat=/nearLng=` and `GET /api/admin/taskers?ipAddress=` as required, but no controller or service ever checked them — any delegated admin holding only `customers.read`/`taskers.read` (e.g. Support Administrator) could already search customers/Taskers by recorded session IP address or saved-address location.
+  - `AdminCustomersService.list` and `AdminTaskersService.list`/`pendingVerification` now throw 403 when a non-Super-Admin actor supplies `ipAddress`/`nearLat`/`nearLng` without the matching `read_sensitive` permission. Super Admin is unaffected (still bypasses all permission checks).
+
 # 3.46.0
 
 - **Estimates stay accurate through extra time.**

@@ -45,7 +45,16 @@ export class AdminCustomersService {
     return this.accountDeletion.permanentlyDelete(actor, customerId, UserRole.Customer, reason);
   }
 
-  async list(query: ListAdminCustomersDto) {
+  async list(actor: User, query: ListAdminCustomersDto) {
+    if (
+      (query.ipAddress || query.nearLat !== undefined || query.nearLng !== undefined) &&
+      actor.role !== UserRole.SuperAdmin &&
+      !actor.permissions.includes('customers.read_sensitive')
+    ) {
+      throw new ForbiddenException(
+        'customers.read_sensitive is required to filter customers by IP address or saved location',
+      );
+    }
     const { page, limit, skip } = pagination(query.page, query.limit);
     const search = query.search?.trim();
     const phoneDigits = query.phone?.replace(/\D/g, '') ?? '';

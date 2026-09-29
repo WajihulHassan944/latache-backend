@@ -124,7 +124,10 @@ describe('AdminTaskersService', () => {
         { taskerId: 1, status: 'cancelled', _count: { _all: 1 } },
       ]);
 
-      const result = await service.list({ page: 1, limit: 20 } as never);
+      const result = await service.list(
+        { role: 'super_admin', permissions: [] } as never,
+        { page: 1, limit: 20 } as never,
+      );
 
       expect(result.items.find((item) => item.id === '1')?.completionRate).toBe(75);
       expect(result.items.find((item) => item.id === '2')?.completionRate).toBe(0);
@@ -150,7 +153,10 @@ describe('AdminTaskersService', () => {
         { taskerId: 2, status: 'completed', _count: { _all: 5 } },
       ]);
 
-      const result = await service.list({ page: 1, limit: 2, sort: 'completion_rate_desc' } as never);
+      const result = await service.list(
+        { role: 'super_admin', permissions: [] } as never,
+        { page: 1, limit: 2, sort: 'completion_rate_desc' } as never,
+      );
 
       expect(result.items.map((item) => item.id)).toEqual(['2', '1']);
       expect(result.pagination.totalItems).toBe(3);

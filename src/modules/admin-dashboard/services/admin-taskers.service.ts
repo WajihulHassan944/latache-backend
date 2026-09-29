@@ -34,15 +34,24 @@ export class AdminTaskersService {
     return this.accountDeletion.permanentlyDelete(actor, taskerId, UserRole.Tasker, reason);
   }
 
-  async list(query: ListAdminTaskersDto) {
-    return this.listInternal(query, false);
+  async list(actor: User, query: ListAdminTaskersDto) {
+    return this.listInternal(actor, query, false);
   }
 
-  async pendingVerification(query: ListAdminTaskersDto) {
-    return this.listInternal(query, true);
+  async pendingVerification(actor: User, query: ListAdminTaskersDto) {
+    return this.listInternal(actor, query, true);
   }
 
-  private async listInternal(query: ListAdminTaskersDto, pendingOnly: boolean) {
+  private async listInternal(actor: User, query: ListAdminTaskersDto, pendingOnly: boolean) {
+    if (
+      query.ipAddress &&
+      actor.role !== UserRole.SuperAdmin &&
+      !actor.permissions.includes('taskers.read_sensitive')
+    ) {
+      throw new ForbiddenException(
+        'taskers.read_sensitive is required to filter Taskers by IP address',
+      );
+    }
     const { page, limit, skip } = pagination(query.page, query.limit);
     const search = query.search?.trim();
     const where: Prisma.UserWhereInput = {

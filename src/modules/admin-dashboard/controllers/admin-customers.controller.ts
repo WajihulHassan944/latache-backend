@@ -47,8 +47,12 @@ export class AdminCustomersController {
   @Get()
   @Permissions('customers.read')
   @ApiOperation({ summary: 'List and search customers for Customer Management' })
-  list(@Query() query: ListAdminCustomersDto) {
-    return this.customers.list(query);
+  @ApiForbiddenResponse({
+    description:
+      'Missing customers.read, or missing customers.read_sensitive when filtering by ipAddress/nearLat/nearLng.',
+  })
+  list(@CurrentUser() actor: User, @Query() query: ListAdminCustomersDto) {
+    return this.customers.list(actor, query);
   }
 
   @Get('payments')
