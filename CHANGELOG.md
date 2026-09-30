@@ -1,3 +1,7 @@
+# 3.49.0
+
+- **Notification translation coverage audit: 22 notification types were silently falling back to English in Arabic/Darija.** Every `type` a notification can be created with (Tasker account moderation, account suspend/reactivate, withdrawal reject/fail, cash-booking restriction, elite auto-promotion/demotion/retention, dispute settlement expiry, extra-time approval/rejection, and others) is now cross-checked against `ARABIC_TEMPLATES`/`DARIJA_TEMPLATES` in `NotificationTemplateService`. Added the missing `ar`/`ary` pairs for: `task_time_extension_approved`, `task_time_extension_rejected`, `tasker_application_approved`, `tasker_application_rejected`, `account_suspended`, `account_deactivated`, `account_active`, `withdrawal_rejected`, `withdrawal_failed`, `booking_earning_unblocked`, `cash_bookings_restricted`, `cash_bookings_unrestricted`, `booking_payment_required`, `dispute_settlement_proposal_expired`, `booking_cash_payment_confirmed`, `booking_customer_reminder`, `elite_auto_promoted`, `elite_auto_demoted`, `elite_retention_warning`, `elite_retention_recovered`, `elite_badge_auto_awarded`. Both template maps stay in sync at 130 keys each.
+
 # 3.48.0
 
 - **Taskers can remove a saved card.** `DELETE /api/payments/methods/:id` was still `@Roles(Customer)`-only, so a Tasker who added a card (or Card on File plan checkout) could list cards and set a default but never detach one — including a mistaken or expired card. Ownership is unchanged: `assertStripePaymentMethodOwnership` already scopes to the session's Stripe customer.
