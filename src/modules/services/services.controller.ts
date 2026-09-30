@@ -42,7 +42,7 @@ import { RequestLocale } from '../localization/request-locale.decorator';
   name: 'Accept-Language',
   required: false,
   description:
-    'Requested dynamic-content locale (en, ar, or ary for Moroccan Darija). An authenticated saved preference takes priority; missing translations fall back to English, then canonical content.',
+    'Requested dynamic-content locale (en, ar, ary for Moroccan Darija, fr, or es). An authenticated saved preference takes priority; missing translations fall back to English, then canonical content.',
   example: 'ary-MA',
 })
 @Controller('services')

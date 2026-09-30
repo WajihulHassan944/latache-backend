@@ -53,7 +53,7 @@ export class UpdateProfileDto {
   bio?: string;
 
   @ApiPropertyOptional({
-    enum: ['en', 'ar', 'ary'],
+    enum: ['en', 'ar', 'ary', 'fr', 'es'],
     example: 'ary',
     description:
       'Persists the account language used before Accept-Language for dynamic content, notifications, and email. ary is Moroccan Darija.',

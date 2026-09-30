@@ -69,7 +69,7 @@ const isRedisUrl = (value: string): boolean => {
 export const validateEnvironment = (environment: Environment): Environment => {
   const errors: string[] = [];
   const nodeEnvironment = environment.NODE_ENV ?? 'local';
-  const supportedLocales = (environment.SUPPORTED_LOCALES ?? 'en,ar,ary')
+  const supportedLocales = (environment.SUPPORTED_LOCALES ?? 'en,ar,ary,fr,es')
     .split(',')
     .map((locale) => locale.trim().toLowerCase())
     .filter(Boolean);

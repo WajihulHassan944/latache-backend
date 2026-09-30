@@ -26,7 +26,7 @@ const asStringList = (value: string | undefined, fallback: readonly string[] = [
 
 export default () => {
   const nodeEnvironment = process.env.NODE_ENV ?? 'local';
-  const supportedLocales = asStringList(process.env.SUPPORTED_LOCALES, ['en', 'ar', 'ary']).map(
+  const supportedLocales = asStringList(process.env.SUPPORTED_LOCALES, ['en', 'ar', 'ary', 'fr', 'es']).map(
     (locale) => locale.toLowerCase(),
   );
   const railwayPublicDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();

@@ -15,7 +15,7 @@ export class PlatformContentController {
     name: 'Accept-Language',
     required: false,
     example: 'ary',
-    description: 'Supports en, ar, and ary (Moroccan Darija), with English fallback.',
+    description: 'Supports en, ar, ary (Moroccan Darija), fr, or es, with English fallback.',
   })
   @ApiOperation({
     summary: 'Get localized public platform content and current currency',

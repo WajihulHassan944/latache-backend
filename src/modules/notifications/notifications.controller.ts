@@ -17,7 +17,7 @@ import { RegisterFcmTokenDto, RemoveFcmTokenDto } from '../fcm/fcm.dto';
   required: false,
   example: 'ary-MA, ar;q=0.8, en;q=0.5',
   description:
-    'Supports en, ar, and ary (Moroccan Darija). Saved preferredLanguage takes priority; English is the fallback.',
+    'Supports en, ar, ary (Moroccan Darija), fr, or es. Saved preferredLanguage takes priority; English is the fallback.',
 })
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard)

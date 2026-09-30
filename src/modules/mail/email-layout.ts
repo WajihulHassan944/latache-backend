@@ -14,14 +14,19 @@ export const LATACHE_EMAIL_ASSETS = {
   },
 } as const;
 
-export type EmailLocale = 'en' | 'ar' | 'ary';
+export type EmailLocale = 'en' | 'ar' | 'ary' | 'fr' | 'es';
 
 export const normalizeEmailLocale = (locale?: string): EmailLocale => {
   const normalized = locale?.trim().toLowerCase().replace('_', '-');
   if (normalized === 'ar' || normalized?.startsWith('ar-')) return 'ar';
   if (normalized === 'ary' || normalized?.startsWith('ary-')) return 'ary';
+  if (normalized === 'fr' || normalized?.startsWith('fr-')) return 'fr';
+  if (normalized === 'es' || normalized?.startsWith('es-')) return 'es';
   return 'en';
 };
+
+/** Only Arabic and Moroccan Darija render right-to-left; French/Spanish stay LTR like English. */
+export const isRtlEmailLocale = (locale: EmailLocale): boolean => locale === 'ar' || locale === 'ary';
 
 interface EmailLayoutCopy {
   securityTitle: string;
@@ -49,6 +54,18 @@ const LAYOUT_COPY: Record<EmailLocale, EmailLayoutCopy> = {
     rights: 'الحقوق كلها محفوظة.',
     footerTagline: 'كنربطوك بمهنيين ثقة.',
   },
+  fr: {
+    securityTitle: 'Votre sécurité est notre priorité.',
+    securityBody: 'Ne partagez jamais ce code ou votre mot de passe avec qui que ce soit.',
+    rights: 'Tous droits réservés.',
+    footerTagline: 'Nous vous mettons en relation avec des professionnels de confiance.',
+  },
+  es: {
+    securityTitle: 'Tu seguridad es nuestra prioridad.',
+    securityBody: 'Nunca compartas este código ni tu contraseña con nadie.',
+    rights: 'Todos los derechos reservados.',
+    footerTagline: 'Te conectamos con profesionales de confianza.',
+  },
 };
 
 export interface LatacheEmailLayoutParams {
@@ -68,7 +85,7 @@ export interface LatacheEmailLayoutParams {
 export const latacheEmailLayout = (params: LatacheEmailLayoutParams): string => {
   const locale = normalizeEmailLocale(params.locale);
   const copy = LAYOUT_COPY[locale];
-  const rtl = locale !== 'en';
+  const rtl = isRtlEmailLocale(locale);
   const year = new Date().getUTCFullYear();
   const direction = rtl ? 'rtl' : 'ltr';
   const textAlign = rtl ? 'right' : 'left';

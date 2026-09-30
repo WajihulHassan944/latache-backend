@@ -22,7 +22,7 @@ import { RequestLocale } from '../../localization/request-locale.decorator';
   name: 'Accept-Language',
   required: false,
   example: 'ary',
-  description: 'Supports en, ar, and ary (Moroccan Darija), with English fallback.',
+  description: 'Supports en, ar, ary (Moroccan Darija), fr, or es, with English fallback.',
 })
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)

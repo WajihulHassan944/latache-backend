@@ -25,6 +25,8 @@ export class LocaleService {
       'en',
       'ar',
       'ary',
+      'fr',
+      'es',
     ]);
     this.defaultLocale = config.get<string>('localization.defaultLocale', 'en');
   }

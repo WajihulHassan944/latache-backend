@@ -124,7 +124,7 @@ export class AuthController {
     required: false,
     example: 'ary-MA, ar;q=0.8, en;q=0.5',
     description:
-      'Supports en, ar, and ary (Moroccan Darija). A submitted/saved preferredLanguage takes priority; English is the fallback.',
+      'Supports en, ar, ary (Moroccan Darija), fr, or es. A submitted/saved preferredLanguage takes priority; English is the fallback.',
   })
   registerCustomer(
     @Body() dto: RegisterCustomerDto,
@@ -182,7 +182,7 @@ export class AuthController {
     required: false,
     example: 'ary-MA, ar;q=0.8, en;q=0.5',
     description:
-      'Supports en, ar, and ary (Moroccan Darija). A submitted/saved preferredLanguage takes priority; English is the fallback.',
+      'Supports en, ar, ary (Moroccan Darija), fr, or es. A submitted/saved preferredLanguage takes priority; English is the fallback.',
   })
   registerTasker(
     @Body() dto: RegisterTaskerDto,
@@ -528,7 +528,7 @@ export class AuthController {
     required: false,
     example: 'ary-MA, ar;q=0.8, en;q=0.5',
     description:
-      'Supports en, ar, and ary (Moroccan Darija). A saved preferredLanguage takes priority; English is the fallback.',
+      'Supports en, ar, ary (Moroccan Darija), fr, or es. A saved preferredLanguage takes priority; English is the fallback.',
   })
   resendVerification(@Body() dto: ResendVerificationEmailDto, @RequestLocale() locale: string) {
     return this.auth.resendVerification(dto, locale);
@@ -557,7 +557,7 @@ export class AuthController {
     required: false,
     example: 'ary-MA, ar;q=0.8, en;q=0.5',
     description:
-      'Supports en, ar, and ary (Moroccan Darija). A saved preferredLanguage takes priority; English is the fallback.',
+      'Supports en, ar, ary (Moroccan Darija), fr, or es. A saved preferredLanguage takes priority; English is the fallback.',
   })
   forgotPassword(@Body() dto: ForgotPasswordDto, @RequestLocale() locale: string) {
     return this.auth.forgotPassword(dto, locale);
@@ -686,7 +686,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Update the authenticated account profile',
     description:
-      'Updates safe self-service fields including preferredLanguage (en/ar/ary, where ary is Moroccan Darija). The saved preference controls backend-generated dynamic content, notifications, and email before Accept-Language; role, permissions, email, and account status cannot be changed here.',
+      'Updates safe self-service fields including preferredLanguage (en/ar/ary/fr/es, where ary is Moroccan Darija). The saved preference controls backend-generated dynamic content, notifications, and email before Accept-Language; role, permissions, email, and account status cannot be changed here.',
   })
   @ApiOkResponse({
     schema: {

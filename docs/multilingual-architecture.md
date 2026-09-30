@@ -1,4 +1,4 @@
-# Multilingual backend architecture (v3.17)
+# Multilingual backend architecture (v3.17, locales extended in v3.50)
 
 Latache localizes dynamic, admin-managed, and backend-generated content. Ordinary UI labels and language-neutral domain codes remain frontend responsibilities. Money stays numeric/decimal, timestamps stay timestamps, and the backend does not perform RTL, date, number, or currency presentation.
 
@@ -65,9 +65,9 @@ Content-Type: application/json
 { "preferredLanguage": "ary" }
 ```
 
-Persisted notifications retain canonical-English compatibility `title`/`body` fallbacks and also store `templateKey`, structured `templateParams`, and `renderedLocale`. Known templates render in English, Modern Standard Arabic, or Moroccan Darija before realtime outbox enqueue and re-render on inbox reads; an unknown/missing translation safely uses canonical English. Notification type/category/entity codes remain language-neutral.
+Persisted notifications retain canonical-English compatibility `title`/`body` fallbacks and also store `templateKey`, structured `templateParams`, and `renderedLocale`. Known templates render in English, Modern Standard Arabic, Moroccan Darija, French, or Spanish before realtime outbox enqueue and re-render on inbox reads; an unknown/missing translation safely uses canonical English. `NotificationTemplateService` keeps one `Record<templateKey, {title, body}>` map per locale (`ARABIC_TEMPLATES`, `DARIJA_TEMPLATES`, `FRENCH_TEMPLATES`, `SPANISH_TEMPLATES`), all kept in sync at the same key set — every notification `type` created anywhere in the codebase must have an entry in all four or it silently falls back to English for that locale. Notification type/category/entity codes remain language-neutral.
 
-Verification OTP, password-reset OTP, and administrator welcome emails use the shared premium TypeScript shell with English, Arabic, and Darija subjects/text alternatives, escaped HTML, and RTL direction for `ar`/`ary`. Decorative art uses the supplied versioned Cloudinary URLs and the requested hosted Latache SVG is used as the logo, avoiding heavyweight SMTP attachments. No standalone HTML files are used. See `email-design-and-darija.md`.
+Verification OTP, password-reset OTP, and administrator welcome emails use the shared premium TypeScript shell with English, Arabic, Darija, French, and Spanish subjects/text alternatives, escaped HTML, and RTL direction for `ar`/`ary` only (`isRtlEmailLocale` in `email-layout.ts`; French/Spanish stay LTR like English). Decorative art uses the supplied versioned Cloudinary URLs and the requested hosted Latache SVG is used as the logo, avoiding heavyweight SMTP attachments. No standalone HTML files are used. See `email-design-and-darija.md`.
 
 ## Search
 
@@ -76,11 +76,11 @@ Service translation rows store derived normalized search text while preserving o
 ## Configuration
 
 ```env
-SUPPORTED_LOCALES=en,ar,ary
+SUPPORTED_LOCALES=en,ar,ary,fr,es
 DEFAULT_LOCALE=en
 ```
 
-`DEFAULT_LOCALE` must be included in `SUPPORTED_LOCALES`. `ary` is the BCP-47/ISO language code used here for Moroccan Darija. Add any future locale to configuration before administrators can persist it.
+`DEFAULT_LOCALE` must be included in `SUPPORTED_LOCALES`. `ary` is the BCP-47/ISO language code used here for Moroccan Darija. Add any future locale to configuration before administrators can persist it — and, if it's a notification/email-bearing locale, also add its map to `NotificationTemplateService` and to each `Record<EmailLocale, ...>` copy table in `email-templates.ts`/`email-layout.ts` (TypeScript will fail to compile until every existing entry has a value for the new locale).
 
 ## Migration
 

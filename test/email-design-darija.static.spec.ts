@@ -20,11 +20,11 @@ describe('premium email design and Darija architecture', () => {
     expect(mail).not.toContain('attachments:');
   });
 
-  it('enables ary centrally without introducing a new API resource', () => {
-    expect(read('.env.example')).toContain('SUPPORTED_LOCALES=en,ar,ary');
-    expect(read('src/config/configuration.ts')).toContain("['en', 'ar', 'ary']");
+  it('enables ary, fr, and es centrally without introducing a new API resource', () => {
+    expect(read('.env.example')).toContain('SUPPORTED_LOCALES=en,ar,ary,fr,es');
+    expect(read('src/config/configuration.ts')).toContain("['en', 'ar', 'ary', 'fr', 'es']");
     expect(read('src/modules/auth/dto/update-profile.dto.ts')).toContain(
-      "enum: ['en', 'ar', 'ary']",
+      "enum: ['en', 'ar', 'ary', 'fr', 'es']",
     );
     expect(read('src/modules/notifications/notification-template.service.ts')).toContain(
       "locale === 'ary'",

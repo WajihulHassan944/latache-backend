@@ -51,7 +51,7 @@ interface DiscoveryRequest extends GuestAwareRequest {
   name: 'Accept-Language',
   required: false,
   example: 'ary',
-  description: 'Supports en, ar, and ary (Moroccan Darija), with English fallback.',
+  description: 'Supports en, ar, ary (Moroccan Darija), fr, or es, with English fallback.',
 })
 @Controller('taskers')
 export class TaskersController {
