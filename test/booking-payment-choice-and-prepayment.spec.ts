@@ -1,3 +1,5 @@
+import type { ConfigService } from '@nestjs/config';
+import type { PrismaService } from '../src/database/prisma.service';
 import { PaymentsService } from '../src/modules/payments/payments.service';
 import { CustomerDashboardService } from '../src/modules/dashboard/customer-dashboard.service';
 import { readFileSync } from 'node:fs';
@@ -5,35 +7,43 @@ import { join } from 'node:path';
 
 type Row = Record<string, unknown>;
 
+/**
+ * bookingEstimate() is the acceptance-prepayment quote formula (renamed/reshaped from
+ * the old private acceptanceAmount() in v3.44.0 to return a full PaymentEstimate object
+ * instead of a bare number, and to be reusable by refreshPaymentEstimate()).
+ */
 describe('acceptance prepayment equals the quoted estimate', () => {
   const build = (pricing: Row) => {
-    const service = Object.create(PaymentsService.prototype) as PaymentsService;
-    Object.assign(service, {
-      minimumBillableMinutes: 120,
-      platformSettings: { calculatePricingCharges: jest.fn().mockResolvedValue(pricing) },
-    });
-    return service as unknown as { acceptanceAmount: (b: Row) => Promise<number>; platformSettings: { calculatePricingCharges: jest.Mock } };
+    const platformSettings = { calculatePricingCharges: jest.fn().mockResolvedValue(pricing) };
+    const config = { get: (_key: string, fallback: unknown) => fallback } as unknown as ConfigService;
+    const service = new PaymentsService(
+      {} as PrismaService, {} as never, config, {} as never, platformSettings as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never,
+    );
+    return { service, platformSettings };
   };
   const booking = (overrides: Row = {}) => ({
-    hourlyRate: '20.00', estimatedDurationMinutes: 240, taskerId: 31, serviceId: 8,
+    hourlyRate: '20.00', estimatedDurationMinutes: 240, extensionMinutes: 0, taskerId: 31, serviceId: 8,
     bookingDate: new Date(), createdAt: new Date(), tipAmount: '5.00', donationAmount: '1.00', ...overrides,
   });
 
   it('includes platform fee, surcharge, tax, tip and donation like the quote', async () => {
-    const service = build({ serviceAmount: 80, platformFeeAmount: 12, serviceSurchargeAmount: 2, taxAmount: 4, taxInclusive: false });
-    await expect(service.acceptanceAmount(booking())).resolves.toBe(80 + 12 + 2 + 4 + 5 + 1);
+    const { service } = build({ serviceAmount: 80, platformFeeAmount: 12, serviceSurchargeAmount: 2, taxAmount: 4, taxInclusive: false });
+    const estimate = await service.bookingEstimate(booking() as never);
+    expect(estimate.total).toBe(80 + 12 + 2 + 4 + 5 + 1);
   });
 
   it('never prepays less than the minimum billable time', async () => {
-    const service = build({ serviceAmount: 40, platformFeeAmount: 0, serviceSurchargeAmount: 0, taxAmount: 0, taxInclusive: false });
-    await service.acceptanceAmount(booking({ estimatedDurationMinutes: 30, tipAmount: '0', donationAmount: '0' }));
+    const { service, platformSettings } = build({ serviceAmount: 40, platformFeeAmount: 0, serviceSurchargeAmount: 0, taxAmount: 0, taxInclusive: false });
+    await service.bookingEstimate(booking({ estimatedDurationMinutes: 30, tipAmount: '0', donationAmount: '0' }) as never);
     // 30-minute slot is billed as the 120-minute minimum: 20/h x 2h
-    expect(service.platformSettings.calculatePricingCharges.mock.calls[0][0].serviceAmount).toBe(40);
+    expect(platformSettings.calculatePricingCharges.mock.calls[0][0].serviceAmount).toBe(40);
   });
 
   it('does not add inclusive tax on top', async () => {
-    const service = build({ serviceAmount: 80, platformFeeAmount: 0, serviceSurchargeAmount: 0, taxAmount: 10, taxInclusive: true });
-    await expect(service.acceptanceAmount(booking({ tipAmount: '0', donationAmount: '0' }))).resolves.toBe(80);
+    const { service } = build({ serviceAmount: 80, platformFeeAmount: 0, serviceSurchargeAmount: 0, taxAmount: 10, taxInclusive: true });
+    const estimate = await service.bookingEstimate(booking({ tipAmount: '0', donationAmount: '0' }) as never);
+    expect(estimate.total).toBe(80);
   });
 });
 

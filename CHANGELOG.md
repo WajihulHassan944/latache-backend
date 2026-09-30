@@ -1,3 +1,7 @@
+# 3.50.1
+
+- **Fixed a stale unit test broken by the v3.44.0 payment-estimate refactor.** `test/booking-payment-choice-and-prepayment.spec.ts`'s first suite called a private `PaymentsService.acceptanceAmount()` that was renamed/reshaped into the public `bookingEstimate()` (returns a full `PaymentEstimate` object instead of a bare number) when `refreshPaymentEstimate()`/`Booking.paymentEstimate` were introduced — the test was never updated and had been failing on `main` ever since. Rewrote it against the current `bookingEstimate()` API, constructing a real `PaymentsService` instance (matching the pattern already used in `payment-estimate-accuracy.spec.ts`) instead of the `Object.create`/`Object.assign` prototype hack. No production code changed; the underlying fee/surcharge/tax/tip/donation composition and minimum-billable-time logic were already correct and already covered elsewhere.
+
 # 3.50.0
 
 - **Added French (`fr`) and Spanish (`es`) as supported platform locales, alongside the existing English/Arabic/Darija.** `SUPPORTED_LOCALES` now defaults to `en,ar,ary,fr,es`; `preferredLanguage`, `Accept-Language` resolution, and all locale-row translation persistence (Services, Service Options, Elite tiers/benefits/badges, platform content) work unchanged for the two new codes since the architecture was already locale-agnostic (see `docs/multilingual-architecture.md`).
