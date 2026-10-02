@@ -10,6 +10,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { UserRole } from '../../../common/enums/user-role.enum';
+import { IsPhoneMatchingCountryCode } from '../../../common/validators/is-phone-matching-country-code.validator';
 import { SOCIAL_AUTH_PROVIDERS, type SocialAuthProvider } from '../social-auth.constants';
 import { trim } from './common-auth.dto';
 
@@ -73,6 +74,7 @@ export class SocialAuthDto {
   @Transform(trim)
   @IsString()
   @Matches(/^\d{6,24}$/, { message: 'phoneNumber must contain 6 to 24 digits' })
+  @IsPhoneMatchingCountryCode()
   phoneNumber?: string;
 
   @ApiPropertyOptional({ example: '10001' })
@@ -84,7 +86,7 @@ export class SocialAuthDto {
 
   @ApiPropertyOptional({
     example: 'en',
-    enum: ['en', 'ar', 'ary'],
+    enum: ['en', 'ar', 'ary', 'fr', 'es'],
   })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>

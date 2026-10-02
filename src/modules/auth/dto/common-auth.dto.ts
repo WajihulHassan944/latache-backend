@@ -15,6 +15,7 @@ import {
   MIN_PASSWORD_LENGTH,
   PASSWORD_PATTERN,
 } from '../../../common/constants/security.constants';
+import { IsPhoneMatchingCountryCode } from '../../../common/validators/is-phone-matching-country-code.validator';
 
 export const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -53,6 +54,7 @@ export class BaseRegistrationDto {
   @Transform(trim)
   @IsString()
   @Matches(/^\d{6,24}$/, { message: 'phoneNumber must contain 6 to 24 digits' })
+  @IsPhoneMatchingCountryCode()
   phoneNumber!: string;
 
   @ApiProperty({ example: 'StrongPassword@123', minLength: MIN_PASSWORD_LENGTH })
@@ -90,7 +92,7 @@ export class BaseRegistrationDto {
   device?: string;
 
   @ApiPropertyOptional({
-    enum: ['en', 'ar', 'ary'],
+    enum: ['en', 'ar', 'ary', 'fr', 'es'],
     default: 'en',
     description:
       'Preferred language for backend-generated content and transactional email. ary is Moroccan Darija.',

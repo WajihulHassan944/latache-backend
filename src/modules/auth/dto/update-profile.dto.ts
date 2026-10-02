@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsOptional, IsString, IsUrl, Length, Matches, MaxLength } from 'class-validator';
+import { IsPhoneMatchingCountryCode } from '../../../common/validators/is-phone-matching-country-code.validator';
 import { trim } from './common-auth.dto';
 
 export class UpdateProfileDto {
@@ -28,6 +29,7 @@ export class UpdateProfileDto {
   @IsOptional()
   @Transform(trim)
   @Matches(/^\d{6,24}$/)
+  @IsPhoneMatchingCountryCode()
   phoneNumber?: string;
 
   @ApiPropertyOptional({ example: '10001' })

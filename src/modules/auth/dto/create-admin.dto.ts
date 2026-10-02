@@ -15,6 +15,7 @@ import {
   MIN_PASSWORD_LENGTH,
   PASSWORD_PATTERN,
 } from '../../../common/constants/security.constants';
+import { IsPhoneMatchingCountryCode } from '../../../common/validators/is-phone-matching-country-code.validator';
 import { normalizeEmail, trim } from './common-auth.dto';
 
 export class CreateAdminDto {
@@ -46,6 +47,7 @@ export class CreateAdminDto {
   @IsOptional()
   @Transform(trim)
   @Matches(/^\d{6,24}$/)
+  @IsPhoneMatchingCountryCode()
   phoneNumber?: string;
 
   @ApiProperty({
@@ -85,7 +87,7 @@ export class CreateAdminDto {
   permissions?: string[];
 
   @ApiPropertyOptional({
-    enum: ['en', 'ar', 'ary'],
+    enum: ['en', 'ar', 'ary', 'fr', 'es'],
     default: 'en',
     description: 'ary is Moroccan Darija.',
   })

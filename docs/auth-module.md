@@ -29,6 +29,8 @@ Required fields match the customer signup design:
 - `acceptedTermsAndPrivacyPolicy: true`
 - optional `device`
 
+`phoneNumber` must also be a plausible national number for `phoneCountryCode` (via `libphonenumber-js`'s per-country length/pattern metadata), not just the right digit count — e.g. a Pakistani-shaped mobile number submitted with Morocco's `+212` is rejected with a `phoneNumber` validation error even though both fields individually match their own format regex. This same cross-field check applies everywhere phoneCountryCode/phoneNumber are collected together: customer/tasker registration, social-login phone completion, self-service profile updates, and admin account creation.
+
 The response contains an unverified user plus an access/refresh token pair. The access token is usable only for email verification until the database user becomes verified.
 
 ## Tasker registration
