@@ -543,10 +543,33 @@ model SeoPage {
   createdAt          DateTime @default(now()) @db.Timestamptz(6)
   updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
+  targetKeywords SeoKeyword[]
+
   @@unique([path, locale], map: "seo_pages_path_locale_unique")
   @@index([path, isActive], map: "seo_pages_path_active_idx")
   @@index([locale, isActive], map: "seo_pages_locale_active_idx")
   @@map("SeoPages")
+}
+
+/** Admin-tracked target keyword for a managed SEO page — distinct from SeoPage.keywords
+ * (the flat list rendered into the public <meta name="keywords"> tag). Lets an SEO Admin
+ * set priority/status per keyword while a Content Admin writes the page copy; `usedInContent`
+ * is computed on read by checking whether the term appears in the linked ContentPage's body. */
+model SeoKeyword {
+  id          String   @id @default(cuid()) @db.VarChar(40)
+  pageId      String   @db.VarChar(40)
+  term        String   @db.VarChar(100)
+  priority    String   @default("medium") @db.VarChar(16)
+  status      String   @default("active") @db.VarChar(16)
+  updatedById Int?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  page SeoPage @relation(fields: [pageId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "SeoKeywords_pageId_fkey")
+
+  @@unique([pageId, term], map: "seo_keywords_page_term_unique")
+  @@index([pageId, status], map: "seo_keywords_page_status_idx")
+  @@map("SeoKeywords")
 }
 
 model SeoRedirect {

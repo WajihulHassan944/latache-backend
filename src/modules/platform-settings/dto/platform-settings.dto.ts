@@ -103,6 +103,7 @@ export class GeneralContentTranslationDto {
 export class GeneralSettingsDto {
   @IsOptional() @IsString() @Length(2, 120) platformName?: string;
   @IsOptional() @IsEmail() supportEmail?: string;
+  @IsOptional() @IsString() @Length(1, 32) supportPhone?: string;
   @IsOptional() @IsUrl({ require_tld: false }) platformUrl?: string;
   @IsOptional() @IsString() @Length(0, 1000) description?: string;
   @IsOptional() @IsBoolean() emailNotificationsEnabled?: boolean;

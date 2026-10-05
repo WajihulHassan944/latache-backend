@@ -79,3 +79,14 @@ export class SeoResolveQueryDto {
   @IsString() @Length(1, 500) path!: string;
   @IsOptional() @IsString() @Matches(LOCALE) locale?: string;
 }
+
+export class CreateSeoKeywordDto {
+  @IsString() @Length(1, 100) term!: string;
+  @IsOptional() @IsString() @IsIn(['high', 'medium', 'low']) priority?: string;
+}
+
+export class UpdateSeoKeywordDto {
+  @IsOptional() @IsString() @Length(1, 100) term?: string;
+  @IsOptional() @IsString() @IsIn(['high', 'medium', 'low']) priority?: string;
+  @IsOptional() @IsString() @IsIn(['active', 'paused']) status?: string;
+}

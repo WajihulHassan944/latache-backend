@@ -7,7 +7,9 @@ import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { LocaleService } from '../../localization/locale.service';
 import { AppCacheService, CacheNamespace } from '../../../infrastructure/redis/app-cache.service';
 import { normalizePagination } from '../../../common/utils/pagination.util';
-import { SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntryDto, SeoSettingsDto, UpsertSeoPageDto } from '../dto/seo.dto';
+import { CreateSeoKeywordDto, SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntryDto, SeoSettingsDto, UpdateSeoKeywordDto, UpsertSeoPageDto } from '../dto/seo.dto';
+
+const stripHtml = (html: string): string => html.replace(/<[^>]*>/g, ' ').toLowerCase();
 
 const json = (value: Record<string, unknown> | undefined): Prisma.InputJsonValue | undefined => value === undefined ? undefined : value as Prisma.InputJsonValue;
 const normalizePath = (value: string | undefined): string => {
@@ -157,6 +159,61 @@ export class SeoManagementService {
     } catch (e) { if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new ConflictException('SEO page already exists for this path and locale'); throw e; }
   }
   async deletePage(actor: User, id: string) { const row = await this.getPage(id); await this.prisma.seoPage.delete({ where: { id } }); await this.audit.record({ actorId: actor.id, action: 'seo_page_deleted', entityType: 'seo_page', entityId: id, metadata: { path: row.path, locale: row.locale } }); await this.invalidate(); return { deleted: true, id }; }
+
+  async listKeywords(pageId: string) {
+    const page = await this.getPage(pageId);
+    const keywords = await this.prisma.seoKeyword.findMany({ where: { pageId }, orderBy: [{ priority: 'asc' }, { term: 'asc' }] });
+    const plainText = await this.pagePlainText(page.path);
+    return keywords.map((k) => ({ ...k, usedInContent: plainText.includes(k.term.toLowerCase()) }));
+  }
+  async addKeyword(actor: User, pageId: string, dto: CreateSeoKeywordDto) {
+    const page = await this.getPage(pageId);
+    const term = dto.term.trim();
+    if (!term) throw new BadRequestException('Keyword term cannot be empty');
+    try {
+      const row = await this.prisma.seoKeyword.create({ data: { pageId, term, priority: dto.priority ?? 'medium', updatedById: actor.id } });
+      await this.audit.record({ actorId: actor.id, action: 'seo_keyword_added', entityType: 'seo_keyword', entityId: row.id, metadata: { pageId, term } });
+      const plainText = await this.pagePlainText(page.path);
+      return { ...row, usedInContent: plainText.includes(row.term.toLowerCase()) };
+    } catch (e) { if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new ConflictException('This keyword already exists for this page'); throw e; }
+  }
+  async updateKeyword(actor: User, pageId: string, keywordId: string, dto: UpdateSeoKeywordDto) {
+    const existing = await this.prisma.seoKeyword.findFirst({ where: { id: keywordId, pageId } });
+    if (!existing) throw new NotFoundException('SEO keyword not found');
+    const term = dto.term?.trim();
+    if (dto.term !== undefined && !term) throw new BadRequestException('Keyword term cannot be empty');
+    try {
+      const row = await this.prisma.seoKeyword.update({ where: { id: keywordId }, data: { term, priority: dto.priority, status: dto.status, updatedById: actor.id } });
+      await this.audit.record({ actorId: actor.id, action: 'seo_keyword_updated', entityType: 'seo_keyword', entityId: row.id, metadata: { pageId, term: row.term } });
+      const page = await this.getPage(pageId);
+      const plainText = await this.pagePlainText(page.path);
+      return { ...row, usedInContent: plainText.includes(row.term.toLowerCase()) };
+    } catch (e) { if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new ConflictException('This keyword already exists for this page'); throw e; }
+  }
+  async deleteKeyword(actor: User, pageId: string, keywordId: string) {
+    const existing = await this.prisma.seoKeyword.findFirst({ where: { id: keywordId, pageId } });
+    if (!existing) throw new NotFoundException('SEO keyword not found');
+    await this.prisma.seoKeyword.delete({ where: { id: keywordId } });
+    await this.audit.record({ actorId: actor.id, action: 'seo_keyword_deleted', entityType: 'seo_keyword', entityId: keywordId, metadata: { pageId, term: existing.term } });
+    return { deleted: true, id: keywordId };
+  }
+  /** Combined plain text of every block on the ContentPage linked to this SEO path (same path<->slug convention used by resolve()/sitemap()), across all its locale translations. */
+  private async pagePlainText(path: string): Promise<string> {
+    const slug = path === '/' ? 'home' : path.slice(1);
+    const page = await this.prisma.contentPage.findFirst({ where: { slug }, include: { blocks: { include: { translations: true } } } });
+    if (!page) return '';
+    const parts: string[] = [];
+    for (const block of page.blocks) {
+      const payload = block.payload as Record<string, unknown> | null;
+      if (payload && typeof payload.html === 'string') parts.push(payload.html);
+      for (const translation of block.translations) {
+        if (translation.title) parts.push(translation.title);
+        if (translation.subtitle) parts.push(translation.subtitle);
+        if (translation.body) parts.push(translation.body);
+      }
+    }
+    return stripHtml(parts.join(' '));
+  }
 
   async listRedirects() { return this.prisma.seoRedirect.findMany({ orderBy: { fromPath: 'asc' } }); }
   async upsertRedirect(actor: User, dto: SeoRedirectDto) {

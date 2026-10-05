@@ -7,7 +7,7 @@ import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import type { User } from '../../../generated/prisma/client';
 import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { SeoManagementService } from '../services/seo-management.service';
-import { SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntryDto, SeoSettingsDto, UpsertSeoPageDto } from '../dto/seo.dto';
+import { CreateSeoKeywordDto, SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntryDto, SeoSettingsDto, UpdateSeoKeywordDto, UpsertSeoPageDto } from '../dto/seo.dto';
 
 @ApiTags('20 SEO')
 @Controller('seo')
@@ -30,6 +30,10 @@ export class AdminSeoController {
   @Get('pages/:id') @Permissions('seo.read') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) getPage(@Param('id') id: string) { return this.seo.getPage(id); }
   @Post('pages') @Permissions('seo.manage') upsertPage(@CurrentUser() actor: User, @Body() dto: UpsertSeoPageDto) { return this.seo.upsertPage(actor, dto); }
   @Delete('pages/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) deletePage(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deletePage(actor, id); }
+  @Get('pages/:id/keywords') @Permissions('seo.read') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) @ApiOperation({ summary: 'List target keywords for a page, with live usedInContent status' }) listKeywords(@Param('id') id: string) { return this.seo.listKeywords(id); }
+  @Post('pages/:id/keywords') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) @ApiOperation({ summary: 'Add a target keyword to a page' }) addKeyword(@CurrentUser() actor: User, @Param('id') id: string, @Body() dto: CreateSeoKeywordDto) { return this.seo.addKeyword(actor, id, dto); }
+  @Patch('pages/:id/keywords/:keywordId') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) @ApiParam({ name: 'keywordId', required: true, type: String, description: 'SEO keyword ID.' }) @ApiOperation({ summary: 'Edit a keyword term/priority or toggle active/paused' }) updateKeyword(@CurrentUser() actor: User, @Param('id') id: string, @Param('keywordId') keywordId: string, @Body() dto: UpdateSeoKeywordDto) { return this.seo.updateKeyword(actor, id, keywordId, dto); }
+  @Delete('pages/:id/keywords/:keywordId') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) @ApiParam({ name: 'keywordId', required: true, type: String, description: 'SEO keyword ID.' }) @ApiOperation({ summary: 'Delete a target keyword' }) deleteKeyword(@CurrentUser() actor: User, @Param('id') id: string, @Param('keywordId') keywordId: string) { return this.seo.deleteKeyword(actor, id, keywordId); }
   @Get('redirects') @Permissions('seo.read') listRedirects() { return this.seo.listRedirects(); }
   @Post('redirects') @Permissions('seo.manage') upsertRedirect(@CurrentUser() actor: User, @Body() dto: SeoRedirectDto) { return this.seo.upsertRedirect(actor, dto); }
   @Delete('redirects/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO redirect ID.' }) deleteRedirect(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deleteRedirect(actor, id); }

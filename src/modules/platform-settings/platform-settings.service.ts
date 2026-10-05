@@ -259,6 +259,7 @@ export class PlatformSettingsService {
       platformName: selected?.platformName ?? general.platformName,
       description: selected?.description ?? general.description,
       supportEmail: general.supportEmail,
+      supportPhone: general.supportPhone,
       platformUrl: general.platformUrl,
       resolvedLocale: selected?.locale ?? 'canonical',
       translationFallback: !requested,
@@ -597,6 +598,7 @@ export class PlatformSettingsService {
       general: {
         platformName: 'Latache',
         supportEmail: null,
+        supportPhone: null,
         platformUrl: this.config.get<string>('app.baseUrl', 'http://localhost:8080'),
         description: null,
         emailNotificationsEnabled: true,
