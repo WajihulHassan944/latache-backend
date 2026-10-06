@@ -696,8 +696,19 @@ export class RealtimeGateway
     if (!payload?.description || payload.description.type !== expectedType) {
       throw new WsException(`description.type must be ${expectedType}`);
     }
-    const sdp = this.requireString(payload.description.sdp, 'description.sdp', 1, 200_000);
+    // Not requireString: SDP is relayed byte-for-byte between two
+    // RTCPeerConnections, so trimming it (as requireString does for every
+    // other field) would alter what setRemoteDescription actually parses.
+    const sdp = this.requireRawString(payload.description.sdp, 'description.sdp', 1, 200_000);
     return { callId, description: { type: expectedType, sdp } };
+  }
+
+  private requireRawString(value: unknown, field: string, minimum: number, maximum: number): string {
+    if (typeof value !== 'string') throw new WsException(`${field} must be a string`);
+    if (value.length < minimum || value.length > maximum) {
+      throw new WsException(`${field} must contain between ${minimum} and ${maximum} characters`);
+    }
+    return value;
   }
 
   private normalizeIceCandidate(payload: CallIceCandidatePayload): CallIceCandidatePayload {
