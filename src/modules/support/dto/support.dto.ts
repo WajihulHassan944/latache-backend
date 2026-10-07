@@ -30,6 +30,35 @@ import {
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
+const SUPPORT_ATTACHMENT_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+] as const;
+
+export class SupportAttachmentDto extends CloudinaryAssetRefDto {
+  @ApiPropertyOptional({ example: 'screenshot.jpg' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 255)
+  originalFileName?: string;
+
+  @ApiPropertyOptional({ enum: SUPPORT_ATTACHMENT_MIME_TYPES, example: 'image/jpeg' })
+  @IsOptional()
+  @Transform(trim)
+  @IsIn(SUPPORT_ATTACHMENT_MIME_TYPES)
+  mimeType?: (typeof SUPPORT_ATTACHMENT_MIME_TYPES)[number];
+
+  @ApiPropertyOptional({ example: 245760 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  bytes?: number;
+}
+
 export class CreateSupportTicketDto {
   @ApiPropertyOptional({
     example: '01JSUPPORT9A4R7X2K6M8Q5T3V1',
@@ -93,13 +122,13 @@ export class CreateSupportTicketDto {
   @Length(1, 120)
   referenceId?: string;
 
-  @ApiPropertyOptional({ type: [CloudinaryAssetRefDto], maxItems: 5 })
+  @ApiPropertyOptional({ type: [SupportAttachmentDto], maxItems: 5 })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(5)
   @ValidateNested({ each: true })
-  @Type(() => CloudinaryAssetRefDto)
-  attachments?: CloudinaryAssetRefDto[];
+  @Type(() => SupportAttachmentDto)
+  attachments?: SupportAttachmentDto[];
 }
 
 export class CreateAppealDto {
@@ -197,13 +226,13 @@ export class SendSupportMessageDto {
   @MaxLength(5000)
   body?: string;
 
-  @ApiPropertyOptional({ type: [CloudinaryAssetRefDto], maxItems: 5 })
+  @ApiPropertyOptional({ type: [SupportAttachmentDto], maxItems: 5 })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(5)
   @ValidateNested({ each: true })
-  @Type(() => CloudinaryAssetRefDto)
-  attachments?: CloudinaryAssetRefDto[];
+  @Type(() => SupportAttachmentDto)
+  attachments?: SupportAttachmentDto[];
 }
 
 export class ListSupportMessagesQueryDto {
