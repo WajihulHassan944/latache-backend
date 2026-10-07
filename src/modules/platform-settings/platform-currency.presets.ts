@@ -17,7 +17,7 @@ export const PLATFORM_CURRENCY_PRESETS: Record<PlatformMarket, PlatformCurrencyC
     country: 'Morocco',
     code: 'MAD',
     name: 'Moroccan Dirham',
-    symbol: 'د.م.',
+    symbol: 'MAD',
     rateFromUsd: 9,
     staticRateVersion: STATIC_RATE_VERSION,
   },
