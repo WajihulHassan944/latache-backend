@@ -50,7 +50,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     const retryAfter = body.retryAfter;
-    if (status === HttpStatus.TOO_MANY_REQUESTS && typeof retryAfter === 'number') {
+    if (typeof retryAfter === 'number') {
       response.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfter))));
     }
 

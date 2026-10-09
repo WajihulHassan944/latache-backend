@@ -21,6 +21,11 @@ export class AuthLockoutService {
     return Boolean(user.loginLockedUntil && user.loginLockedUntil.getTime() > Date.now());
   }
 
+  /** Seconds until an active lock clears. Call only when {@link isLocked} is true. */
+  remainingLockSeconds(user: Pick<User, 'loginLockedUntil'>): number {
+    return Math.max(1, Math.ceil(((user.loginLockedUntil?.getTime() ?? 0) - Date.now()) / 1000));
+  }
+
   async recordFailedAttempt(userId: number): Promise<void> {
     const maxAttempts = this.config.get<number>('auth.maxFailedLoginAttempts', 5);
     const lockMinutes = this.config.get<number>('auth.loginLockMinutes', 15);

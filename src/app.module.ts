@@ -51,13 +51,16 @@ import { AddressesModule } from './modules/addresses/addresses.module';
       load: [configuration],
       validate: validateEnvironment,
     }),
-    ThrottlerModule.forRoot([
-      {
-        name: 'default',
-        ttl: 60_000,
-        limit: 120,
-      },
-    ]),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          name: 'default',
+          ttl: 60_000,
+          limit: 120,
+        },
+      ],
+      errorMessage: 'Too many attempts. Please try again in a minute.',
+    }),
     ObservabilityModule,
     DatabaseModule,
     RedisModule,

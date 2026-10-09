@@ -42,8 +42,15 @@ export class AuthLoginService {
       user?.password ?? (await this.getDummyPasswordHash()),
     );
 
-    if (!user?.password || this.lockout.isLocked(user)) {
+    if (!user?.password) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+    if (this.lockout.isLocked(user)) {
+      throw new ForbiddenException({
+        code: 'ACCOUNT_LOCKED',
+        message: 'Too many failed login attempts. Please try again later.',
+        retryAfter: this.lockout.remainingLockSeconds(user),
+      });
     }
     if (!passwordMatches) {
       await this.lockout.recordFailedAttempt(user.id);
