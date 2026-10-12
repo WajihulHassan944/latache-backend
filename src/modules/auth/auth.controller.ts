@@ -62,6 +62,7 @@ import { AdminAuthGuard } from './guards/admin-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { loginRequestExamples, loginResponseExamples } from './swagger/login.examples';
 import { SOCIAL_AUTH_PROVIDER } from './social-auth.constants';
+import { TurnstileService } from './services/turnstile.service';
 
 const validationErrorExample = {
   statusCode: 400,
@@ -74,7 +75,10 @@ const validationErrorExample = {
 @ApiTags('01 Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly captcha: TurnstileService,
+  ) {}
 
   @Post('customers/register')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
@@ -116,9 +120,16 @@ export class AuthController {
       },
     },
   })
-  @ApiBadRequestResponse({ schema: { example: validationErrorExample } })
+  @ApiBadRequestResponse({
+    description:
+      'VALIDATION_ERROR for malformed/missing fields (including a missing captchaToken when Turnstile is enabled), or CAPTCHA_FAILED when the Cloudflare Turnstile token is invalid, expired, already used, or rejected.',
+    schema: { example: validationErrorExample },
+  })
   @ApiConflictResponse({ description: 'A verified account already exists, or the existing unverified signup cannot be safely replaced.' })
-  @ApiServiceUnavailableResponse({ description: 'The verification email could not be delivered.' })
+  @ApiServiceUnavailableResponse({
+    description:
+      'The verification email could not be delivered, or CAPTCHA_UNAVAILABLE when Cloudflare Turnstile could not be reached in time (fails closed).',
+  })
   @ApiHeader({
     name: 'Accept-Language',
     required: false,
@@ -126,11 +137,12 @@ export class AuthController {
     description:
       'Supports en, ar, ary (Moroccan Darija), fr, or es. A submitted/saved preferredLanguage takes priority; English is the fallback.',
   })
-  registerCustomer(
+  async registerCustomer(
     @Body() dto: RegisterCustomerDto,
     @Req() request: Request,
     @RequestLocale() locale: string,
   ) {
+    await this.captcha.verify(dto.captchaToken, request.ip, 'signup');
     return this.auth.registerCustomer(dto, this.metadata(dto.device, request), locale);
   }
 
@@ -174,9 +186,16 @@ export class AuthController {
       },
     },
   })
-  @ApiBadRequestResponse({ schema: { example: validationErrorExample } })
+  @ApiBadRequestResponse({
+    description:
+      'VALIDATION_ERROR for malformed/missing fields (including a missing captchaToken when Turnstile is enabled), or CAPTCHA_FAILED when the Cloudflare Turnstile token is invalid, expired, already used, or rejected.',
+    schema: { example: validationErrorExample },
+  })
   @ApiConflictResponse({ description: 'A verified account already exists, or the existing unverified signup cannot be safely replaced.' })
-  @ApiServiceUnavailableResponse({ description: 'The verification email could not be delivered.' })
+  @ApiServiceUnavailableResponse({
+    description:
+      'The verification email could not be delivered, or CAPTCHA_UNAVAILABLE when Cloudflare Turnstile could not be reached in time (fails closed).',
+  })
   @ApiHeader({
     name: 'Accept-Language',
     required: false,
@@ -184,11 +203,12 @@ export class AuthController {
     description:
       'Supports en, ar, ary (Moroccan Darija), fr, or es. A submitted/saved preferredLanguage takes priority; English is the fallback.',
   })
-  registerTasker(
+  async registerTasker(
     @Body() dto: RegisterTaskerDto,
     @Req() request: Request,
     @RequestLocale() locale: string,
   ) {
+    await this.captcha.verify(dto.captchaToken, request.ip, 'signup');
     return this.auth.registerTasker(dto, this.metadata(dto.device, request), locale);
   }
 
@@ -410,14 +430,24 @@ export class AuthController {
     },
   })
   @ApiForbiddenResponse({
-    description: 'Email unverified, account suspended/deactivated, or portal role mismatch.',
+    description:
+      'Email unverified, account suspended/deactivated, portal role mismatch, or ACCOUNT_LOCKED after too many failed attempts.',
   })
   @ApiUnauthorizedResponse({ description: 'Invalid email or password.' })
+  @ApiBadRequestResponse({
+    description:
+      'VALIDATION_ERROR for malformed/missing fields (including a missing captchaToken when Turnstile is enabled), or CAPTCHA_FAILED when the Cloudflare Turnstile token is invalid, expired, already used, or rejected.',
+  })
+  @ApiServiceUnavailableResponse({
+    description:
+      'CAPTCHA_UNAVAILABLE when Cloudflare Turnstile could not be reached in time (fails closed).',
+  })
   @ApiResponse({
     status: HttpStatus.TOO_MANY_REQUESTS,
     description: 'Request rate limit exceeded.',
   })
-  login(@Body() dto: LoginDto, @Req() request: Request) {
+  async login(@Body() dto: LoginDto, @Req() request: Request) {
+    await this.captcha.verify(dto.captchaToken, request.ip, 'login');
     return this.auth.login(dto, this.metadata(dto.device, request));
   }
 
@@ -522,7 +552,14 @@ export class AuthController {
       },
     },
   })
-  @ApiServiceUnavailableResponse({ description: 'Email delivery failed for an eligible account.' })
+  @ApiBadRequestResponse({
+    description:
+      'VALIDATION_ERROR for malformed/missing fields (including a missing captchaToken when Turnstile is enabled), or CAPTCHA_FAILED when the Cloudflare Turnstile token is invalid, expired, already used, or rejected.',
+  })
+  @ApiServiceUnavailableResponse({
+    description:
+      'Email delivery failed for an eligible account, or CAPTCHA_UNAVAILABLE when Cloudflare Turnstile could not be reached in time (fails closed).',
+  })
   @ApiHeader({
     name: 'Accept-Language',
     required: false,
@@ -530,7 +567,12 @@ export class AuthController {
     description:
       'Supports en, ar, ary (Moroccan Darija), fr, or es. A saved preferredLanguage takes priority; English is the fallback.',
   })
-  resendVerification(@Body() dto: ResendVerificationEmailDto, @RequestLocale() locale: string) {
+  async resendVerification(
+    @Body() dto: ResendVerificationEmailDto,
+    @Req() request: Request,
+    @RequestLocale() locale: string,
+  ) {
+    await this.captcha.verify(dto.captchaToken, request.ip, 'resend-verification');
     return this.auth.resendVerification(dto, locale);
   }
 
@@ -551,7 +593,14 @@ export class AuthController {
       },
     },
   })
-  @ApiServiceUnavailableResponse({ description: 'Email delivery failed for an eligible account.' })
+  @ApiBadRequestResponse({
+    description:
+      'VALIDATION_ERROR for malformed/missing fields (including a missing captchaToken when Turnstile is enabled), or CAPTCHA_FAILED when the Cloudflare Turnstile token is invalid, expired, already used, or rejected.',
+  })
+  @ApiServiceUnavailableResponse({
+    description:
+      'Email delivery failed for an eligible account, or CAPTCHA_UNAVAILABLE when Cloudflare Turnstile could not be reached in time (fails closed).',
+  })
   @ApiHeader({
     name: 'Accept-Language',
     required: false,
@@ -559,7 +608,12 @@ export class AuthController {
     description:
       'Supports en, ar, ary (Moroccan Darija), fr, or es. A saved preferredLanguage takes priority; English is the fallback.',
   })
-  forgotPassword(@Body() dto: ForgotPasswordDto, @RequestLocale() locale: string) {
+  async forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+    @Req() request: Request,
+    @RequestLocale() locale: string,
+  ) {
+    await this.captcha.verify(dto.captchaToken, request.ip, 'forgot-password');
     return this.auth.forgotPassword(dto, locale);
   }
 

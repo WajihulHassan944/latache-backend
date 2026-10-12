@@ -4,11 +4,13 @@ import {
   Equals,
   IsBoolean,
   IsEmail,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Length,
   Matches,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import {
   MAX_PASSWORD_LENGTH,
@@ -22,6 +24,28 @@ export const trim = ({ value }: { value: unknown }): unknown =>
 
 export const normalizeEmail = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim().toLowerCase() : value;
+
+/**
+ * Re-read on every validation rather than cached, since it's cheap and
+ * guarantees a mid-process env change (tests, local tinkering) is honored
+ * instead of a stale value captured at class-definition time.
+ */
+export const isTurnstileEnabled = (): boolean =>
+  (process.env.TURNSTILE_ENABLED ?? 'false').toLowerCase() === 'true';
+
+/**
+ * Declares the DTO property for `@nestjs/swagger` and documents the
+ * conditional requirement; the actual class-validator decorators are
+ * applied separately since decorator factories can't be spread onto a
+ * class field from a shared function call.
+ */
+export const CAPTCHA_TOKEN_API_PROPERTY = {
+  example: '0.AbCdEf...Turnstile-response-token',
+  minLength: 1,
+  maxLength: 2048,
+  description:
+    'Cloudflare Turnstile response token from the client widget. Required when TURNSTILE_ENABLED=true; omitted/ignored otherwise.',
+} as const;
 
 export class BaseRegistrationDto {
   @ApiProperty({ example: 'Sarah', minLength: 2, maxLength: 100 })
@@ -104,4 +128,12 @@ export class BaseRegistrationDto {
   @IsString()
   @Matches(/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/)
   preferredLanguage?: string;
+
+  @ApiProperty(CAPTCHA_TOKEN_API_PROPERTY)
+  @ValidateIf(isTurnstileEnabled)
+  @Transform(trim)
+  @IsNotEmpty()
+  @IsString()
+  @Length(1, 2048)
+  captchaToken?: string;
 }

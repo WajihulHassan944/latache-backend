@@ -664,6 +664,11 @@ export const validateEnvironment = (environment: Environment): Environment => {
     }
   }
 
+  const turnstileEnabled = (environment.TURNSTILE_ENABLED ?? 'false').toLowerCase() === 'true';
+  if (turnstileEnabled && !present(environment.TURNSTILE_SECRET_KEY)) {
+    errors.push('TURNSTILE_SECRET_KEY is required when TURNSTILE_ENABLED=true');
+  }
+
   for (const key of ['GOOGLE_AUTH_CLIENT_IDS', 'APPLE_AUTH_CLIENT_IDS'] as const) {
     if (present(environment[key])) {
       const ids = (environment[key] as string).split(',').map((value) => value.trim()).filter(Boolean);

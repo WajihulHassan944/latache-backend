@@ -210,6 +210,10 @@ export default () => {
       jwksCacheSeconds: asPositiveInteger(process.env.SOCIAL_AUTH_JWKS_CACHE_SECONDS, 3600),
       clockSkewSeconds: asPositiveInteger(process.env.SOCIAL_AUTH_CLOCK_SKEW_SECONDS, 60),
     },
+    turnstile: {
+      enabled: asBoolean(process.env.TURNSTILE_ENABLED, false),
+      secretKey: process.env.TURNSTILE_SECRET_KEY,
+    },
     payments: {
       stripeEnabled: asBoolean(process.env.STRIPE_ENABLED, false),
       stripeSecretKey: process.env.STRIPE_SECRET_KEY,

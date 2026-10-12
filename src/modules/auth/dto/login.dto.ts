@@ -1,8 +1,22 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsEnum, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Length,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 import { UserRole } from '../../../common/enums/user-role.enum';
-import { normalizeEmail, trim } from './common-auth.dto';
+import {
+  CAPTCHA_TOKEN_API_PROPERTY,
+  isTurnstileEnabled,
+  normalizeEmail,
+  trim,
+} from './common-auth.dto';
 
 export class LoginDto {
   @ApiProperty({ example: 'user@example.com' })
@@ -40,4 +54,12 @@ export class LoginDto {
   @IsString()
   @MaxLength(255)
   device?: string;
+
+  @ApiProperty(CAPTCHA_TOKEN_API_PROPERTY)
+  @ValidateIf(isTurnstileEnabled)
+  @Transform(trim)
+  @IsNotEmpty()
+  @IsString()
+  @Length(1, 2048)
+  captchaToken?: string;
 }

@@ -26,6 +26,7 @@ import { AuthRoleService } from './services/auth-role.service';
 import { OidcJwtVerifierService } from './services/oidc-jwt-verifier.service';
 import { SocialAuthProviderService } from './services/social-auth-provider.service';
 import { SocialAuthService } from './services/social-auth.service';
+import { TurnstileService } from './services/turnstile.service';
 
 @Module({
   imports: [JwtModule.register({}), UsersModule, MailModule, RbacCoreModule, AdminAuditModule],
@@ -44,6 +45,7 @@ import { SocialAuthService } from './services/social-auth.service';
     OidcJwtVerifierService,
     SocialAuthProviderService,
     SocialAuthService,
+    TurnstileService,
     AuthRepository,
     AuthSessionsRepository,
     JwtIdentityGuard,
