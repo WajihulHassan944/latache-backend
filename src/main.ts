@@ -34,10 +34,18 @@ interface ValidationErrorNode {
 const flattenValidationErrors = (
   errors: ValidationErrorNode[],
   prefix = '',
-): Array<{ field: string; messages: string[] }> =>
+): Array<{ field: string; messages: string[]; codes: string[] }> =>
   errors.flatMap((error) => {
     const field = prefix ? `${prefix}.${error.property}` : error.property;
-    const own = error.constraints ? [{ field, messages: Object.values(error.constraints) }] : [];
+    const own = error.constraints
+      ? [
+          {
+            field,
+            messages: Object.values(error.constraints),
+            codes: Object.keys(error.constraints),
+          },
+        ]
+      : [];
     const nested = error.children?.length ? flattenValidationErrors(error.children, field) : [];
     return [...own, ...nested];
   });
