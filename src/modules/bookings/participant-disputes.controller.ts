@@ -1,5 +1,13 @@
 import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiForbiddenResponse,
+  ApiHeader,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -51,7 +59,15 @@ export class ParticipantDisputesController {
   @ApiOperation({
     summary: 'Open a booking dispute as Customer or Tasker',
     description:
-      'Creates at most one active dispute per booking inside the configured post-completion filing window. The booking row is locked before case creation, Idempotency-Key retries are replay-safe, and financial clearance is held without fabricating payment state. Admin investigation continues through /api/admin/disputes.',
+      'Creates at most one active dispute per booking inside the configured post-completion filing window. The booking row is locked before case creation, Idempotency-Key retries are replay-safe, and financial clearance is held without fabricating payment state. Admin investigation continues through /api/admin/disputes. ' +
+      'The "customer_no_show" category is Tasker-only and skips the post-completion filing window entirely: it is only accepted while the booking is still "arrived" (Tasker on-site, work not started), and ends the booking in the same request (booking.status becomes "cancelled", cancelledByRole "tasker", cancellationReason set to the dispute description, and the Tasker\'s availability slot is released) while the payment stays held (on_hold_dispute) for admin to resolve - it is not auto-refunded.',
+  })
+  @ApiForbiddenResponse({
+    description: 'NO_SHOW_TASKER_ONLY if a Customer submits the customer_no_show category.',
+  })
+  @ApiConflictResponse({
+    description:
+      'DISPUTE_BOOKING_CANCELLED, DISPUTE_NOT_YET_FILEABLE, DISPUTE_FILING_WINDOW_CLOSED, ACTIVE_DISPUTE_EXISTS, DISPUTE_IDEMPOTENCY_KEY_REUSED, or NO_SHOW_NOT_ELIGIBLE when customer_no_show is submitted for a booking that is not currently "arrived".',
   })
   create(
     @CurrentUser() user: User,

@@ -27,6 +27,7 @@ export const COMPLAINT_CATEGORIES = [
   'customer_conduct',
   'scope_change',
   'payment',
+  'customer_no_show',
   'other',
 ] as const;
 
@@ -76,7 +77,8 @@ export class FileComplaintDto {
   @ApiProperty({
     enum: COMPLAINT_CATEGORIES,
     example: 'poor_quality',
-    description: 'Shared complaint categories for Customer and Tasker booking disputes.',
+    description:
+      'Shared complaint categories for Customer and Tasker booking disputes. customer_no_show is Tasker-only and only accepted while the booking is at the "arrived" stage (before work starts) - it ends the booking immediately in the same request.',
   })
   @IsIn(COMPLAINT_CATEGORIES)
   category!: (typeof COMPLAINT_CATEGORIES)[number];

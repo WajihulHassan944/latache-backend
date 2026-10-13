@@ -2165,21 +2165,23 @@ export class BookingsService {
             id: true,
             customerId: true,
             taskerId: true,
+            availabilityId: true,
             status: true,
             paymentStatus: true,
+            cancelledByRole: true,
+            cancellationReason: true,
             completionSubmittedAt: true,
             completionApprovedAt: true,
             taskCompletedAt: true,
           },
         });
         if (!booking) throw new NotFoundException('Booking not found');
-        if (booking.status === 'cancelled') {
-          throw new ConflictException({
-            code: 'DISPUTE_BOOKING_CANCELLED',
-            message: 'A dispute cannot be filed for an inaccessible cancelled booking.',
-          });
-        }
 
+        // Checked before the cancelled-booking guard below: a customer_no_show
+        // dispute cancels the booking as a side effect of its own successful
+        // filing, so a retry of that same request (same Idempotency-Key) must
+        // still replay the cached result instead of being rejected for the
+        // very state its first attempt created.
         const replay = normalizedKey
           ? await transaction.taskComplaint.findFirst({
               where: { filedById: user.id, clientRequestKey: normalizedKey },
@@ -2192,25 +2194,63 @@ export class BookingsService {
               message: 'This idempotency key has already been used for another dispute request.',
             });
           }
-          return { complaint: replay, replay: true };
+          return {
+            complaint: replay,
+            replay: true,
+            cancelledBooking:
+              replay.category === 'customer_no_show'
+                ? {
+                    status: booking.status,
+                    cancelledByRole: booking.cancelledByRole,
+                    cancellationReason: booking.cancellationReason,
+                  }
+                : null,
+          };
+        }
+
+        if (booking.status === 'cancelled') {
+          throw new ConflictException({
+            code: 'DISPUTE_BOOKING_CANCELLED',
+            message: 'A dispute cannot be filed for an inaccessible cancelled booking.',
+          });
+        }
+
+        const isNoShowDispute = dto.category === 'customer_no_show';
+        if (isNoShowDispute) {
+          if (user.role !== UserRole.Tasker) {
+            throw new ForbiddenException({
+              code: 'NO_SHOW_TASKER_ONLY',
+              message: 'Only the Tasker can file a customer no-show dispute.',
+            });
+          }
+          if (booking.status !== 'arrived') {
+            throw new ConflictException({
+              code: 'NO_SHOW_NOT_ELIGIBLE',
+              message:
+                'A customer no-show dispute can only be filed while the booking is at the arrived stage, before work has started.',
+            });
+          }
         }
 
         const policy = await this.disputes.policy(transaction);
-        const completionAnchor =
-          booking.taskCompletedAt ?? booking.completionApprovedAt ?? booking.completionSubmittedAt;
-        if (!completionAnchor) {
-          throw new ConflictException({
-            code: 'DISPUTE_NOT_YET_FILEABLE',
-            message: 'A booking dispute can be filed only after service completion has been recorded.',
-          });
-        }
-        const filingDeadlineAt = this.disputes.filingDeadline(completionAnchor, policy);
-        if (filingDeadlineAt && filingDeadlineAt.getTime() < Date.now()) {
-          throw new ConflictException({
-            code: 'DISPUTE_FILING_WINDOW_CLOSED',
-            message: 'The configured post-service dispute filing window has closed.',
-            filingDeadlineAt: filingDeadlineAt.toISOString(),
-          });
+        let filingDeadlineAt: Date | null = null;
+        if (!isNoShowDispute) {
+          const completionAnchor =
+            booking.taskCompletedAt ?? booking.completionApprovedAt ?? booking.completionSubmittedAt;
+          if (!completionAnchor) {
+            throw new ConflictException({
+              code: 'DISPUTE_NOT_YET_FILEABLE',
+              message: 'A booking dispute can be filed only after service completion has been recorded.',
+            });
+          }
+          filingDeadlineAt = this.disputes.filingDeadline(completionAnchor, policy);
+          if (filingDeadlineAt && filingDeadlineAt.getTime() < Date.now()) {
+            throw new ConflictException({
+              code: 'DISPUTE_FILING_WINDOW_CLOSED',
+              message: 'The configured post-service dispute filing window has closed.',
+              filingDeadlineAt: filingDeadlineAt.toISOString(),
+            });
+          }
         }
 
         const active = await transaction.taskComplaint.findFirst({
@@ -2234,7 +2274,7 @@ export class BookingsService {
         const priority =
           dto.category === 'safety'
             ? 'urgent'
-            : ['missed_appointment', 'overcharged', 'payment'].includes(dto.category)
+            : ['missed_appointment', 'overcharged', 'payment', 'customer_no_show'].includes(dto.category)
               ? 'high'
               : 'normal';
         const assignedAdminId = await this.disputes.selectAssignee(transaction);
@@ -2282,6 +2322,28 @@ export class BookingsService {
               bytes: attachment.bytes ?? null,
               mimeType: attachment.mimeType ?? null,
             })),
+          });
+        }
+
+        let cancelledBooking: {
+          status: string;
+          cancelledByRole: string | null;
+          cancellationReason: string | null;
+        } | null = null;
+        if (isNoShowDispute) {
+          await transaction.userAvailability.updateMany({
+            where: { id: booking.availabilityId },
+            data: { isBooked: false },
+          });
+          cancelledBooking = await transaction.booking.update({
+            where: { id: bookingId },
+            data: {
+              status: 'cancelled',
+              cancelledAt: now,
+              cancelledByRole: 'tasker',
+              cancellationReason: dto.description,
+            },
+            select: { status: true, cancelledByRole: true, cancellationReason: true },
           });
         }
 
@@ -2336,13 +2398,21 @@ export class BookingsService {
           },
           transaction,
         );
-        await this.enqueueBookingUpdate(bookingId, booking.status, 'dispute_opened', transaction, {
-          disputeId: complaint.id,
-          priority,
-        });
-        return { complaint, replay: false };
+        await this.enqueueBookingUpdate(
+          bookingId,
+          cancelledBooking?.status ?? booking.status,
+          isNoShowDispute ? 'tasker_no_show_cancelled' : 'dispute_opened',
+          transaction,
+          { disputeId: complaint.id, priority },
+        );
+        return { complaint, replay: false, cancelledBooking };
       });
-      return this.openedDisputeView(result.complaint, bookingId, result.replay);
+      return this.openedDisputeView(
+        result.complaint,
+        bookingId,
+        result.replay,
+        result.cancelledBooking,
+      );
     } catch (error) {
       if (hasPrismaErrorCode(error, 'P2002')) {
         const replay = normalizedKey
@@ -2350,7 +2420,16 @@ export class BookingsService {
               where: { filedById: user.id, clientRequestKey: normalizedKey },
             })
           : null;
-        if (replay?.bookingId === bookingId) return this.openedDisputeView(replay, bookingId, true);
+        if (replay?.bookingId === bookingId) {
+          const cancelledBooking =
+            replay.category === 'customer_no_show'
+              ? await this.prisma.booking.findUnique({
+                  where: { id: bookingId },
+                  select: { status: true, cancelledByRole: true, cancellationReason: true },
+                })
+              : null;
+          return this.openedDisputeView(replay, bookingId, true, cancelledBooking);
+        }
         const active = await this.prisma.taskComplaint.findFirst({
           where: { bookingId, status: { in: ['open', 'under_investigation', 'escalated'] } },
           orderBy: { createdAt: 'asc' },
@@ -3081,6 +3160,11 @@ export class BookingsService {
     },
     bookingId: number,
     idempotentReplay: boolean,
+    cancelledBooking?: {
+      status: string;
+      cancelledByRole: string | null;
+      cancellationReason: string | null;
+    } | null,
   ) {
     return {
       id: complaint.id,
@@ -3095,6 +3179,15 @@ export class BookingsService {
       assignedAdminId: complaint.assignedAdminId,
       idempotentReplay,
       createdAt: complaint.createdAt.toISOString(),
+      ...(cancelledBooking
+        ? {
+            booking: {
+              status: cancelledBooking.status,
+              cancelledByRole: cancelledBooking.cancelledByRole,
+              cancellationReason: cancelledBooking.cancellationReason,
+            },
+          }
+        : {}),
     };
   }
 
