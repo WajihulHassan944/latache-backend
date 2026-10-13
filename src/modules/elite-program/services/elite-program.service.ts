@@ -39,6 +39,7 @@ import {
   ELITE_PROGRAM_HISTORY_COMPLETE_FROM,
   ELITE_TIER_CODES,
   type ElitePerkCode,
+  type EliteRequestStatus,
   type EliteTierCode,
 } from '../elite-program.constants';
 import { LocaleService } from '../../localization/locale.service';
@@ -1028,6 +1029,117 @@ export class EliteProgramService {
             createdAt: result.transition.createdAt.toISOString(),
           }
         : null,
+    };
+  }
+
+  /**
+   * Thin compat wrapper over list(view: 'upgrade_requests') for frontend
+   * code written against GET /admin/elite-taskers/upgrade-requests instead
+   * of GET /admin/elite-taskers?view=upgrade_requests. Same query, same
+   * data, reshaped to the flat item fields that call site expects.
+   */
+  async listUpgradeRequestsCompat(query: {
+    status?: string;
+    tier?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<Record<string, unknown>> {
+    const result = (await this.list({
+      view: 'upgrade_requests',
+      requestStatus: (query.status as EliteRequestStatus) ?? 'pending',
+      tier: query.tier as EliteTierCode | undefined,
+      search: query.search,
+      page: query.page,
+      limit: query.limit,
+      sort: 'newest',
+    } as ListEliteAdminDto)) as {
+      page: number;
+      limit: number;
+      totalItems: number;
+      totalPages: number;
+      items: Array<{
+        id: string;
+        fromTier: string | null;
+        toTier: string | null;
+        status: string;
+        createdAt: string;
+        eligibility: { score: number | null };
+        tasker: { id: string; name: string; email: string; rating: number; completedTasks: number };
+      }>;
+    };
+    return {
+      page: result.page,
+      limit: result.limit,
+      totalItems: result.totalItems,
+      totalPages: result.totalPages,
+      items: result.items.map((item) => ({
+        id: item.id,
+        taskerId: item.tasker.id,
+        taskerName: item.tasker.name,
+        taskerEmail: item.tasker.email,
+        currentTier: item.fromTier ?? 'standard',
+        targetTier: item.toTier,
+        rating: item.tasker.rating,
+        jobsCount: item.tasker.completedTasks,
+        score: item.eligibility?.score ?? null,
+        submittedAt: item.createdAt,
+        status: item.status,
+      })),
+    };
+  }
+
+  /**
+   * Thin compat wrapper over decide() for frontend code written against
+   * POST /admin/elite-taskers/upgrade-requests/:id/decide (decision/
+   * targetTier/reviewerNotes field names) instead of the real
+   * POST /admin/elite-taskers/requests/:id/decision (action/reason).
+   * Adds only input validation (targetTier required on approve and must
+   * match what the Tasker actually requested) - the decision itself still
+   * runs through the exact same decide() business logic/guards.
+   */
+  async decideUpgradeRequestCompat(
+    actor: User,
+    requestId: string,
+    dto: { decision: 'approve' | 'reject'; reason?: string; targetTier?: string; reviewerNotes?: string },
+  ): Promise<Record<string, unknown>> {
+    const requestRow = await this.prisma.eliteMembershipRequest.findUnique({
+      where: { id: requestId },
+      select: { taskerId: true, toTierCode: true },
+    });
+    if (!requestRow) throw new NotFoundException('Elite request not found');
+
+    if (dto.decision === 'approve') {
+      if (!dto.targetTier) {
+        throw new BadRequestException('targetTier is required when approving an upgrade request');
+      }
+      if (requestRow.toTierCode !== dto.targetTier) {
+        throw new ConflictException({
+          code: 'ELITE_TARGET_TIER_MISMATCH',
+          message: `This request was submitted for tier "${requestRow.toTierCode}" and cannot be approved into "${dto.targetTier}".`,
+        });
+      }
+    }
+
+    const combinedReason =
+      [dto.reason?.trim(), dto.reviewerNotes?.trim()].filter(Boolean).join(' | ') || undefined;
+    const result = (await this.decide(actor, requestId, {
+      action: dto.decision,
+      reason: combinedReason,
+    })) as {
+      request: { id: string; fromTier: string | null; toTier: string | null; status: string; decidedAt: string | null };
+    };
+
+    return {
+      id: result.request.id,
+      taskerId: String(requestRow.taskerId),
+      currentTier: result.request.fromTier ?? 'standard',
+      targetTier: result.request.toTier,
+      status: result.request.status,
+      decisionAt: result.request.decidedAt,
+      reviewedByAdminId: String(actor.id),
+      reason: dto.reason,
+      reviewerNotes: dto.reviewerNotes,
     };
   }
 

@@ -30,7 +30,9 @@ import type { User } from '../../../generated/prisma/client';
 import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminDateRangeQueryDto } from '../../admin-dashboard/dto/admin-date-range-query.dto';
 import {
+  AdminEliteUpgradeRequestsQueryDto,
   CreateEliteBadgeDto,
+  DecideEliteUpgradeRequestDto,
   EliteDecisionDto,
   EliteReportQueryDto,
   ListEliteAdminDto,
@@ -204,6 +206,38 @@ export class AdminEliteTaskersController {
       return this.elite.csvForReport(type, data);
     }
     return data;
+  }
+
+  @Get('upgrade-requests')
+  @ApiOperation({
+    summary: '[Compat] List Elite tier upgrade requests',
+    description:
+      'Thin alias for GET /admin/elite-taskers?view=upgrade_requests, kept for frontend code written against this specific URL shape. Same data, same elite.read permission, flat response fields (taskerId/taskerName/taskerEmail/currentTier/targetTier/rating/jobsCount/score/submittedAt/status).',
+  })
+  listUpgradeRequests(
+    @Query() query: AdminEliteUpgradeRequestsQueryDto,
+  ): Promise<Record<string, unknown>> {
+    return this.elite.listUpgradeRequestsCompat(query);
+  }
+
+  @Post('upgrade-requests/:id/decide')
+  @Permissions('elite.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Elite upgrade request ID.' })
+  @ApiOperation({
+    summary: '[Compat] Approve or reject an Elite tier upgrade request',
+    description:
+      'Thin alias for POST /admin/elite-taskers/requests/:id/decision, kept for frontend code written against this specific URL/field shape (decision/targetTier/reviewerNotes instead of action/reason). Runs the exact same decision logic: approve re-validates live eligibility and applies the tier transactionally; reject requires a reason and leaves the Tasker\'s tier unchanged. targetTier must match what the Tasker actually requested.',
+  })
+  @ApiConflictResponse({
+    description:
+      'Request is stale/no longer pending, ELITE_ELIGIBILITY_CHANGED, or ELITE_TARGET_TIER_MISMATCH.',
+  })
+  decideUpgradeRequest(
+    @CurrentUser() actor: User,
+    @Param('id') id: string,
+    @Body() dto: DecideEliteUpgradeRequestDto,
+  ): Promise<Record<string, unknown>> {
+    return this.elite.decideUpgradeRequestCompat(actor, id, dto);
   }
 
   @Post('requests/:requestId/decision')

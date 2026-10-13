@@ -6,3 +6,4 @@ export * from './elite-benefits.dto';
 export * from './elite-badge.dto';
 export * from './elite-report-query.dto';
 export * from './update-elite-tier-policy.dto';
+export * from './elite-upgrade-request-compat.dto';
