@@ -16,7 +16,7 @@ export class TaskerDashboardService {
     private readonly wallet: TaskerWalletService,
   ) {}
 
-  async overview(taskerId: number): Promise<DashboardOverviewView> {
+  async overview(taskerId: number, locale: string): Promise<DashboardOverviewView> {
     const tasker = await this.prisma.user.findFirst({
       where: { id: taskerId, roles: { has: UserRole.Tasker }, deletedAt: null, taskerProfile: { isNot: null } },
       select: {
@@ -52,8 +52,8 @@ export class TaskerDashboardService {
       this.tasks.completionMetrics(taskerId),
       this.reviews.averageReceived(taskerId, UserRole.Tasker),
       this.reviews.averageGiven(taskerId, UserRole.Tasker),
-      this.tasks.next(taskerId),
-      this.wallet.recentTransactions(taskerId, 5),
+      this.tasks.next(taskerId, locale),
+      this.wallet.recentTransactions(taskerId, locale, 5),
       this.prisma.taskerPayoutMethod.count({
         where: { taskerId, status: 'active', deletedAt: null },
       }),

@@ -36,6 +36,7 @@ import { DisputeLifecycleService } from '../disputes/dispute-lifecycle.service';
 import { ReferralsService } from '../referrals/services/referrals.service';
 import { AppCacheService, CacheNamespace } from '../../infrastructure/redis/app-cache.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { ResponseLocalizationService } from '../localization/response-localization.service';
 import type { AddComplaintEvidenceDto, FileComplaintDto } from './dto/file-complaint.dto';
 import type {
   ListParticipantDisputesQueryDto,
@@ -180,11 +181,12 @@ export class BookingsService {
     private readonly cache: AppCacheService,
     private readonly conversations: ConversationsService,
     private readonly customTimeRequests: CustomTimeRequestsService,
+    private readonly responseLocalization: ResponseLocalizationService,
   ) {
     this.minimumBillableMinutes = config.get<number>('payments.minimumBillableMinutes', 120);
   }
 
-  async quote(dto: BookingQuoteDto, requesterId?: number) {
+  async quote(dto: BookingQuoteDto, locale: string, requesterId?: number) {
     if (!isTodayOrFutureDate(dto.date))
       throw new BadRequestException('date must be today or later');
     if (dto.customTimeRequestId && !requesterId) {
@@ -216,6 +218,7 @@ export class BookingsService {
       context.tasker,
       dateOnlyToDate(dto.date),
       currency.code,
+      locale,
     );
     return { ...view, isCustomTime: context.isCustomTime };
   }
@@ -279,7 +282,7 @@ export class BookingsService {
     });
   }
 
-  async book(customerId: number, dto: BookTaskerDto) {
+  async book(customerId: number, dto: BookTaskerDto, locale: string) {
     if (customerId === dto.taskerId) {
       throw new ForbiddenException({ code: 'SELF_BOOKING_FORBIDDEN', message: 'A user cannot book their own Tasker profile' });
     }
@@ -455,7 +458,11 @@ export class BookingsService {
         const estimate = await this.payments.refreshPaymentEstimate(created.id, transaction);
         return { ...created, paymentEstimate: estimate as unknown as Prisma.JsonValue };
       });
-      return this.serialize(booking, customerId);
+      const serviceName = await this.responseLocalization.resolveServiceName(
+        booking.service.id,
+        locale,
+      );
+      return this.serialize(booking, customerId, serviceName);
     } catch (error) {
       if (hasPrismaErrorCode(error, 'P2002') || hasPrismaErrorCode(error, 'P2034')) {
         throw new ConflictException('Requested slot has already been booked');
@@ -464,7 +471,7 @@ export class BookingsService {
     }
   }
 
-  async list(user: User, query: ListUnifiedBookingsQueryDto) {
+  async list(user: User, query: ListUnifiedBookingsQueryDto, locale: string) {
     this.assertDashboardRole(user);
     const bucket = query.bucket ?? 'booked';
     const statuses = bucket === 'booked' ? BOOKED : bucket === 'ongoing' ? ONGOING : HISTORY;
@@ -486,23 +493,33 @@ export class BookingsService {
       }),
       this.prisma.booking.count({ where }),
     ]);
+    const nameMap = await this.responseLocalization.resolveServiceNames(
+      rows.map((row) => row.service.id),
+      locale,
+    );
     return {
       bucket,
       page,
       limit,
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
-      items: rows.map((row) => this.serialize(row, user.id)),
+      items: rows.map((row) =>
+        this.serialize(row, user.id, nameMap.get(row.service.id) ?? row.service.name ?? ''),
+      ),
     };
   }
 
-  async get(user: User, bookingId: number) {
+  async get(user: User, bookingId: number, locale: string) {
     this.assertDashboardRole(user);
     const booking = await this.findParticipantBooking(user, bookingId);
-    return this.serialize(booking, user.id);
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      booking.service.id,
+      locale,
+    );
+    return this.serialize(booking, user.id, serviceName);
   }
 
-  async next(user: User) {
+  async next(user: User, locale: string) {
     this.assertDashboardRole(user);
     const today = new Date();
     const booking = await this.prisma.booking.findFirst({
@@ -516,10 +533,20 @@ export class BookingsService {
       include: BOOKING_INCLUDE,
       orderBy: [{ bookingDate: 'asc' }, { startTime: 'asc' }],
     });
-    return booking ? this.serialize(booking, user.id) : null;
+    if (!booking) return null;
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      booking.service.id,
+      locale,
+    );
+    return this.serialize(booking, user.id, serviceName);
   }
 
-  async cancelCustomer(customerId: number, bookingId: number, dto: CancelBookingDto) {
+  async cancelCustomer(
+    customerId: number,
+    bookingId: number,
+    dto: CancelBookingDto,
+    locale: string,
+  ) {
     let refundOutcome = 'none' as 'none' | 'wallet_refunded' | 'card_refund_pending';
     const updated = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
@@ -584,7 +611,7 @@ export class BookingsService {
       await this.enqueueBookingUpdate(bookingId, 'cancelled', 'customer_cancelled', transaction);
       return row;
     });
-    return this.serializeAfterCancellationRefund(updated, customerId, refundOutcome);
+    return this.serializeAfterCancellationRefund(updated, customerId, refundOutcome, locale);
   }
 
   /**
@@ -596,14 +623,21 @@ export class BookingsService {
     row: UnifiedBookingWithRelations,
     viewerId: number,
     outcome: 'none' | 'wallet_refunded' | 'card_refund_pending',
+    locale: string,
   ) {
-    if (outcome === 'none') return this.serialize(row, viewerId);
+    const serviceName = await this.responseLocalization.resolveServiceName(row.service.id, locale);
+    if (outcome === 'none') return this.serialize(row, viewerId, serviceName);
     if (outcome === 'card_refund_pending') await this.payments.processAcceptanceRefund(row.id);
     const fresh = await this.prisma.booking.findUniqueOrThrow({ where: { id: row.id }, include: BOOKING_INCLUDE });
-    return this.serialize(fresh, viewerId);
+    return this.serialize(fresh, viewerId, serviceName);
   }
 
-  async reschedule(customerId: number, bookingId: number, dto: RescheduleBookingDto) {
+  async reschedule(
+    customerId: number,
+    bookingId: number,
+    dto: RescheduleBookingDto,
+    locale: string,
+  ) {
     if (!isTodayOrFutureDate(dto.date))
       throw new BadRequestException('date must be today or later');
     const updated = await this.prisma.$transaction(async (transaction) => {
@@ -664,7 +698,11 @@ export class BookingsService {
       const estimate = await this.payments.refreshPaymentEstimate(bookingId, transaction);
       return { ...row, paymentEstimate: estimate as unknown as Prisma.JsonValue };
     });
-    return this.serialize(updated, customerId);
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      updated.service.id,
+      locale,
+    );
+    return this.serialize(updated, customerId, serviceName);
   }
 
   async createRescheduleProposal(
@@ -996,6 +1034,7 @@ export class BookingsService {
     bookingId: number,
     requestId: string,
     dto: RespondExtensionRequestDto,
+    locale: string,
   ) {
     const outcome = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
@@ -1084,14 +1123,24 @@ export class BookingsService {
     if (outcome.expired) {
       throw new ConflictException('Extra time can be approved only while the task is in progress');
     }
-    return this.serialize(
-      await this.prisma.booking.findUniqueOrThrow({ where: { id: bookingId }, include: BOOKING_INCLUDE }),
-      customerId,
+    const refreshed = await this.prisma.booking.findUniqueOrThrow({
+      where: { id: bookingId },
+      include: BOOKING_INCLUDE,
+    });
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      refreshed.service.id,
+      locale,
     );
+    return this.serialize(refreshed, customerId, serviceName);
   }
 
   /** The Tasker withdraws their own pending extra-time request. */
-  async cancelExtensionRequest(taskerId: number, bookingId: number, requestId: string) {
+  async cancelExtensionRequest(
+    taskerId: number,
+    bookingId: number,
+    requestId: string,
+    locale: string,
+  ) {
     await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
       const booking = await transaction.booking.findFirst({ where: { id: bookingId, taskerId } });
@@ -1111,10 +1160,15 @@ export class BookingsService {
         extensionRequestId: request.id,
       });
     });
-    return this.serialize(
-      await this.prisma.booking.findUniqueOrThrow({ where: { id: bookingId }, include: BOOKING_INCLUDE }),
-      taskerId,
+    const refreshed = await this.prisma.booking.findUniqueOrThrow({
+      where: { id: bookingId },
+      include: BOOKING_INCLUDE,
+    });
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      refreshed.service.id,
+      locale,
     );
+    return this.serialize(refreshed, taskerId, serviceName);
   }
 
   private serializeExtensionRequest(request: {
@@ -1139,7 +1193,7 @@ export class BookingsService {
    * can proceed. The customer can instead file a dispute through the existing
    * booking-dispute endpoint, which independently holds payment.
    */
-  async approveDurationReview(customerId: number, bookingId: number) {
+  async approveDurationReview(customerId: number, bookingId: number, locale: string) {
     const updated = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
       const booking = await transaction.booking.findFirst({ where: { id: bookingId, customerId } });
@@ -1206,10 +1260,15 @@ export class BookingsService {
       });
       return row;
     });
-    return this.serialize(
-      await this.prisma.booking.findUniqueOrThrow({ where: { id: updated.id }, include: BOOKING_INCLUDE }),
-      customerId,
+    const refreshed = await this.prisma.booking.findUniqueOrThrow({
+      where: { id: updated.id },
+      include: BOOKING_INCLUDE,
+    });
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      refreshed.service.id,
+      locale,
     );
+    return this.serialize(refreshed, customerId, serviceName);
   }
 
   /**
@@ -2026,7 +2085,7 @@ export class BookingsService {
     };
   }
 
-  async listUserDisputes(user: User, query: ListParticipantDisputesQueryDto) {
+  async listUserDisputes(user: User, query: ListParticipantDisputesQueryDto, locale: string) {
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
     const where: Prisma.TaskComplaintWhereInput = {
       booking: this.participantBookingScope(user),
@@ -2043,16 +2102,26 @@ export class BookingsService {
       }),
       this.prisma.taskComplaint.count({ where }),
     ]);
+    const nameMap = await this.responseLocalization.resolveServiceNames(
+      rows.map((row) => row.booking.service.id),
+      locale,
+    );
     return {
       page,
       limit,
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
-      items: rows.map((row) => this.participantDisputeView(row, user.id)),
+      items: rows.map((row) =>
+        this.participantDisputeView(
+          row,
+          user.id,
+          nameMap.get(row.booking.service.id) ?? row.booking.service.name ?? '',
+        ),
+      ),
     };
   }
 
-  async getUserDispute(user: User, disputeId: string) {
+  async getUserDispute(user: User, disputeId: string, locale: string) {
     const row = await this.prisma.taskComplaint.findFirst({
       where: {
         id: disputeId,
@@ -2061,10 +2130,19 @@ export class BookingsService {
       include: PARTICIPANT_DISPUTE_INCLUDE,
     });
     if (!row) throw new NotFoundException('Dispute not found');
-    return this.participantDisputeView(row, user.id);
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      row.booking.service.id,
+      locale,
+    );
+    return this.participantDisputeView(row, user.id, serviceName);
   }
 
-  async addUserDisputeEvidence(user: User, disputeId: string, dto: AddComplaintEvidenceDto) {
+  async addUserDisputeEvidence(
+    user: User,
+    disputeId: string,
+    dto: AddComplaintEvidenceDto,
+    locale: string,
+  ) {
     const complaint = await this.prisma.taskComplaint.findFirst({
       where: {
         id: disputeId,
@@ -2073,7 +2151,7 @@ export class BookingsService {
       select: { bookingId: true },
     });
     if (!complaint) throw new NotFoundException('Dispute not found');
-    return this.addComplaintEvidence(user, complaint.bookingId, disputeId, dto);
+    return this.addComplaintEvidence(user, complaint.bookingId, disputeId, dto, locale);
   }
 
   async listComplaints(user: User, bookingId: number) {
@@ -2451,6 +2529,7 @@ export class BookingsService {
     bookingId: number,
     complaintId: string,
     dto: AddComplaintEvidenceDto,
+    locale: string,
   ) {
     if (!dto.evidence.length) {
       throw new BadRequestException('At least one evidence item is required');
@@ -2610,12 +2689,17 @@ export class BookingsService {
       submittedCount: result.submittedCount,
       duplicateEvidenceIgnored: evidenceItems.length - result.submittedCount,
       pendingEvidenceRequests: result.pendingRequests,
-      dispute: await this.getUserDispute(user, complaintId),
+      dispute: await this.getUserDispute(user, complaintId, locale),
     };
   }
 
 
-  async participantDisputeAction(user: User, disputeId: string, dto: ParticipantDisputeActionDto) {
+  async participantDisputeAction(
+    user: User,
+    disputeId: string,
+    dto: ParticipantDisputeActionDto,
+    locale: string,
+  ) {
     if (dto.action === 'comment') {
       const message = dto.message?.trim();
       if (!message) throw new BadRequestException('message is required for a dispute comment');
@@ -2657,7 +2741,7 @@ export class BookingsService {
           });
         }
       });
-      return this.getUserDispute(user, disputeId);
+      return this.getUserDispute(user, disputeId, locale);
     }
 
     if (dto.action === 'withdraw') {
@@ -2745,7 +2829,7 @@ export class BookingsService {
         return complaint.bookingId;
       });
       await this.payments.releaseDisputeHold(result);
-      return this.getUserDispute(user, disputeId);
+      return this.getUserDispute(user, disputeId, locale);
     }
 
     if (dto.action === 'appeal') {
@@ -2872,7 +2956,7 @@ export class BookingsService {
         }
         throw error;
       }
-      return this.getUserDispute(user, disputeId);
+      return this.getUserDispute(user, disputeId, locale);
     }
 
     if (dto.action === 'accept_proposal' || dto.action === 'reject_proposal') {
@@ -2955,7 +3039,7 @@ export class BookingsService {
           });
         }
       });
-      return this.getUserDispute(user, disputeId);
+      return this.getUserDispute(user, disputeId, locale);
     }
 
     throw new BadRequestException('Unsupported participant dispute action');
@@ -2996,7 +3080,7 @@ export class BookingsService {
     };
   }
 
-  private participantDisputeView(row: ParticipantDisputeRow, userId: number) {
+  private participantDisputeView(row: ParticipantDisputeRow, userId: number, serviceName: string) {
     const participantRole = row.booking.customerId === userId ? 'customer' : 'tasker';
     const myEvidence = row.evidences.filter((evidence) => evidence.uploadedById === userId);
     const visibleRequests = row.evidenceRequests.filter(
@@ -3030,7 +3114,7 @@ export class BookingsService {
         endTime: row.booking.endTime,
         service: {
           id: String(row.booking.service.id),
-          name: row.booking.service.name,
+          name: serviceName,
           slug: row.booking.service.slug,
           icon: row.booking.service.icon ?? '',
         },
@@ -3321,6 +3405,7 @@ export class BookingsService {
     },
     bookingDate: Date,
     currency: string,
+    locale: string,
   ) {
     const start = parseTimeToMinutes(startTime) ?? 0;
     const end = parseTimeToMinutes(endTime) ?? start;
@@ -3354,7 +3439,11 @@ export class BookingsService {
         profilePicture: tasker.profilePicture ?? '',
         rating: Number(tasker.rating),
       },
-      service: { id: String(service.id), name: service.name, slug: service.slug },
+      service: {
+        id: String(service.id),
+        name: await this.responseLocalization.resolveServiceName(service.id, locale),
+        slug: service.slug,
+      },
       serviceOption: option
         ? { id: String(option.id), name: option.name, slug: option.slug }
         : null,
@@ -3412,7 +3501,7 @@ export class BookingsService {
     );
   }
 
-  private serialize(booking: UnifiedBookingWithRelations, viewerId: number) {
+  private serialize(booking: UnifiedBookingWithRelations, viewerId: number, serviceName: string) {
     const viewerRole = booking.customerId === viewerId ? 'customer' : 'tasker';
     const estimate = booking.paymentEstimate as unknown as PaymentEstimate | null;
 
@@ -3443,7 +3532,7 @@ export class BookingsService {
       isCustomTime: booking.isCustomTime,
       service: {
         id: String(booking.service.id),
-        name: booking.service.name,
+        name: serviceName,
         slug: booking.service.slug,
         icon: booking.service.icon ?? '',
       },

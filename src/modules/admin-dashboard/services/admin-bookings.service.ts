@@ -15,6 +15,7 @@ import { RealtimeOutboxService } from '../../realtime/realtime-outbox.service';
 import { ReferralsService } from '../../referrals/services/referrals.service';
 import type { AdminBookingActionDto, AdminBookingsQueryDto } from '../dto';
 import { fullName, money, pagination } from '../admin-dashboard.utils';
+import { ResponseLocalizationService } from '../../localization/response-localization.service';
 
 const ACTIVE_BOOKING_STATUSES = [
   'pending',
@@ -60,6 +61,7 @@ export class AdminBookingsService {
     private readonly realtime: RealtimeOutboxService,
     private readonly referrals: ReferralsService,
     private readonly payments: PaymentsService,
+    private readonly responseLocalization: ResponseLocalizationService,
   ) {}
 
   async list(query: AdminBookingsQueryDto) {
@@ -127,6 +129,7 @@ export class AdminBookingsService {
   async csv(
     actor: User,
     query: AdminBookingsQueryDto,
+    locale: string,
   ): Promise<{ body: string; truncated: boolean }> {
     if (actor.role !== UserRole.SuperAdmin && !actor.permissions.includes('reports.read')) {
       throw new ForbiddenException(
@@ -142,7 +145,15 @@ export class AdminBookingsService {
       take: MAX_CSV_ROWS + 1,
     });
     const truncated = rows.length > MAX_CSV_ROWS;
-    const exported = rows.slice(0, MAX_CSV_ROWS).map((booking) => this.listItem(booking));
+    const page = rows.slice(0, MAX_CSV_ROWS);
+    const nameMap = await this.responseLocalization.resolveServiceNames(
+      page.map((booking) => booking.service.id),
+      locale,
+    );
+    const exported = page.map((booking) => {
+      const item = this.listItem(booking);
+      return { ...item, service: { ...item.service, name: nameMap.get(booking.service.id) ?? item.service.name } };
+    });
     const header = [
       'booking_id',
       'service',

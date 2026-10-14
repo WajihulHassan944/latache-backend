@@ -14,8 +14,45 @@ export class ResponseLocalizationService {
     private readonly locales: LocaleService,
   ) {}
 
+  /**
+   * Explicit call-site resolution for a single booking's service name, using the
+   * same exact-locale -> English -> first-available -> canonical fallback as
+   * `selectTranslation`/GET /services. Prefer `resolveServiceNames` when resolving
+   * more than one id at once to avoid N+1 queries.
+   */
+  async resolveServiceName(serviceId: number, locale: string): Promise<string> {
+    const map = await this.resolveServiceNames([serviceId], locale);
+    return map.get(serviceId) ?? '';
+  }
+
+  async resolveServiceNames(serviceIds: number[], locale: string): Promise<Map<number, string>> {
+    const ids = [...new Set(serviceIds)].filter((id) => Number.isInteger(id) && id > 0);
+    const map = new Map<number, string>();
+    if (!ids.length) return map;
+    const rows = await this.prisma.service.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        translations: {
+          where: { locale: { in: [locale, this.locales.defaultLocale] } },
+          select: { locale: true, name: true, description: true },
+        },
+      },
+    });
+    for (const row of rows) {
+      const selected = this.locales.selectTranslation(row.translations, locale);
+      map.set(row.id, selected.translation?.name ?? row.name ?? '');
+    }
+    return map;
+  }
+
   async localize(payload: unknown, locale: string, path: string): Promise<unknown> {
-    if (locale === this.locales.defaultLocale || path.startsWith('/api/admin/')) return payload;
+    // Only the Service-management admin surface (/api/admin/services) deliberately
+    // reads/writes canonical fields; every other admin route (analytics, bookings,
+    // disputes, reviews, finance, ...) should resolve the same as any other caller.
+    if (locale === this.locales.defaultLocale || path.startsWith('/api/admin/services'))
+      return payload;
 
     const services: JsonRecord[] = [];
     const options: JsonRecord[] = [];

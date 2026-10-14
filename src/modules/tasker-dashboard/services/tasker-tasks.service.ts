@@ -35,6 +35,7 @@ import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { ReferralsService } from '../../referrals/services/referrals.service';
 import { PaymentsService } from '../../payments/payments.service';
 import { TaskerFinanceService } from '../../tasker-finance/tasker-finance.service';
+import { ResponseLocalizationService } from '../../localization/response-localization.service';
 
 type TaskerBookingWithRelations = Prisma.BookingGetPayload<{
   include: {
@@ -69,9 +70,14 @@ export class TaskerTasksService {
     private readonly referrals: ReferralsService,
     private readonly payments: PaymentsService,
     private readonly taskerFinance: TaskerFinanceService,
+    private readonly responseLocalization: ResponseLocalizationService,
   ) {}
 
-  async list(taskerId: number, query: ListTaskerTasksQueryDto): Promise<TaskerTaskListView> {
+  async list(
+    taskerId: number,
+    query: ListTaskerTasksQueryDto,
+    locale: string,
+  ): Promise<TaskerTaskListView> {
     const bucket = query.bucket ?? 'booked';
     const statuses =
       bucket === 'booked'
@@ -103,23 +109,33 @@ export class TaskerTasksService {
       }),
       this.prisma.booking.count({ where }),
     ]);
+    const nameMap = await this.responseLocalization.resolveServiceNames(
+      rows.map((row) => row.service.id),
+      locale,
+    );
     return {
       bucket,
       page,
       limit,
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
-      items: rows.map((row) => this.serialize(row)),
+      items: rows.map((row) =>
+        this.serialize(row, nameMap.get(row.service.id) ?? row.service.name ?? ''),
+      ),
     };
   }
 
-  async get(taskerId: number, bookingId: number): Promise<TaskerTaskView> {
+  async get(taskerId: number, bookingId: number, locale: string): Promise<TaskerTaskView> {
     const booking = await this.findOwnedBooking(taskerId, bookingId);
     if (!booking) throw new NotFoundException('Task not found');
-    return this.serialize(booking);
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      booking.service.id,
+      locale,
+    );
+    return this.serialize(booking, serviceName);
   }
 
-  async next(taskerId: number): Promise<TaskerTaskView | null> {
+  async next(taskerId: number, locale: string): Promise<TaskerTaskView | null> {
     const booking = await this.prisma.booking.findFirst({
       where: {
         taskerId,
@@ -129,10 +145,15 @@ export class TaskerTasksService {
       include: this.includeRelations(),
       orderBy: [{ bookingDate: 'asc' }, { startTime: 'asc' }],
     });
-    return booking ? this.serialize(booking) : null;
+    if (!booking) return null;
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      booking.service.id,
+      locale,
+    );
+    return this.serialize(booking, serviceName);
   }
 
-  async confirm(taskerId: number, bookingId: number): Promise<TaskerTaskView> {
+  async confirm(taskerId: number, bookingId: number, locale: string): Promise<TaskerTaskView> {
     const updated = await this.prisma.$transaction(async (transaction) => {
       const booking = await this.lockOwnedBooking(taskerId, bookingId, transaction);
       if (booking.status !== TASKER_BOOKING_STATUS.Pending) {
@@ -212,7 +233,11 @@ export class TaskerTasksService {
       await this.enqueueBookingUpdate(bookingId, status, status === TASKER_BOOKING_STATUS.Confirmed ? 'tasker_confirmed' : 'tasker_accepted_awaiting_payment', transaction);
       return row;
     });
-    return this.serialize(updated);
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      updated.service.id,
+      locale,
+    );
+    return this.serialize(updated, serviceName);
   }
 
   /**
@@ -234,7 +259,12 @@ export class TaskerTasksService {
     return new Date(Math.max(due, now + 5 * 60_000));
   }
 
-  async cancel(taskerId: number, bookingId: number, dto: CancelTaskDto): Promise<TaskerTaskView> {
+  async cancel(
+    taskerId: number,
+    bookingId: number,
+    dto: CancelTaskDto,
+    locale: string,
+  ): Promise<TaskerTaskView> {
     let refundOutcome = 'none' as 'none' | 'wallet_refunded' | 'card_refund_pending';
     const updated = await this.prisma.$transaction(async (transaction) => {
       const booking = await this.lockOwnedBooking(taskerId, bookingId, transaction);
@@ -301,7 +331,11 @@ export class TaskerTasksService {
       return row;
     });
     if (refundOutcome === 'card_refund_pending') await this.payments.processAcceptanceRefund(bookingId);
-    return this.serialize(updated);
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      updated.service.id,
+      locale,
+    );
+    return this.serialize(updated, serviceName);
   }
 
   async startNavigation(taskerId: number, bookingId: number): Promise<NavigationView> {
@@ -647,7 +681,7 @@ export class TaskerTasksService {
     return this.timerView(bookingId, updated);
   }
 
-  async complete(taskerId: number, bookingId: number): Promise<TaskerTaskView> {
+  async complete(taskerId: number, bookingId: number, locale: string): Promise<TaskerTaskView> {
     const existing = await this.findOwnedBooking(taskerId, bookingId);
     if (!existing) throw new NotFoundException('Task not found');
     if (existing.workVerificationRequired) {
@@ -657,7 +691,11 @@ export class TaskerTasksService {
       existing.status === TASKER_BOOKING_STATUS.AwaitingCustomerApproval ||
       existing.status === TASKER_BOOKING_STATUS.Completed
     ) {
-      return this.serialize(existing);
+      const serviceName = await this.responseLocalization.resolveServiceName(
+        existing.service.id,
+        locale,
+      );
+      return this.serialize(existing, serviceName);
     }
     const policy = await this.platformSettings.bookingCompletionPolicy();
     const updated = await this.prisma.$transaction(async (transaction) => {
@@ -730,7 +768,11 @@ export class TaskerTasksService {
       );
       return row;
     });
-    return this.serialize(updated);
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      updated.service.id,
+      locale,
+    );
+    return this.serialize(updated, serviceName);
   }
 
   async completionMetrics(taskerId: number): Promise<{
@@ -887,7 +929,10 @@ export class TaskerTasksService {
     };
   }
 
-  private serialize(booking: TaskerBookingWithRelations): TaskerTaskView {
+  private serialize(
+    booking: TaskerBookingWithRelations,
+    serviceName: string,
+  ): TaskerTaskView {
     const hourly = Number(booking.hourlyRate);
     const estimated = estimatedTaskAmount(hourly, booking.startTime, booking.endTime);
     const currency = booking.paymentCurrency;
@@ -903,7 +948,7 @@ export class TaskerTasksService {
       service: {
         id: String(booking.service.id),
         slug: booking.service.slug ?? '',
-        name: booking.service.name ?? '',
+        name: serviceName,
         icon: booking.service.icon ?? '',
       },
       customer: {

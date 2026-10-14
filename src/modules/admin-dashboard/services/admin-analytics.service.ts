@@ -4,6 +4,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { PAYMENT_STATUS } from '../../payments/payments.constants';
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
+import { ResponseLocalizationService } from '../../localization/response-localization.service';
 import type { AdminActivityQueryDto, AdminDateRangeQueryDto } from '../dto';
 import {
   dateFilter,
@@ -64,6 +65,7 @@ export class AdminAnalyticsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly platformSettings: PlatformSettingsService,
+    private readonly responseLocalization: ResponseLocalizationService,
   ) {}
 
   async overview(query: AdminDateRangeQueryDto) {
@@ -579,7 +581,7 @@ export class AdminAnalyticsService {
     };
   }
 
-  async activity(query: AdminActivityQueryDto) {
+  async activity(query: AdminActivityQueryDto, locale: string) {
     const { page, limit } = pagination(query.page, query.limit);
     const take = Math.min(500, page * limit);
     const categories = query.category ?? 'all';
@@ -626,7 +628,7 @@ export class AdminAnalyticsService {
               updatedAt: true,
               customer: { select: { id: true, firstName: true, lastName: true } },
               tasker: { select: { id: true, firstName: true, lastName: true } },
-              service: { select: { name: true } },
+              service: { select: { id: true, name: true } },
             },
             orderBy: { updatedAt: 'desc' },
             take,
@@ -683,6 +685,10 @@ export class AdminAnalyticsService {
       includeAdmin ? this.prisma.adminAuditLog.count() : Promise.resolve(0),
     ]);
 
+    const serviceNameMap = await this.responseLocalization.resolveServiceNames(
+      bookings.map((booking) => booking.service.id),
+      locale,
+    );
     const items: Array<Record<string, unknown> & { occurredAt: string }> = [];
     for (const user of users) {
       const marketplaceRoles = user.roles.filter((role) =>
@@ -731,7 +737,7 @@ export class AdminAnalyticsService {
             id: String(booking.tasker.id),
             name: fullName(booking.tasker.firstName, booking.tasker.lastName),
           },
-          service: booking.service.name,
+          service: serviceNameMap.get(booking.service.id) ?? booking.service.name,
         },
         occurredAt: booking.updatedAt.toISOString(),
       });

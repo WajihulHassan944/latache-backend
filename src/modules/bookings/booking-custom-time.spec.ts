@@ -30,6 +30,7 @@ const setup = (activeBookings: Array<{ startTime: string; endTime: string }> = [
   const service = new BookingsService(
     prisma, {} as never, {} as never, {} as never, config, {} as never, {} as never,
     {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+    {} as never,
   );
   const load = (time: string, allowCustomTime?: boolean) =>
     (service as unknown as { loadQuoteContext: LoadQuoteContext }).loadQuoteContext(

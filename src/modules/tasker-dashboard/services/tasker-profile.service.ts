@@ -20,6 +20,7 @@ import type {
 import { TASKER_BOOKING_STATUS, WITHDRAWAL_STATUS } from '../tasker-dashboard.constants';
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 import type { PlatformCurrencyContext } from '../../platform-settings/platform-settings.types';
+import { ResponseLocalizationService } from '../../localization/response-localization.service';
 import type {
   ActivateTaskerSkillDto,
   AddTaskerAvailabilityDto,
@@ -43,6 +44,7 @@ export class TaskerProfileService {
     private readonly prisma: PrismaService,
     private readonly sessions: AuthSessionsRepository,
     private readonly platformSettings: PlatformSettingsService,
+    private readonly responseLocalization: ResponseLocalizationService,
   ) {}
 
   async personal(taskerId: number): Promise<TaskerPersonalProfileView> {
@@ -69,15 +71,16 @@ export class TaskerProfileService {
     return this.personalView(updated);
   }
 
-  async business(taskerId: number): Promise<TaskerBusinessProfileView> {
+  async business(taskerId: number, locale: string): Promise<TaskerBusinessProfileView> {
     const user = await this.requireTasker(taskerId);
-    const skills = await this.listSkills(taskerId);
+    const skills = await this.listSkills(taskerId, locale);
     return this.businessView(user, skills);
   }
 
   async updateBusiness(
     taskerId: number,
     dto: UpdateTaskerBusinessProfileDto,
+    locale: string,
   ): Promise<TaskerBusinessProfileView> {
     await this.requireTasker(taskerId);
     const hasLat = dto.serviceAreaLat !== undefined;
@@ -104,10 +107,10 @@ export class TaskerProfileService {
         ...(dto.workImages !== undefined ? { workImages: dto.workImages } : {}),
       },
     });
-    return this.businessView(updated, await this.listSkills(taskerId));
+    return this.businessView(updated, await this.listSkills(taskerId, locale));
   }
 
-  async listSkills(taskerId: number): Promise<TaskerSkillView[]> {
+  async listSkills(taskerId: number, locale: string): Promise<TaskerSkillView[]> {
     await this.requireTasker(taskerId);
     const [catalogue, active, currency] = await Promise.all([
       this.prisma.service.findMany({
@@ -118,12 +121,25 @@ export class TaskerProfileService {
       this.platformSettings.currencyContext(),
     ]);
     const byService = new Map(active.map((row) => [row.serviceId, row]));
+    const nameMap = await this.responseLocalization.resolveServiceNames(
+      catalogue.map((service) => service.id),
+      locale,
+    );
     return catalogue.map((service) =>
-      this.skillView(service, byService.get(service.id)?.hourlyRate ?? null, currency),
+      this.skillView(
+        service,
+        byService.get(service.id)?.hourlyRate ?? null,
+        currency,
+        nameMap.get(service.id) ?? service.name ?? '',
+      ),
     );
   }
 
-  async activateSkill(taskerId: number, dto: ActivateTaskerSkillDto): Promise<TaskerSkillView> {
+  async activateSkill(
+    taskerId: number,
+    dto: ActivateTaskerSkillDto,
+    locale: string,
+  ): Promise<TaskerSkillView> {
     await this.requireTasker(taskerId);
     const result = await this.prisma.$transaction(async (transaction) => {
       const candidate = await transaction.service.findFirst({
@@ -157,13 +173,18 @@ export class TaskerProfileService {
       return { selected, service, currency };
     });
 
-    return this.skillView(result.service, result.selected.hourlyRate, result.currency);
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      result.service.id,
+      locale,
+    );
+    return this.skillView(result.service, result.selected.hourlyRate, result.currency, serviceName);
   }
 
   async updateSkill(
     taskerId: number,
     serviceId: number,
     dto: UpdateTaskerSkillDto,
+    locale: string,
   ): Promise<TaskerSkillView> {
     await this.requireTasker(taskerId);
     const result = await this.prisma.$transaction(async (transaction) => {
@@ -186,7 +207,16 @@ export class TaskerProfileService {
       await this.syncTaskerSkillSnapshot(taskerId, transaction);
       return { existing, updated, currency };
     });
-    return this.skillView(result.existing.service, result.updated.hourlyRate, result.currency);
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      result.existing.service.id,
+      locale,
+    );
+    return this.skillView(
+      result.existing.service,
+      result.updated.hourlyRate,
+      result.currency,
+      serviceName,
+    );
   }
 
   async deleteSkill(
@@ -365,11 +395,12 @@ export class TaskerProfileService {
     service: Service,
     canonicalRate: Prisma.Decimal | string | number | null,
     currency: PlatformCurrencyContext,
+    serviceName: string,
   ): TaskerSkillView {
     return {
       serviceId: String(service.id),
       slug: service.slug ?? '',
-      name: service.name ?? '',
+      name: serviceName,
       description: service.description ?? '',
       icon: service.icon ?? '',
       active: canonicalRate !== null,

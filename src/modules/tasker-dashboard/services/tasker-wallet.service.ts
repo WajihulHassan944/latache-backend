@@ -40,6 +40,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import { TaskerFinanceService } from '../../tasker-finance/tasker-finance.service';
 import type { TaskerEarningsQueryDto } from '../../tasker-finance/dto/tasker-finance.dto';
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
+import { ResponseLocalizationService } from '../../localization/response-localization.service';
 
 @Injectable()
 export class TaskerWalletService {
@@ -50,6 +51,7 @@ export class TaskerWalletService {
     private readonly notifications: NotificationsService,
     private readonly taskerFinance: TaskerFinanceService,
     private readonly platformSettings: PlatformSettingsService,
+    private readonly responseLocalization: ResponseLocalizationService,
   ) {}
 
   async summary(taskerId: number): Promise<WalletSummaryView> {
@@ -169,6 +171,7 @@ export class TaskerWalletService {
   async listTransactions(
     taskerId: number,
     query: ListWalletTransactionsQueryDto,
+    locale: string,
   ): Promise<WalletTransactionsListView> {
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
     if (query.cursor) {
@@ -198,6 +201,10 @@ export class TaskerWalletService {
     ]);
     const hasMore = query.cursor ? items.length > limit : offset + items.length < totalItems;
     const pageItems = items.slice(0, limit);
+    const nameMap = await this.responseLocalization.resolveServiceNames(
+      pageItems.flatMap((entry) => (entry.booking ? [entry.booking.service.id] : [])),
+      locale,
+    );
     return {
       page,
       limit,
@@ -205,11 +212,20 @@ export class TaskerWalletService {
       totalPages: Math.ceil(totalItems / limit),
       nextCursor: hasMore ? (pageItems.at(-1)?.id ?? null) : null,
       hasMore,
-      items: pageItems.map((entry) => this.serializeTransaction(entry)),
+      items: pageItems.map((entry) =>
+        this.serializeTransaction(
+          entry,
+          entry.booking ? (nameMap.get(entry.booking.service.id) ?? entry.booking.service.name) : null,
+        ),
+      ),
     };
   }
 
-  async recentTransactions(taskerId: number, take = 8): Promise<WalletTransactionView[]> {
+  async recentTransactions(
+    taskerId: number,
+    locale: string,
+    take = 8,
+  ): Promise<WalletTransactionView[]> {
     const items = await this.prisma.taskerWalletLedgerEntry.findMany({
       where: { taskerId },
       include: {
@@ -225,7 +241,16 @@ export class TaskerWalletService {
       orderBy: { createdAt: 'desc' },
       take,
     });
-    return items.map((entry) => this.serializeTransaction(entry));
+    const nameMap = await this.responseLocalization.resolveServiceNames(
+      items.flatMap((entry) => (entry.booking ? [entry.booking.service.id] : [])),
+      locale,
+    );
+    return items.map((entry) =>
+      this.serializeTransaction(
+        entry,
+        entry.booking ? (nameMap.get(entry.booking.service.id) ?? entry.booking.service.name) : null,
+      ),
+    );
   }
 
   payoutCapabilities(): PayoutCapabilityView[] {
@@ -676,7 +701,7 @@ export class TaskerWalletService {
         where: { idempotencyKey: `booking:${input.bookingId}:pending-earning` },
       });
     });
-    return this.serializeTransaction(entry);
+    return this.serializeTransaction(entry, null);
   }
 
   private async assertPayoutPin(taskerId: number, pin: string): Promise<void> {
@@ -857,7 +882,7 @@ export class TaskerWalletService {
         icon: string | null;
       };
     } | null;
-  }): WalletTransactionView {
+  }, resolvedServiceName: string | null): WalletTransactionView {
     return {
       id: entry.id,
       kind: entry.kind,
@@ -879,7 +904,7 @@ export class TaskerWalletService {
             service: {
               id: String(entry.booking.service.id),
               slug: entry.booking.service.slug ?? '',
-              name: entry.booking.service.name ?? '',
+              name: resolvedServiceName ?? '',
               icon: entry.booking.service.icon ?? '',
             },
           }

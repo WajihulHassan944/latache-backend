@@ -15,6 +15,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import { CALL_ENDED_NOTIFICATION_TYPE } from '../fcm/fcm.constants';
 import { FcmService } from '../fcm/fcm.service';
+import { LocaleService } from '../localization/locale.service';
+import { ResponseLocalizationService } from '../localization/response-localization.service';
 import { realtimeRoom } from './realtime.constants';
 import type {
   CallActionPayload,
@@ -37,6 +39,7 @@ const CALL_INCLUDE = {
       firstName: true,
       lastName: true,
       profilePicture: true,
+      preferredLanguage: true,
     },
   },
   recipient: {
@@ -45,6 +48,7 @@ const CALL_INCLUDE = {
       firstName: true,
       lastName: true,
       profilePicture: true,
+      preferredLanguage: true,
     },
   },
   booking: {
@@ -91,6 +95,8 @@ export class RealtimeCallsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly fcm: FcmService,
+    private readonly locales: LocaleService,
+    private readonly responseLocalization: ResponseLocalizationService,
   ) {}
 
   capabilities() {
@@ -302,7 +308,7 @@ export class RealtimeCallsService {
           transaction,
           recipient.id,
           'call:incoming',
-          this.eventPayload(created),
+          await this.eventPayload(created, this.localeForUser(created.recipient)),
         );
         await this.enqueueState(transaction, created);
         return created;
@@ -746,23 +752,30 @@ export class RealtimeCallsService {
     transaction: Prisma.TransactionClient,
     call: CallRecord,
   ): Promise<void> {
-    const payload = this.eventPayload(call);
+    const [initiatorPayload, recipientPayload] = await Promise.all([
+      this.eventPayload(call, this.localeForUser(call.initiator)),
+      this.eventPayload(call, this.localeForUser(call.recipient)),
+    ]);
     await Promise.all([
       this.enqueueUserRole(
         transaction,
         call.initiatorId,
         call.initiatorId === call.booking.customerId ? UserRole.Customer : UserRole.Tasker,
         'call:state',
-        payload,
+        initiatorPayload,
       ),
       this.enqueueUserRole(
         transaction,
         call.recipientId,
         call.recipientId === call.booking.customerId ? UserRole.Customer : UserRole.Tasker,
         'call:state',
-        payload,
+        recipientPayload,
       ),
     ]);
+  }
+
+  private localeForUser(user: { preferredLanguage: string | null }): string {
+    return this.locales.normalize(user.preferredLanguage) ?? this.locales.defaultLocale;
   }
 
   private enqueueUserRole(
@@ -796,7 +809,11 @@ export class RealtimeCallsService {
     });
   }
 
-  private eventPayload(call: CallRecord): Prisma.InputJsonObject {
+  private async eventPayload(call: CallRecord, locale: string): Promise<Prisma.InputJsonObject> {
+    const serviceName = await this.responseLocalization.resolveServiceName(
+      call.booking.service.id,
+      locale,
+    );
     return {
       id: call.id,
       bookingId: String(call.bookingId),
@@ -814,7 +831,7 @@ export class RealtimeCallsService {
       ),
       service: {
         id: String(call.booking.service.id),
-        name: call.booking.service.name ?? '',
+        name: serviceName,
       },
       expiresAt: call.expiresAt.toISOString(),
       answeredAt: call.answeredAt?.toISOString() ?? null,

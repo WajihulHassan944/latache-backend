@@ -32,6 +32,7 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminFinanceQueryDto, AdminPayoutActionDto } from '../dto/admin-finance.dto';
 import { AdminEarningActionDto } from '../../tasker-finance/dto/tasker-finance.dto';
 import { AdminFinanceService } from '../services/admin-finance.service';
+import { RequestLocale } from '../../localization/request-locale.decorator';
 import { PlatformPayableSettlementsService } from '../../tasker-finance/platform-payable-settlements.service';
 import {
   AdminRecordPlatformSettlementDto,
@@ -124,18 +125,19 @@ export class AdminFinanceController {
     @CurrentUser() actor: User,
     @Query() query: AdminFinanceQueryDto,
     @Res({ passthrough: true }) response: Response,
+    @RequestLocale() locale: string,
   ) {
     if (query.format === 'csv') {
       if (actor.role !== UserRole.SuperAdmin && !actor.permissions.includes('reports.read')) {
         throw new ForbiddenException('reports.read is required for finance CSV exports');
       }
-      const result = await this.finance.csv(query);
+      const result = await this.finance.csv(query, locale);
       response.setHeader('Content-Type', 'text/csv; charset=utf-8');
       response.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
       response.setHeader('X-Export-Truncated', String(result.truncated));
       return result.body;
     }
-    return this.finance.read(query);
+    return this.finance.read(query, locale);
   }
 
   @Post('payouts/:id/actions')

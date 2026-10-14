@@ -14,6 +14,7 @@ import { UserRole } from '../../common/enums/user-role.enum';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RequestLocale } from '../localization/request-locale.decorator';
 import { BookingsService } from './bookings.service';
 import { BookingParamDto } from './dto/booking-actions.dto';
 import { AddComplaintEvidenceDto, FileComplaintDto } from './dto/file-complaint.dto';
@@ -38,15 +39,23 @@ export class ParticipantDisputesController {
     description:
       'Canonical participant dispute inbox. Filter by bookingId/status instead of maintaining a second complaints API surface.',
   })
-  list(@CurrentUser() user: User, @Query() query: ListParticipantDisputesQueryDto) {
-    return this.bookings.listUserDisputes(user, query);
+  list(
+    @CurrentUser() user: User,
+    @Query() query: ListParticipantDisputesQueryDto,
+    @RequestLocale() locale: string,
+  ) {
+    return this.bookings.listUserDisputes(user, query, locale);
   }
 
   @Get('disputes/:disputeId')
   @ApiParam({ name: 'disputeId', required: true, type: String, description: 'Dispute ID.' })
   @ApiOperation({ summary: 'Get one dispute visible to the authenticated booking participant' })
-  detail(@CurrentUser() user: User, @Param() params: ParticipantDisputeParamDto) {
-    return this.bookings.getUserDispute(user, params.disputeId);
+  detail(
+    @CurrentUser() user: User,
+    @Param() params: ParticipantDisputeParamDto,
+    @RequestLocale() locale: string,
+  ) {
+    return this.bookings.getUserDispute(user, params.disputeId, locale);
   }
 
   @Post('bookings/:bookingId/disputes')
@@ -89,8 +98,9 @@ export class ParticipantDisputesController {
     @CurrentUser() user: User,
     @Param() params: ParticipantDisputeParamDto,
     @Body() dto: AddComplaintEvidenceDto,
+    @RequestLocale() locale: string,
   ) {
-    return this.bookings.addUserDisputeEvidence(user, params.disputeId, dto);
+    return this.bookings.addUserDisputeEvidence(user, params.disputeId, dto, locale);
   }
   @Post('disputes/:disputeId/actions')
   @ApiParam({ name: 'disputeId', required: true, type: String, description: 'Dispute ID.' })
@@ -103,8 +113,9 @@ export class ParticipantDisputesController {
     @CurrentUser() user: User,
     @Param() params: ParticipantDisputeParamDto,
     @Body() dto: ParticipantDisputeActionDto,
+    @RequestLocale() locale: string,
   ) {
-    return this.bookings.participantDisputeAction(user, params.disputeId, dto);
+    return this.bookings.participantDisputeAction(user, params.disputeId, dto, locale);
   }
 
   @Post('disputes/:disputeId/satisfaction')

@@ -57,9 +57,11 @@ const setup = (opts: { status?: string; existingPending?: typeof pendingRequest 
   const audit = { record: jest.fn() } as unknown as AdminAuditService;
   const config = { get: (_key: string, fallback: unknown) => fallback } as unknown as ConfigService;
   const payments = { refreshPaymentEstimate: jest.fn().mockResolvedValue({ total: 129.38 }) };
+  const responseLocalization = { resolveServiceName: jest.fn().mockResolvedValue('Cleaning') };
   const service = new BookingsService(
     prisma, {} as never, payments as never, notifications, config, {} as never, realtime,
     {} as never, audit, {} as never, {} as never, {} as never, {} as never, {} as never,
+    responseLocalization as never,
   );
   jest
     .spyOn(service as unknown as { serialize: () => unknown }, 'serialize')
@@ -112,7 +114,7 @@ describe('BookingsService extra task time', () => {
 
   it('customer approval adds the requested minutes and refreshes the estimate', async () => {
     const { service, tx, payments, realtime } = setup({ existingPending: pendingRequest });
-    await service.respondExtensionRequest(CUSTOMER_ID, 7, 'ext_1', { approve: true });
+    await service.respondExtensionRequest(CUSTOMER_ID, 7, 'ext_1', { approve: true }, 'en');
 
     expect(tx.bookingExtensionRequest.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'approved' }) }),
@@ -126,7 +128,7 @@ describe('BookingsService extra task time', () => {
 
   it('customer decline adds nothing and leaves the estimate unchanged', async () => {
     const { service, tx, payments, realtime } = setup({ existingPending: pendingRequest });
-    await service.respondExtensionRequest(CUSTOMER_ID, 7, 'ext_1', { approve: false });
+    await service.respondExtensionRequest(CUSTOMER_ID, 7, 'ext_1', { approve: false }, 'en');
 
     expect(tx.bookingExtensionRequest.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'rejected' }) }),
@@ -139,7 +141,7 @@ describe('BookingsService extra task time', () => {
   it('a request left over after the task ended expires instead of applying', async () => {
     const { service, tx } = setup({ status: 'completed', existingPending: pendingRequest });
     await expect(
-      service.respondExtensionRequest(CUSTOMER_ID, 7, 'ext_1', { approve: true }),
+      service.respondExtensionRequest(CUSTOMER_ID, 7, 'ext_1', { approve: true }, 'en'),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(tx.bookingExtensionRequest.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'expired' }) }),

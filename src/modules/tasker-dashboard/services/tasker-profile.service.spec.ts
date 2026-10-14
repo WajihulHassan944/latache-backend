@@ -28,10 +28,15 @@ describe('TaskerProfileService — business profile workImages', () => {
     const platformSettings = {
       currencyContext: jest.fn().mockResolvedValue({ code: 'USD', symbol: '$', rate: 1 }),
     };
+    const responseLocalization = {
+      resolveServiceNames: jest.fn().mockResolvedValue(new Map()),
+      resolveServiceName: jest.fn().mockResolvedValue(''),
+    };
     const service = new TaskerProfileService(
       prisma as never,
       sessions as never,
       platformSettings as never,
+      responseLocalization as never,
     );
     return { service, prisma };
   }
@@ -40,7 +45,7 @@ describe('TaskerProfileService — business profile workImages', () => {
     const { service, prisma } = buildService();
     prisma.user.findFirst.mockResolvedValue({ ...baseUser, workImages: null });
 
-    const result = await service.business(taskerId);
+    const result = await service.business(taskerId, 'en');
 
     expect(result.workImages).toEqual([]);
   });
@@ -50,7 +55,7 @@ describe('TaskerProfileService — business profile workImages', () => {
     const workImages = ['https://res.cloudinary.com/demo/image/upload/tasker-work-images/a.webp'];
     prisma.user.update.mockResolvedValue({ ...baseUser, workImages });
 
-    const result = await service.updateBusiness(taskerId, { workImages } as never);
+    const result = await service.updateBusiness(taskerId, { workImages } as never, 'en');
 
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: taskerId },
@@ -63,7 +68,7 @@ describe('TaskerProfileService — business profile workImages', () => {
     const { service, prisma } = buildService();
     prisma.user.update.mockResolvedValue(baseUser);
 
-    await service.updateBusiness(taskerId, { yearsOfExperience: 5 } as never);
+    await service.updateBusiness(taskerId, { yearsOfExperience: 5 } as never, 'en');
 
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: taskerId },

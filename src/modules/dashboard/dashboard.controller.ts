@@ -4,6 +4,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RequestLocale } from '../localization/request-locale.decorator';
 import { TaskerDashboardService } from '../tasker-dashboard/services/tasker-dashboard.service';
 import { CustomerDashboardService } from './customer-dashboard.service';
 
@@ -23,9 +24,9 @@ export class DashboardController {
     description:
       'The same endpoint serves customer and tasker dashboards. Administrators use the admin/RBAC surfaces instead.',
   })
-  overview(@CurrentUser() user: User) {
+  overview(@CurrentUser() user: User, @RequestLocale() locale: string) {
     if (user.role === UserRole.Customer) return this.customerDashboard.overview(user.id);
-    if (user.role === UserRole.Tasker) return this.taskerDashboard.overview(user.id);
+    if (user.role === UserRole.Tasker) return this.taskerDashboard.overview(user.id, locale);
     throw new ForbiddenException('Dashboard overview is available to customers and taskers');
   }
 }

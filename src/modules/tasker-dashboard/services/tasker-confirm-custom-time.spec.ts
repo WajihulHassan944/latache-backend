@@ -41,6 +41,7 @@ const setup = (opts: { isCustomTime: boolean; sameDay: Array<{ id: number; start
     {} as never,
     { refreshPaymentEstimate: jest.fn() } as never,
     {} as never,
+    { resolveServiceName: jest.fn().mockResolvedValue('Cleaning') } as never,
   );
   jest
     .spyOn(service as unknown as { serialize: () => unknown }, 'serialize')
@@ -54,7 +55,7 @@ describe('TaskerTasksService.confirm custom-time conflict', () => {
       isCustomTime: true,
       sameDay: [{ id: 9, startTime: '20:00', endTime: '22:00' }],
     });
-    const error = await service.confirm(TASKER_ID, 7).catch((e: unknown) => e);
+    const error = await service.confirm(TASKER_ID, 7, 'en').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ConflictException);
     expect((error as ConflictException).getResponse()).toMatchObject({
       code: 'CUSTOM_TIME_SLOT_CONFLICT',
@@ -73,13 +74,13 @@ describe('TaskerTasksService.confirm custom-time conflict', () => {
       isCustomTime: true,
       sameDay: [{ id: 9, startTime: '17:00', endTime: '19:30' }],
     });
-    await service.confirm(TASKER_ID, 7);
+    await service.confirm(TASKER_ID, 7, 'en');
     expect(tx.booking.update).toHaveBeenCalled();
   });
 
   it('skips the check for a listed-slot booking (claimSlot already protected it)', async () => {
     const { service, tx } = setup({ isCustomTime: false, sameDay: [] });
-    await service.confirm(TASKER_ID, 7);
+    await service.confirm(TASKER_ID, 7, 'en');
     expect(tx.booking.findMany).not.toHaveBeenCalled();
     expect(tx.booking.update).toHaveBeenCalled();
   });

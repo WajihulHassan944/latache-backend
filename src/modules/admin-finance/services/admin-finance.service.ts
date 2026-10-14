@@ -19,6 +19,7 @@ import { PAYMENT_STATUS } from '../../payments/payments.constants';
 import { AdminFinanceQueryDto, AdminPayoutActionDto } from '../dto/admin-finance.dto';
 import { TaskerFinanceService } from '../../tasker-finance/tasker-finance.service';
 import type { AdminEarningActionDto } from '../../tasker-finance/dto/tasker-finance.dto';
+import { ResponseLocalizationService } from '../../localization/response-localization.service';
 
 const money = (value: Prisma.Decimal | number | string | null | undefined): number =>
   Math.round((Number(value ?? 0) + Number.EPSILON) * 100) / 100;
@@ -36,12 +37,13 @@ export class AdminFinanceService {
     private readonly notifications: NotificationsService,
     private readonly settings: PlatformSettingsService,
     private readonly taskerFinance: TaskerFinanceService,
+    private readonly responseLocalization: ResponseLocalizationService,
   ) {}
 
-  async read(query: AdminFinanceQueryDto) {
+  async read(query: AdminFinanceQueryDto, locale: string) {
     const view = query.view ?? 'overview';
-    if (view === 'overview') return this.overview(query);
-    if (view === 'transactions') return this.transactions(query);
+    if (view === 'overview') return this.overview(query, locale);
+    if (view === 'transactions') return this.transactions(query, locale);
     if (view === 'refunds') return this.refunds(query);
     if (view === 'payouts') return this.payouts(query);
     if (view === 'earnings') {
@@ -59,11 +61,12 @@ export class AdminFinanceService {
       });
     }
     if (view === 'chargebacks') return this.chargebacks(query);
-    return this.revenue(query);
+    return this.revenue(query, locale);
   }
 
   async csv(
     query: AdminFinanceQueryDto,
+    locale: string,
   ): Promise<{ body: string; filename: string; truncated: boolean }> {
     const view = query.view ?? 'transactions';
     if (
@@ -81,7 +84,7 @@ export class AdminFinanceService {
         'CSV export is available for transactions, refunds, payouts, revenue, earnings, cash_receivables, and chargebacks views',
       );
     }
-    const data = await this.read({ ...query, format: 'json', page: 1, limit: 100 });
+    const data = await this.read({ ...query, format: 'json', page: 1, limit: 100 }, locale);
     const rows = 'items' in data && Array.isArray(data.items) ? data.items : [];
     if (rows.length === 0) {
       return { body: '', filename: `latache-finance-${view}.csv`, truncated: false };
@@ -357,7 +360,7 @@ export class AdminFinanceService {
     });
   }
 
-  private async overview(query: AdminFinanceQueryDto) {
+  private async overview(query: AdminFinanceQueryDto, locale: string) {
     const date = this.dateFilter(query);
     const [
       charges,
@@ -407,7 +410,7 @@ export class AdminFinanceService {
         },
         _count: true,
       }),
-      this.transactions({ ...query, page: 1, limit: 8 }),
+      this.transactions({ ...query, page: 1, limit: 8 }, locale),
       this.settings.view('commission,tax,currency'),
       this.prisma.taskerEarning.groupBy({
         by: ['status'],
@@ -484,7 +487,7 @@ export class AdminFinanceService {
     };
   }
 
-  private async transactions(query: AdminFinanceQueryDto) {
+  private async transactions(query: AdminFinanceQueryDto, locale: string) {
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
     const date = this.dateFilter(query);
     const take = Math.min(offset + limit, 1000);
@@ -526,7 +529,7 @@ export class AdminFinanceService {
         where: paymentWhere,
         include: {
           customer: { select: { id: true, firstName: true, lastName: true, email: true } },
-          booking: { select: { id: true, service: { select: { name: true } } } },
+          booking: { select: { id: true, service: { select: { id: true, name: true } } } },
         },
         orderBy: { createdAt: 'desc' },
         take,
@@ -543,6 +546,10 @@ export class AdminFinanceService {
       }),
       this.prisma.taskerWithdrawal.count({ where: withdrawalWhere }),
     ]);
+    const serviceNameMap = await this.responseLocalization.resolveServiceNames(
+      payments.flatMap((row) => (row.booking ? [row.booking.service.id] : [])),
+      locale,
+    );
     const combined = [
       ...payments.map((row) => ({
         id: row.id,
@@ -553,7 +560,9 @@ export class AdminFinanceService {
         currency: row.currency,
         party: row.customer,
         bookingId: row.bookingId,
-        service: row.booking?.service.name ?? null,
+        service: row.booking
+          ? (serviceNameMap.get(row.booking.service.id) ?? row.booking.service.name)
+          : null,
         provider: row.provider,
         reference: row.providerReference,
         failureReason: row.failureReason,
@@ -817,7 +826,7 @@ export class AdminFinanceService {
     };
   }
 
-  private async revenue(query: AdminFinanceQueryDto) {
+  private async revenue(query: AdminFinanceQueryDto, locale: string) {
     const date = this.dateFilter(query);
     const transactions = await this.prisma.paymentTransaction.findMany({
       where: {
@@ -832,6 +841,10 @@ export class AdminFinanceService {
     const refunds = transactions.filter((row) => row.kind === 'refund');
     const gross = money(charges.reduce((sum, row) => sum + Number(row.amount), 0));
     const refunded = money(refunds.reduce((sum, row) => sum + Number(row.amount), 0));
+    const serviceNameMap = await this.responseLocalization.resolveServiceNames(
+      transactions.flatMap((row) => (row.booking?.service ? [row.booking.service.id] : [])),
+      locale,
+    );
     const byDay = new Map<string, { charges: number; refunds: number }>();
     const byService = new Map<
       string,
@@ -847,7 +860,7 @@ export class AdminFinanceService {
       const key = service ? String(service.id) : 'unallocated';
       const bucket = byService.get(key) ?? {
         serviceId: service?.id ?? null,
-        serviceName: service?.name ?? 'Unallocated',
+        serviceName: service ? (serviceNameMap.get(service.id) ?? service.name ?? '') : 'Unallocated',
         gross: 0,
         refunds: 0,
       };

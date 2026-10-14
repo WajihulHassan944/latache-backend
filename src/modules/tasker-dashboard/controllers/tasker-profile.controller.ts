@@ -14,6 +14,7 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import type { User } from '../../../generated/prisma/client';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RequestLocale } from '../../localization/request-locale.decorator';
 import type {
   TaskerAvailabilitySlotView,
   TaskerBusinessProfileView,
@@ -40,8 +41,11 @@ export class TaskerProfileController {
 
   @Get('business')
   @ApiOperation({ summary: 'Get tasker business/profile visibility information' })
-  business(@CurrentUser() user: User): Promise<TaskerBusinessProfileView> {
-    return this.profile.business(user.id);
+  business(
+    @CurrentUser() user: User,
+    @RequestLocale() locale: string,
+  ): Promise<TaskerBusinessProfileView> {
+    return this.profile.business(user.id, locale);
   }
 
   @Patch('business')
@@ -49,16 +53,17 @@ export class TaskerProfileController {
   updateBusiness(
     @CurrentUser() user: User,
     @Body() dto: UpdateTaskerBusinessProfileDto,
+    @RequestLocale() locale: string,
   ): Promise<TaskerBusinessProfileView> {
-    return this.profile.updateBusiness(user.id, dto);
+    return this.profile.updateBusiness(user.id, dto, locale);
   }
 
   @Get('skills')
   @ApiOperation({
     summary: 'Get the complete service catalogue with tasker skill activation state',
   })
-  skills(@CurrentUser() user: User): Promise<TaskerSkillView[]> {
-    return this.profile.listSkills(user.id);
+  skills(@CurrentUser() user: User, @RequestLocale() locale: string): Promise<TaskerSkillView[]> {
+    return this.profile.listSkills(user.id, locale);
   }
 
   @Post('skills')
@@ -66,8 +71,9 @@ export class TaskerProfileController {
   activateSkill(
     @CurrentUser() user: User,
     @Body() dto: ActivateTaskerSkillDto,
+    @RequestLocale() locale: string,
   ): Promise<TaskerSkillView> {
-    return this.profile.activateSkill(user.id, dto);
+    return this.profile.activateSkill(user.id, dto, locale);
   }
 
   @Patch('skills/:id')
@@ -77,8 +83,9 @@ export class TaskerProfileController {
     @CurrentUser() user: User,
     @Param() params: NumericIdParamDto,
     @Body() dto: UpdateTaskerSkillDto,
+    @RequestLocale() locale: string,
   ): Promise<TaskerSkillView> {
-    return this.profile.updateSkill(user.id, params.id, dto);
+    return this.profile.updateSkill(user.id, params.id, dto, locale);
   }
 
   @Delete('skills/:id')

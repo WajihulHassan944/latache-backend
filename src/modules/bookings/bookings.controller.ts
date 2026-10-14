@@ -16,6 +16,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { RequestLocale } from '../localization/request-locale.decorator';
 import type { User } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
@@ -58,8 +59,12 @@ export class BookingDiscoveryController {
     description:
       'Public/guest-safe. Uses persisted Tasker rates, real availability, and the active platform commission/tax policy. No payment is created by this quote. When customTimeRequestId is sent, a bearer token for the requesting customer is required and the open-slot match is skipped.',
   })
-  quote(@Body() dto: BookingQuoteDto, @CurrentUser() user?: User) {
-    return this.bookings.quote(dto, user?.id);
+  quote(
+    @Body() dto: BookingQuoteDto,
+    @RequestLocale() locale: string,
+    @CurrentUser() user?: User,
+  ) {
+    return this.bookings.quote(dto, locale, user?.id);
   }
 }
 
@@ -83,29 +88,37 @@ export class BookingsController {
     description:
       'Reserves a real Tasker availability slot. A Stripe card is optional at booking creation and online payment is captured only after tasker acceptance. Cash is paid directly to the Tasker, is subject to the configured platform-payable threshold, and never enters the Latache wallet.',
   })
-  create(@CurrentUser() user: User, @Body() dto: BookTaskerDto) {
-    return this.bookings.book(user.id, dto);
+  create(@CurrentUser() user: User, @Body() dto: BookTaskerDto, @RequestLocale() locale: string) {
+    return this.bookings.book(user.id, dto, locale);
   }
 
   @Get()
   @ApiOperation({
     summary: 'List current user bookings/tasks by booked, ongoing, or history bucket',
   })
-  list(@CurrentUser() user: User, @Query() query: ListUnifiedBookingsQueryDto) {
-    return this.bookings.list(user, query);
+  list(
+    @CurrentUser() user: User,
+    @Query() query: ListUnifiedBookingsQueryDto,
+    @RequestLocale() locale: string,
+  ) {
+    return this.bookings.list(user, query, locale);
   }
 
   @Get('next')
   @ApiOperation({ summary: 'Get the next active booking for the current customer or tasker' })
-  next(@CurrentUser() user: User) {
-    return this.bookings.next(user);
+  next(@CurrentUser() user: User, @RequestLocale() locale: string) {
+    return this.bookings.next(user, locale);
   }
 
   @Get(':bookingId')
   @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({ summary: 'Get one booking as either participant' })
-  get(@CurrentUser() user: User, @Param() params: BookingParamDto) {
-    return this.bookings.get(user, params.bookingId);
+  get(
+    @CurrentUser() user: User,
+    @Param() params: BookingParamDto,
+    @RequestLocale() locale: string,
+  ) {
+    return this.bookings.get(user, params.bookingId, locale);
   }
 
   @Post(':bookingId/reminder')
@@ -124,8 +137,12 @@ export class BookingsController {
   @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Tasker)
   @ApiOperation({ summary: 'Tasker confirms a pending booking' })
-  confirm(@CurrentUser() user: User, @Param() params: BookingParamDto) {
-    return this.taskerTasks.confirm(user.id, params.bookingId);
+  confirm(
+    @CurrentUser() user: User,
+    @Param() params: BookingParamDto,
+    @RequestLocale() locale: string,
+  ) {
+    return this.taskerTasks.confirm(user.id, params.bookingId, locale);
   }
 
   @Post(':bookingId/complete-payment')
@@ -151,10 +168,11 @@ export class BookingsController {
     @CurrentUser() user: User,
     @Param() params: BookingParamDto,
     @Body() dto: CancelBookingDto,
+    @RequestLocale() locale: string,
   ) {
     return user.role === UserRole.Tasker
-      ? this.taskerTasks.cancel(user.id, params.bookingId, dto)
-      : this.bookings.cancelCustomer(user.id, params.bookingId, dto);
+      ? this.taskerTasks.cancel(user.id, params.bookingId, dto, locale)
+      : this.bookings.cancelCustomer(user.id, params.bookingId, dto, locale);
   }
 
   @Post(':bookingId/reschedule')
@@ -165,8 +183,9 @@ export class BookingsController {
     @CurrentUser() user: User,
     @Param() params: BookingParamDto,
     @Body() dto: RescheduleBookingDto,
+    @RequestLocale() locale: string,
   ) {
-    return this.bookings.reschedule(user.id, params.bookingId, dto);
+    return this.bookings.reschedule(user.id, params.bookingId, dto, locale);
   }
 
   @Post(':bookingId/reschedule-proposals')
@@ -252,8 +271,15 @@ export class BookingsController {
     @CurrentUser() user: User,
     @Param() params: ExtensionRequestParamDto,
     @Body() dto: RespondExtensionRequestDto,
+    @RequestLocale() locale: string,
   ) {
-    return this.bookings.respondExtensionRequest(user.id, params.bookingId, params.requestId, dto);
+    return this.bookings.respondExtensionRequest(
+      user.id,
+      params.bookingId,
+      params.requestId,
+      dto,
+      locale,
+    );
   }
 
   @Post(':bookingId/extension-requests/:requestId/cancel')
@@ -261,8 +287,17 @@ export class BookingsController {
   @ApiParam({ name: 'requestId', required: true, type: String, description: 'Extension request ID.' })
   @Roles(UserRole.Tasker)
   @ApiOperation({ summary: 'Tasker withdraws their pending extra-time request' })
-  cancelExtensionRequest(@CurrentUser() user: User, @Param() params: ExtensionRequestParamDto) {
-    return this.bookings.cancelExtensionRequest(user.id, params.bookingId, params.requestId);
+  cancelExtensionRequest(
+    @CurrentUser() user: User,
+    @Param() params: ExtensionRequestParamDto,
+    @RequestLocale() locale: string,
+  ) {
+    return this.bookings.cancelExtensionRequest(
+      user.id,
+      params.bookingId,
+      params.requestId,
+      locale,
+    );
   }
 
   @Post(':bookingId/duration-review/approve')
@@ -276,10 +311,14 @@ export class BookingsController {
       'the extra time instead, open a booking dispute through POST /bookings/:bookingId/disputes, which ' +
       'independently holds payment.',
   })
-  async approveDurationReview(@CurrentUser() user: User, @Param() params: BookingParamDto) {
-    await this.bookings.approveDurationReview(user.id, params.bookingId);
+  async approveDurationReview(
+    @CurrentUser() user: User,
+    @Param() params: BookingParamDto,
+    @RequestLocale() locale: string,
+  ) {
+    await this.bookings.approveDurationReview(user.id, params.bookingId, locale);
     const payment = await this.payments.finalizeCompletedBooking(params.bookingId);
-    const booking = await this.bookings.get(user, params.bookingId);
+    const booking = await this.bookings.get(user, params.bookingId, locale);
     return { booking, payment };
   }
 
@@ -405,10 +444,11 @@ export class BookingsController {
     @CurrentUser() user: User,
     @Param() params: BookingParamDto,
     @Body() dto: WorkOtpDto,
+    @RequestLocale() locale: string,
   ) {
     await this.workVerification.finishWork(user.id, params.bookingId, dto);
     const payment = await this.payments.finalizeCompletedBooking(params.bookingId);
-    const booking = await this.bookings.get(user, params.bookingId);
+    const booking = await this.bookings.get(user, params.bookingId, locale);
     return { booking, payment };
   }
 
@@ -465,10 +505,14 @@ export class BookingsController {
     description:
       'Tasker submission enters awaiting_customer_approval and does not charge the customer. Customer approval completes the booking and starts genuine final-payment orchestration. If no active dispute is opened, a database-locked worker auto-approves after the configured review window. Online settlement creates a pending Tasker earning; cash requires physical collection confirmation and never creates fake wallet funds.',
   })
-  async complete(@CurrentUser() user: User, @Param() params: BookingParamDto) {
+  async complete(
+    @CurrentUser() user: User,
+    @Param() params: BookingParamDto,
+    @RequestLocale() locale: string,
+  ) {
     if (user.role === UserRole.Tasker) {
-      await this.taskerTasks.complete(user.id, params.bookingId);
-      const booking = await this.bookings.get(user, params.bookingId);
+      await this.taskerTasks.complete(user.id, params.bookingId, locale);
+      const booking = await this.bookings.get(user, params.bookingId, locale);
       return {
         booking,
         payment: {
@@ -484,7 +528,7 @@ export class BookingsController {
       await this.bookings.completeByCustomer(user.id, params.bookingId);
     }
     const payment = await this.payments.finalizeCompletedBooking(params.bookingId);
-    const booking = await this.bookings.get(user, params.bookingId);
+    const booking = await this.bookings.get(user, params.bookingId, locale);
     return { booking, payment };
   }
 

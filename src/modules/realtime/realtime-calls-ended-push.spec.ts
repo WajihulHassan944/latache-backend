@@ -53,7 +53,19 @@ const setup = (call = ringingCall()) => {
   } as unknown as PrismaService;
   const fcm = { enqueueNotification: jest.fn().mockResolvedValue(1) } as unknown as FcmService;
   const config = { get: (_key: string, fallback: unknown) => fallback } as unknown as ConfigService;
-  return { service: new RealtimeCallsService(prisma, config, fcm), tx, fcm };
+  const locales = { normalize: () => undefined, defaultLocale: 'en' };
+  const responseLocalization = { resolveServiceName: jest.fn().mockResolvedValue('Cleaning') };
+  return {
+    service: new RealtimeCallsService(
+      prisma,
+      config,
+      fcm,
+      locales as never,
+      responseLocalization as never,
+    ),
+    tx,
+    fcm,
+  };
 };
 
 describe('RealtimeCallsService call_ended push + REST reject', () => {

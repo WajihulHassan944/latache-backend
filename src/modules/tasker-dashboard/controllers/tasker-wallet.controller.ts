@@ -26,6 +26,7 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import type { User } from '../../../generated/prisma/client';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RequestLocale } from '../../localization/request-locale.decorator';
 import type {
   PayoutCapabilityView,
   PayoutMethodView,
@@ -80,8 +81,9 @@ export class TaskerWalletController {
   transactions(
     @CurrentUser() user: User,
     @Query() query: ListWalletTransactionsQueryDto,
+    @RequestLocale() locale: string,
   ): Promise<WalletTransactionsListView> {
-    return this.wallet.listTransactions(user.id, query);
+    return this.wallet.listTransactions(user.id, query, locale);
   }
 
   @Get('earnings')

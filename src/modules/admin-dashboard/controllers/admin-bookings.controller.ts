@@ -28,6 +28,7 @@ import type { User } from '../../../generated/prisma/client';
 import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminBookingActionDto, AdminBookingsQueryDto } from '../dto';
 import { AdminBookingsService } from '../services/admin-bookings.service';
+import { RequestLocale } from '../../localization/request-locale.decorator';
 
 @ApiTags('56 Admin - Booking Management')
 @ApiBearerAuth('bearer')
@@ -50,9 +51,10 @@ export class AdminBookingsController {
     @CurrentUser() actor: User,
     @Query() query: AdminBookingsQueryDto,
     @Res({ passthrough: true }) response: Response,
+    @RequestLocale() locale: string,
   ) {
     if (query.format === 'csv') {
-      const exported = await this.bookings.csv(actor, query);
+      const exported = await this.bookings.csv(actor, query, locale);
       response.setHeader('Content-Type', 'text/csv; charset=utf-8');
       response.setHeader(
         'Content-Disposition',

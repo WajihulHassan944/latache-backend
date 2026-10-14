@@ -13,6 +13,7 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { AdminActivityQueryDto, AdminDateRangeQueryDto } from '../dto';
 import { AdminAnalyticsService } from '../services/admin-analytics.service';
 import { AdminAnalyticsCacheInterceptor } from '../admin-analytics-cache.interceptor';
+import { RequestLocale } from '../../localization/request-locale.decorator';
 
 @ApiTags('52 Admin - Dashboard Analytics')
 @ApiBearerAuth('bearer')
@@ -75,7 +76,7 @@ export class AdminAnalyticsController {
     description:
       'Combines persisted user registrations, booking changes, payment/withdrawal records and administrative audit events. It does not fabricate activity entries.',
   })
-  activity(@Query() query: AdminActivityQueryDto) {
-    return this.analytics.activity(query);
+  activity(@Query() query: AdminActivityQueryDto, @RequestLocale() locale: string) {
+    return this.analytics.activity(query, locale);
   }
 }
