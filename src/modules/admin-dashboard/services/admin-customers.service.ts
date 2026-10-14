@@ -28,6 +28,7 @@ import {
   resolveAdminDateRange,
 } from '../admin-dashboard.utils';
 import { AccountDeletionService } from '../../account-deletion/account-deletion.service';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 
 const ACTIVE_DISPUTE_STATUSES = ['open', 'under_investigation', 'escalated'] as const;
 
@@ -39,6 +40,7 @@ export class AdminCustomersService {
     private readonly notifications: NotificationsService,
     private readonly audit: AdminAuditService,
     private readonly accountDeletion: AccountDeletionService,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   permanentlyDelete(actor: User, customerId: number, reason: string) {
@@ -158,7 +160,7 @@ export class AdminCustomersService {
             ? [{ bookingsAsCustomer: { _count: 'desc' } }, { createdAt: 'desc' }]
             : [{ createdAt: 'desc' }];
 
-    const [customers, totalItems] = await Promise.all([
+    const [customers, totalItems, currency] = await Promise.all([
       this.prisma.user.findMany({
         where,
         select: {
@@ -183,6 +185,7 @@ export class AdminCustomersService {
         take: limit,
       }),
       this.prisma.user.count({ where }),
+      this.platformSettings.currencyContext(),
     ]);
 
     const ids = customers.map((customer) => customer.id);
@@ -198,6 +201,7 @@ export class AdminCustomersService {
     );
 
     return {
+      currency: currency.code,
       items: customers.map((customer) => ({
         id: String(customer.id),
         customerId: `CUS-${String(customer.id).padStart(5, '0')}`,
@@ -586,7 +590,7 @@ export class AdminCustomersService {
   async reports(query: AdminDateRangeQueryDto) {
     const range = resolveAdminDateRange(query);
     const period = dateFilter(range);
-    const [totalCustomers, statusRows, topSpendRows, createdInPeriod] = await Promise.all([
+    const [totalCustomers, statusRows, topSpendRows, createdInPeriod, currency] = await Promise.all([
       this.prisma.user.count({ where: { roles: { has: UserRole.Customer }, deletedAt: null } }),
       Promise.all([
         this.prisma.customerProfile.groupBy({
@@ -622,6 +626,7 @@ export class AdminCustomersService {
           ...(period ? { createdAt: period } : {}),
         },
       }),
+      this.platformSettings.currencyContext(),
     ]);
 
     const [customerProfileStatusRows, pendingVerificationCustomers] = statusRows;
@@ -668,6 +673,7 @@ export class AdminCustomersService {
         toExclusive: range.toExclusive?.toISOString() ?? null,
         timezone: 'UTC',
       },
+      currency: currency.code,
       metrics: {
         totalCustomers,
         createdInPeriod,

@@ -20,6 +20,7 @@ import { AdminAnalyticsCacheInterceptor } from './admin-analytics-cache.intercep
 import { AccountDeletionModule } from '../account-deletion/account-deletion.module';
 import { DisputesModule } from '../disputes/disputes.module';
 import { ReferralsModule } from '../referrals/referrals.module';
+import { PlatformSettingsModule } from '../platform-settings/platform-settings.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { ReferralsModule } from '../referrals/referrals.module';
     AccountDeletionModule,
     DisputesModule,
     ReferralsModule,
+    PlatformSettingsModule,
   ],
   controllers: [
     AdminAnalyticsController,

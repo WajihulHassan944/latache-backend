@@ -3,6 +3,7 @@ import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { PAYMENT_STATUS } from '../../payments/payments.constants';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 import type { AdminActivityQueryDto, AdminDateRangeQueryDto } from '../dto';
 import {
   dateFilter,
@@ -60,7 +61,10 @@ interface TopTaskerEarningsRow {
 
 @Injectable()
 export class AdminAnalyticsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly platformSettings: PlatformSettingsService,
+  ) {}
 
   async overview(query: AdminDateRangeQueryDto) {
     const range = resolveAdminDateRange(query);
@@ -86,6 +90,7 @@ export class AdminAnalyticsService {
       bookingStatusRows,
       recentBookings,
       revenueSeries,
+      currency,
     ] = await Promise.all([
       this.prisma.booking.aggregate({
         where: { paymentStatus: PAYMENT_STATUS.Paid, ...(paidAt ? { paidAt } : {}) },
@@ -133,10 +138,12 @@ export class AdminAnalyticsService {
         take: 10,
       }),
       this.revenueSeries(range),
+      this.platformSettings.currencyContext(),
     ]);
 
     return {
       range: this.rangeView(range),
+      currency: currency.code,
       metrics: {
         grossRevenue: money(revenue._sum.totalChargedAmount),
         platformFees: money(revenue._sum.platformFeeAmount),
@@ -179,7 +186,7 @@ export class AdminAnalyticsService {
     const paidAt = dateFilter(range);
     const where = { paymentStatus: PAYMENT_STATUS.Paid, ...(paidAt ? { paidAt } : {}) };
 
-    const [aggregate, paidCount, series, byService] = await Promise.all([
+    const [aggregate, paidCount, series, byService, currency] = await Promise.all([
       this.prisma.booking.aggregate({
         where,
         _sum: {
@@ -194,10 +201,12 @@ export class AdminAnalyticsService {
       this.prisma.booking.count({ where }),
       this.revenueSeries(range),
       this.revenueByService(range),
+      this.platformSettings.currencyContext(),
     ]);
 
     return {
       range: this.rangeView(range),
+      currency: currency.code,
       metrics: {
         grossRevenue: money(aggregate._sum.totalChargedAmount),
         platformFees: money(aggregate._sum.platformFeeAmount),
