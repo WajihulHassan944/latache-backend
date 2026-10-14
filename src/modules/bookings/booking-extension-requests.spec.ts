@@ -32,6 +32,7 @@ const setup = (opts: { status?: string; existingPending?: typeof pendingRequest 
     status: opts.status ?? 'in_progress',
     estimatedDurationMinutes: 120,
     extensionMinutes: 0,
+    service: { id: 8 },
   };
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([]),

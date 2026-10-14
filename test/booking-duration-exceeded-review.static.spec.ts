@@ -22,7 +22,7 @@ describe('duration-exceeded payment review', () => {
 
   it('provides a customer approval path that recomputes duration server-side before releasing the hold', () => {
     const bookings = read('src/modules/bookings/bookings.service.ts');
-    expect(bookings).toContain('async approveDurationReview(customerId: number, bookingId: number)');
+    expect(bookings).toContain('async approveDurationReview(customerId: number, bookingId: number, locale: string)');
     expect(bookings).toContain('PAYMENT_STATUS.ReviewRequiredDurationExceeded');
     expect(bookings).toContain('taskWorkSession.findUnique');
     expect(bookings).toContain('paymentStatus: PAYMENT_STATUS.Ready');

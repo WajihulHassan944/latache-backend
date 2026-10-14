@@ -18,6 +18,7 @@ const setup = (opts: { isCustomTime: boolean; sameDay: Array<{ id: number; start
     paymentSource: null,
     capturedAt: null,
     capturedAmount: null,
+    service: { id: 8 },
   };
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([{ id: 7 }]),
