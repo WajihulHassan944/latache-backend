@@ -135,6 +135,9 @@ export class AuthRoleService {
       this.prisma.customerProfile.findUnique({ where: { userId } }),
       this.prisma.taskerProfile.findUnique({ where: { userId } }),
     ]);
+    const customerCompletedTasks = customer
+      ? await this.prisma.booking.count({ where: { customerId: userId, status: 'completed' } })
+      : 0;
     return {
       customer: customer
         ? {
@@ -145,6 +148,7 @@ export class AuthRoleService {
             rating: Number(customer.rating),
             reviewsCount: customer.reviewsCount,
             disciplinaryState: customer.disciplinaryState,
+            completedTasks: customerCompletedTasks,
           }
         : null,
       tasker: tasker
