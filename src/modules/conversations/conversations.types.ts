@@ -13,6 +13,7 @@ export interface PersonSummaryView {
    * 60s presence heartbeat while connected), or null if they never connected.
    */
   lastSeenAt: string | null;
+  isOnline: boolean;
 }
 
 export interface ConversationMessageView {

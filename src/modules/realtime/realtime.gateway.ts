@@ -122,6 +122,10 @@ export class RealtimeGateway
     }
   }
 
+  isOnline(userId: number): boolean {
+    return (this.userSockets.get(userId)?.size ?? 0) > 0;
+  }
+
   private trackPresenceConnect(userId: number, socketId: string): void {
     const sockets = this.userSockets.get(userId) ?? new Set<string>();
     const wasOffline = sockets.size === 0;

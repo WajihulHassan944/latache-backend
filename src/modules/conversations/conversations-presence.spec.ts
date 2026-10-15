@@ -11,10 +11,14 @@ const person = (lastSeenAt: Date | null) => ({
   lastSeenAt,
 });
 
-const summarize = (row: ReturnType<typeof person>) =>
-  (Object.create(ConversationsService.prototype) as unknown as {
+const summarize = (row: ReturnType<typeof person>, online = false) => {
+  const instance = Object.create(ConversationsService.prototype) as unknown as {
     personSummary: (p: unknown, role: string) => Record<string, unknown>;
-  }).personSummary(row, 'tasker');
+    gateway: { isOnline: (id: number) => boolean };
+  };
+  instance.gateway = { isOnline: jest.fn().mockReturnValue(online) };
+  return instance.personSummary(row, 'tasker');
+};
 
 describe('PersonSummaryView.lastSeenAt (presence initial snapshot)', () => {
   it('exposes the last presence timestamp as ISO 8601', () => {
@@ -35,7 +39,13 @@ describe('PersonSummaryView.lastSeenAt (presence initial snapshot)', () => {
       phoneCountryCode: '+92',
       phoneNumber: '3001234567',
       lastSeenAt: null,
+      isOnline: false,
     });
+  });
+
+  it('reflects the live gateway presence as isOnline', () => {
+    expect(summarize(person(null), true).isOnline).toBe(true);
+    expect(summarize(person(null), false).isOnline).toBe(false);
   });
 });
 

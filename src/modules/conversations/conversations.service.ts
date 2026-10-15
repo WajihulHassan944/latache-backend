@@ -12,6 +12,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { Prisma, type User } from '../../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RealtimeCallsService } from '../realtime/realtime-calls.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service';
 import type { ConversationCallListView, ConversationCallView } from '../realtime/realtime.types';
 import { dateOnlyFromDate } from '../../common/utils/date.util';
@@ -110,6 +111,7 @@ export class ConversationsService {
     private readonly realtime: RealtimeOutboxService,
     private readonly uploads: UploadsService,
     private readonly calls: RealtimeCallsService,
+    private readonly gateway: RealtimeGateway,
   ) {}
 
   capabilities(): ConversationCapabilitiesView {
@@ -645,6 +647,7 @@ export class ConversationsService {
       // Initial presence snapshot for a viewer who connects after the counterparty;
       // live presence:online/offline events refine it. null = never connected.
       lastSeenAt: person.lastSeenAt?.toISOString() ?? null,
+      isOnline: this.gateway.isOnline(person.id),
     };
   }
 

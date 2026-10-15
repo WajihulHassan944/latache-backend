@@ -19,6 +19,7 @@ import { WebRtcConfigService } from './webrtc-config.service';
     WebRtcConfigService,
   ],
   exports: [
+    RealtimeGateway,
     RealtimeOutboxService,
     RealtimeCallsService,
     RealtimeDispatcherService,
