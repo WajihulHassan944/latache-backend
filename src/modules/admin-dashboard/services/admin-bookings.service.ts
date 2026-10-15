@@ -159,6 +159,7 @@ export class AdminBookingsService {
       'service',
       'date',
       'start_time',
+      'completed_at',
       'customer',
       'tasker',
       'status',
@@ -173,6 +174,7 @@ export class AdminBookingsService {
         row.service.name ?? '',
         row.date,
         row.startTime,
+        row.completedAt ?? '',
         row.customer.name,
         row.tasker.name,
         row.status,
@@ -294,6 +296,7 @@ export class AdminBookingsService {
         estimatedDurationMinutes: booking.estimatedDurationMinutes,
         extensionMinutes: booking.extensionMinutes,
       },
+      completedAt: booking.taskCompletedAt?.toISOString() ?? null,
       location: {
         label: booking.locationLabel,
         address: booking.venueAddress,
@@ -737,6 +740,12 @@ export class AdminBookingsService {
     if (sort === 'oldest') return [{ createdAt: 'asc' }, { id: 'asc' }];
     if (sort === 'amount_desc') return [{ totalChargedAmount: 'desc' }, { createdAt: 'desc' }];
     if (sort === 'amount_asc') return [{ totalChargedAmount: 'asc' }, { createdAt: 'desc' }];
+    if (sort === 'scheduled_date_asc') return [{ bookingDate: 'asc' }, { startTime: 'asc' }];
+    if (sort === 'scheduled_date_desc') return [{ bookingDate: 'desc' }, { startTime: 'desc' }];
+    if (sort === 'completed_date_asc')
+      return [{ taskCompletedAt: { sort: 'asc', nulls: 'last' } }];
+    if (sort === 'completed_date_desc')
+      return [{ taskCompletedAt: { sort: 'desc', nulls: 'last' } }];
     return [{ createdAt: 'desc' }, { id: 'desc' }];
   }
 
@@ -765,6 +774,7 @@ export class AdminBookingsService {
       completionApprovedAt: true,
       completionApprovedByRole: true,
       completionAutoApprovedAt: true,
+      taskCompletedAt: true,
       createdAt: true,
       service: { select: { id: true, name: true, slug: true } },
       customer: { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -799,6 +809,7 @@ export class AdminBookingsService {
       service: booking.service,
       date: booking.bookingDate.toISOString().slice(0, 10),
       startTime: booking.startTime,
+      completedAt: booking.taskCompletedAt?.toISOString() ?? null,
       customer: {
         id: String(booking.customer.id),
         name: fullName(booking.customer.firstName, booking.customer.lastName),

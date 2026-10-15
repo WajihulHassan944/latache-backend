@@ -96,12 +96,38 @@ export class AdminBookingsQueryDto extends AdminPaginationDto {
   to?: string;
 
   @ApiPropertyOptional({
-    enum: ['newest', 'oldest', 'amount_desc', 'amount_asc'],
+    enum: [
+      'newest',
+      'oldest',
+      'amount_desc',
+      'amount_asc',
+      'scheduled_date_asc',
+      'scheduled_date_desc',
+      'completed_date_asc',
+      'completed_date_desc',
+    ],
     default: 'newest',
   })
   @IsOptional()
-  @IsIn(['newest', 'oldest', 'amount_desc', 'amount_asc'])
-  sort?: 'newest' | 'oldest' | 'amount_desc' | 'amount_asc' = 'newest';
+  @IsIn([
+    'newest',
+    'oldest',
+    'amount_desc',
+    'amount_asc',
+    'scheduled_date_asc',
+    'scheduled_date_desc',
+    'completed_date_asc',
+    'completed_date_desc',
+  ])
+  sort?:
+    | 'newest'
+    | 'oldest'
+    | 'amount_desc'
+    | 'amount_asc'
+    | 'scheduled_date_asc'
+    | 'scheduled_date_desc'
+    | 'completed_date_asc'
+    | 'completed_date_desc' = 'newest';
 
   @ApiPropertyOptional({
     enum: ['json', 'csv'],

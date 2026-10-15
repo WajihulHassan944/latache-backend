@@ -21,11 +21,27 @@ export class BookingParamDto {
   bookingId!: number;
 }
 
+export const BOOKINGS_SORT_VALUES = [
+  'scheduled_date_asc',
+  'scheduled_date_desc',
+  'completed_date_asc',
+  'completed_date_desc',
+] as const;
+
 export class ListUnifiedBookingsQueryDto {
   @ApiPropertyOptional({ enum: ['booked', 'ongoing', 'history'], default: 'booked' })
   @IsOptional()
   @IsIn(['booked', 'ongoing', 'history'])
   bucket?: 'booked' | 'ongoing' | 'history';
+
+  @ApiPropertyOptional({
+    enum: BOOKINGS_SORT_VALUES,
+    description:
+      'Optional; omitted preserves the default ordering (ascending for booked/ongoing, descending by booking date for history).',
+  })
+  @IsOptional()
+  @IsIn(BOOKINGS_SORT_VALUES)
+  sort?: (typeof BOOKINGS_SORT_VALUES)[number];
 
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()

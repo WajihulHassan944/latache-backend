@@ -484,10 +484,7 @@ export class BookingsService {
       this.prisma.booking.findMany({
         where,
         include: BOOKING_INCLUDE,
-        orderBy:
-          bucket === 'history'
-            ? [{ bookingDate: 'desc' }, { startTime: 'desc' }]
-            : [{ bookingDate: 'asc' }, { startTime: 'asc' }],
+        orderBy: this.unifiedBookingsOrderBy(bucket, query.sort),
         skip: offset,
         take: limit,
       }),
@@ -3501,6 +3498,21 @@ export class BookingsService {
     );
   }
 
+  private unifiedBookingsOrderBy(
+    bucket: 'booked' | 'ongoing' | 'history',
+    sort: ListUnifiedBookingsQueryDto['sort'],
+  ): Prisma.BookingOrderByWithRelationInput[] {
+    if (sort === 'scheduled_date_asc') return [{ bookingDate: 'asc' }, { startTime: 'asc' }];
+    if (sort === 'scheduled_date_desc') return [{ bookingDate: 'desc' }, { startTime: 'desc' }];
+    if (sort === 'completed_date_asc')
+      return [{ taskCompletedAt: { sort: 'asc', nulls: 'last' } }];
+    if (sort === 'completed_date_desc')
+      return [{ taskCompletedAt: { sort: 'desc', nulls: 'last' } }];
+    return bucket === 'history'
+      ? [{ bookingDate: 'desc' }, { startTime: 'desc' }]
+      : [{ bookingDate: 'asc' }, { startTime: 'asc' }];
+  }
+
   private serialize(booking: UnifiedBookingWithRelations, viewerId: number, serviceName: string) {
     const viewerRole = booking.customerId === viewerId ? 'customer' : 'tasker';
     const estimate = booking.paymentEstimate as unknown as PaymentEstimate | null;
@@ -3548,6 +3560,7 @@ export class BookingsService {
       date: dateOnlyFromDate(booking.bookingDate),
       startTime: booking.startTime,
       endTime: booking.endTime,
+      completedAt: booking.taskCompletedAt?.toISOString() ?? null,
       location: formatLocation({
         label: booking.locationLabel,
         lat: Number(booking.locationLat),
