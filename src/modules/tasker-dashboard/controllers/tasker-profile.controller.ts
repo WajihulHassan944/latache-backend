@@ -135,6 +135,16 @@ export class TaskerProfileController {
     return this.profile.deleteAvailability(user.id, params.id);
   }
 
+  @Patch('approval-ack')
+  @ApiOperation({
+    summary: 'Acknowledge the approval-celebration modal',
+    description:
+      'Idempotent: once acknowledged, repeat calls return the original timestamp unchanged.',
+  })
+  acknowledgeApproval(@CurrentUser() user: User): Promise<{ acknowledgedAt: string }> {
+    return this.profile.acknowledgeApproval(user.id);
+  }
+
   @Delete()
   @ApiOperation({
     summary: 'Deactivate the tasker account safely',

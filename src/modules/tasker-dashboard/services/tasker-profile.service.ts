@@ -370,6 +370,24 @@ export class TaskerProfileService {
     return { deactivated: true };
   }
 
+  async acknowledgeApproval(taskerId: number): Promise<{ acknowledgedAt: string }> {
+    await this.requireTasker(taskerId);
+    const profile = await this.prisma.taskerProfile.findUnique({
+      where: { userId: taskerId },
+      select: { approvalAcknowledgedAt: true },
+    });
+    if (!profile) throw new NotFoundException('Tasker profile not found');
+    if (profile.approvalAcknowledgedAt) {
+      return { acknowledgedAt: profile.approvalAcknowledgedAt.toISOString() };
+    }
+    const updated = await this.prisma.taskerProfile.update({
+      where: { userId: taskerId },
+      data: { approvalAcknowledgedAt: new Date() },
+      select: { approvalAcknowledgedAt: true },
+    });
+    return { acknowledgedAt: updated.approvalAcknowledgedAt!.toISOString() };
+  }
+
   private canonicalTaskerRate(
     platformRate: number,
     service: Service,

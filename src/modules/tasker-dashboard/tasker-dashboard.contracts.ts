@@ -327,6 +327,7 @@ export interface DashboardOverviewView {
     onboardingStatus: string | null;
     accountStatus: string;
     rejectionReason: string | null;
+    approvalAcknowledgedAt: string | null;
   };
   setup: {
     completed: number;

@@ -260,6 +260,7 @@ model TaskerProfile {
   disciplinaryState        String    @default("clear") @db.VarChar(32)
   lastDisciplinaryActionAt DateTime? @db.Timestamptz(6)
   approvedAt               DateTime? @db.Timestamptz(6)
+  approvalAcknowledgedAt   DateTime? @db.Timestamptz(6)
   rejectedAt               DateTime? @db.Timestamptz(6)
   suspendedAt              DateTime? @db.Timestamptz(6)
   deactivatedAt            DateTime? @db.Timestamptz(6)
