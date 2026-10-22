@@ -265,7 +265,7 @@ export class PaymentsService {
 
   async wallet(customerId: number): Promise<WalletView> {
     const wallet = await this.ensureCustomerWallet(customerId);
-    const [refunds, spent, savedCards] = await Promise.all([
+    const [refunds, spent, escrow, savedCards] = await Promise.all([
       this.prisma.paymentTransaction.aggregate({
         where: {
           customerId,
@@ -282,6 +282,17 @@ export class PaymentsService {
         },
         _sum: { amount: true },
       }),
+      // Accepted and in progress: payment captured at acceptance but not yet
+      // released to the Tasker (same booking-status scoping used elsewhere in
+      // this service, e.g. detachPaymentMethod's active-booking guard).
+      this.prisma.booking.aggregate({
+        where: {
+          customerId,
+          capturedAt: { not: null },
+          status: { notIn: ['completed', 'cancelled'] },
+        },
+        _sum: { capturedAmount: true },
+      }),
       this.isStripeEnabled() ? this.listPaymentMethods(customerId) : Promise.resolve([]),
     ]);
     const defaultCard = savedCards.find((card) => card.isDefault) ?? null;
@@ -289,6 +300,7 @@ export class PaymentsService {
       availableBalance: { amount: Number(wallet.availableBalance), currency: wallet.currency },
       refunds: { amount: Number(refunds._sum.amount ?? 0), currency: wallet.currency },
       totalSpent: { amount: Number(spent._sum.amount ?? 0), currency: wallet.currency },
+      heldInEscrow: { amount: Number(escrow._sum.capturedAmount ?? 0), currency: wallet.currency },
       hasSavedCard: savedCards.length > 0,
       defaultCardId: defaultCard?.id ?? null,
       savedCards,

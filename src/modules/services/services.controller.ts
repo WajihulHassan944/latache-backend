@@ -176,7 +176,7 @@ export class ServicesController {
   @ApiOperation({
     summary: 'Update a service category',
     description:
-      'Allows canonical English content, translations[], slug, icon (see GET /api/admin/services?view=icons for valid values), ordering and active-state changes. Locale rows are upserted; existing bookings and IDs are never rewritten.',
+      'Allows canonical English content, translations[], category, icon (see GET /api/admin/services?view=icons for valid values), ordering and active-state changes. Slug is server-generated and immutable after creation. Locale rows are upserted; existing bookings and IDs are never rewritten.',
   })
   updateService(
     @CurrentUser() actor: User,
@@ -192,9 +192,9 @@ export class ServicesController {
   @Permissions('services.manage')
   @ApiParam({ name: 'serviceId', required: true, type: Number, description: 'Service category ID.' })
   @ApiOperation({
-    summary: 'Permanently delete an unused service category',
+    summary: 'Deactivate a service category (soft-delete)',
     description:
-      'Irreversible deletion of the canonical service, options, translations, and tasker assignments. Existing booking history blocks deletion and returns SERVICE_PURGE_BLOCKED.',
+      'Sets isActive=false rather than deleting the row, so the slug stays reserved permanently. Idempotent: deactivating an already-inactive service still succeeds. Existing booking history blocks deactivation and returns SERVICE_PURGE_BLOCKED.',
   })
   @ApiConflictResponse({ description: 'SERVICE_PURGE_BLOCKED with booking count.' })
   deleteService(@CurrentUser() actor: User, @Param() params: ServiceIdParamDto): Promise<unknown> {

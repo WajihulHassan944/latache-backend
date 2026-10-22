@@ -27,12 +27,14 @@ export interface ServiceResponse {
   tools: string[];
   icon: string;
   slug: string | null;
+  category: string | null;
   isActive: boolean;
   sortOrder: number;
   resolvedLocale?: string;
   translationFallback?: boolean;
   translations?: ServiceTranslationRow[];
   rateLimits: { minimumHourlyRate: number; maximumHourlyRate: number; currency: string; symbol: string };
+  outOfBoundsTaskers?: number;
 }
 
 interface TranslationRow {
@@ -170,14 +172,12 @@ export class ServicesService {
       currency,
     );
     const translations = this.normalizeServiceTranslations(dto.translations);
+    const baseSlug = this.slugify(dto.name);
     const service = await this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`latache-service:${dto.slug.toLowerCase()}`}))
+        SELECT pg_advisory_xact_lock(hashtext(${`latache-service:${baseSlug}`}))
       `;
-      const existing = await transaction.service.findFirst({
-        where: { slug: { equals: dto.slug, mode: 'insensitive' } },
-      });
-      if (existing) throw new ConflictException('Service slug already exists');
+      const slug = await this.generateUniqueSlug(transaction, baseSlug);
       const now = new Date();
       const created = await transaction.service.create({
         data: {
@@ -185,8 +185,9 @@ export class ServicesService {
           description: dto.description,
           scope: this.normalizeBulletList(dto.scope),
           tools: this.normalizeBulletList(dto.tools),
-          slug: dto.slug,
+          slug,
           icon: dto.icon,
+          category: dto.category ?? null,
           isActive: dto.isActive ?? true,
           sortOrder: dto.sortOrder ?? 0,
           minHourlyRateUsd: minHourlyRateUsd.toFixed(2),
@@ -251,38 +252,6 @@ export class ServicesService {
       await transaction.$queryRaw`
         SELECT "id" FROM "Services" WHERE "id" = ${serviceId} FOR UPDATE
       `;
-      if (dto.slug && dto.slug.toLowerCase() !== service.slug?.toLowerCase()) {
-        await transaction.$executeRaw`
-          SELECT pg_advisory_xact_lock(hashtext(${`latache-service:${dto.slug.toLowerCase()}`}))
-        `;
-        const duplicate = await transaction.service.findFirst({
-          where: {
-            id: { not: serviceId },
-            slug: { equals: dto.slug, mode: 'insensitive' },
-          },
-        });
-        if (duplicate) throw new ConflictException('Service slug already exists');
-      }
-
-      if (dto.minimumHourlyRate !== undefined || dto.maximumHourlyRate !== undefined) {
-        const outOfBounds = await transaction.userService.count({
-          where: {
-            serviceId,
-            OR: [
-              { hourlyRate: { lt: minHourlyRateUsd } },
-              { hourlyRate: { gt: maxHourlyRateUsd } },
-            ],
-          },
-        });
-        if (outOfBounds > 0) {
-          throw new ConflictException({
-            code: 'SERVICE_RATE_BOUNDS_CONFLICT',
-            message:
-              'Existing Tasker rates fall outside the requested limits. Adjust those Tasker rates before narrowing the service range.',
-            affectedTaskers: outOfBounds,
-          });
-        }
-      }
 
       const row = await transaction.service.update({
         where: { id: serviceId },
@@ -299,8 +268,8 @@ export class ServicesService {
           ...(dto.tools !== undefined || english?.tools !== undefined
             ? { tools: dto.tools !== undefined ? this.normalizeBulletList(dto.tools) : english?.tools }
             : {}),
-          ...(dto.slug !== undefined ? { slug: dto.slug } : {}),
           ...(dto.icon !== undefined ? { icon: dto.icon } : {}),
+          ...(dto.category !== undefined ? { category: dto.category } : {}),
           ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
           ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
           ...(dto.minimumHourlyRate !== undefined
@@ -333,7 +302,20 @@ export class ServicesService {
       });
     });
     await this.invalidateServiceCaches();
-    return this.serializeAdmin(updated, currency);
+
+    let outOfBoundsTaskers: number | undefined;
+    if (dto.minimumHourlyRate !== undefined || dto.maximumHourlyRate !== undefined) {
+      outOfBoundsTaskers = await this.prisma.userService.count({
+        where: {
+          serviceId,
+          OR: [
+            { hourlyRate: { lt: minHourlyRateUsd } },
+            { hourlyRate: { gt: maxHourlyRateUsd } },
+          ],
+        },
+      });
+    }
+    return this.serializeAdmin(updated, currency, outOfBoundsTaskers);
   }
 
   async delete(actor: User, serviceId: number): Promise<{ deleted: true; id: string }> {
@@ -347,23 +329,25 @@ export class ServicesService {
         bookingCount: bookings,
       });
     }
-    const assets = this.storage.extractManagedAssets(service.icon);
-    await this.prisma.$transaction(async (transaction) => {
-      await this.storage.enqueue(transaction, assets, 'service', serviceId, actor.id);
-      await transaction.service.delete({ where: { id: serviceId } });
-      await this.audit.record(
-        {
-          actorId: actor.id,
-          action: 'service_category_permanently_deleted',
-          entityType: 'service',
-          entityId: serviceId,
-          metadata: { slug: service.slug, irreversible: true, assetCount: assets.length },
-        },
-        transaction,
-      );
-    });
-    await this.storage.attemptImmediate('service', serviceId, assets.length);
-    await this.invalidateServiceCaches();
+    // Soft-delete only: the row (and its slug) is kept permanently so the
+    // slug stays reserved. Re-deleting an already-inactive service is a no-op
+    // success rather than an error.
+    if (service.isActive) {
+      await this.prisma.$transaction(async (transaction) => {
+        await transaction.service.update({ where: { id: serviceId }, data: { isActive: false } });
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            action: 'service_category_deactivated',
+            entityType: 'service',
+            entityId: serviceId,
+            metadata: { slug: service.slug },
+          },
+          transaction,
+        );
+      });
+      await this.invalidateServiceCaches();
+    }
     return { deleted: true, id: String(serviceId) };
   }
 
@@ -573,6 +557,7 @@ export class ServicesService {
       tools: selected.translation?.tools ?? service.tools,
       icon: service.icon ?? '',
       slug: service.slug,
+      category: service.category,
       isActive: service.isActive,
       sortOrder: service.sortOrder,
       rateLimits: this.rateLimits(service, currency),
@@ -584,6 +569,7 @@ export class ServicesService {
   private serializeAdmin(
     service: Service & { translations: ServiceTranslationRow[] },
     currency: PlatformCurrencyContext,
+    outOfBoundsTaskers?: number,
   ): ServiceResponse {
     return {
       id: service.id.toString(),
@@ -593,10 +579,12 @@ export class ServicesService {
       tools: service.tools,
       icon: service.icon ?? '',
       slug: service.slug,
+      category: service.category,
       isActive: service.isActive,
       sortOrder: service.sortOrder,
       rateLimits: this.rateLimits(service, currency),
       translations: service.translations.map((translation) => ({ ...translation })),
+      ...(outOfBoundsTaskers !== undefined ? { outOfBoundsTaskers } : {}),
     };
   }
 
@@ -675,6 +663,33 @@ export class ServicesService {
 
   private normalizeBulletList(values: string[] | undefined): string[] {
     return (values ?? []).map((value) => value.trim()).filter((value) => value.length > 0);
+  }
+
+  private slugify(name: string): string {
+    const slug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return slug || 'service';
+  }
+
+  private async generateUniqueSlug(
+    transaction: Prisma.TransactionClient,
+    baseSlug: string,
+  ): Promise<string> {
+    let slug = baseSlug;
+    let attempt = 2;
+    // Collisions are rare (distinct names rarely share a slugified form) so a
+    // small disambiguator loop under the advisory lock is sufficient.
+    while (
+      await transaction.service.findFirst({
+        where: { slug: { equals: slug, mode: 'insensitive' } },
+      })
+    ) {
+      slug = `${baseSlug}-${attempt}`;
+      attempt += 1;
+    }
+    return slug;
   }
 
   private async upsertServiceTranslations(

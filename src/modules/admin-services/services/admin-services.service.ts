@@ -83,6 +83,7 @@ export class AdminServicesService {
         scope: service.scope,
         tools: service.tools,
         icon: service.icon,
+        category: service.category,
         isActive: service.isActive,
         sortOrder: service.sortOrder,
         createdAt: service.createdAt,
@@ -160,8 +161,9 @@ export class AdminServicesService {
         : {}),
     };
 
-    const [totalItems, rows, totalCategories, activeCategories, optionTotals, activeAssignments] =
+    const [currency, totalItems, rows, totalCategories, activeCategories, optionTotals, activeAssignments] =
       await Promise.all([
+        this.platformSettings.currencyContext(),
         this.prisma.service.count({ where }),
         this.prisma.service.findMany({
           where,
@@ -229,8 +231,21 @@ export class AdminServicesService {
         scope: service.scope,
         tools: service.tools,
         icon: service.icon,
+        category: service.category,
         isActive: service.isActive,
         sortOrder: service.sortOrder,
+        rateLimits: {
+          minimumHourlyRate: this.platformSettings.convertUsdAmount(
+            Number(service.minHourlyRateUsd),
+            currency,
+          ),
+          maximumHourlyRate: this.platformSettings.convertUsdAmount(
+            Number(service.maxHourlyRateUsd),
+            currency,
+          ),
+          currency: currency.code,
+          symbol: currency.symbol,
+        },
         subServices: service.options.length,
         activeSubServices: service.options.filter((option) => option.isActive).length,
         activeTaskers: new Set(service.userServices.map((assignment) => assignment.userId)).size,
@@ -251,7 +266,10 @@ export class AdminServicesService {
   }
 
   private async pricing(): Promise<Record<string, unknown>> {
-    const settings = await this.platformSettings.view('commission,tax,eliteProgram');
+    const [settings, currency] = await Promise.all([
+      this.platformSettings.view('commission,tax,eliteProgram'),
+      this.platformSettings.currencyContext(),
+    ]);
     const commission = settings.commission as Record<string, unknown>;
     const tax = settings.tax as Record<string, unknown>;
     const eliteProgram = settings.eliteProgram as Record<string, unknown>;
@@ -285,6 +303,7 @@ export class AdminServicesService {
 
     return {
       view: 'pricing',
+      currency: currency.code,
       tiers,
       urgencyRules: {
         sameDayPlatformFeeSurchargePercent: Number(commission.sameDaySurchargePercent ?? 0),

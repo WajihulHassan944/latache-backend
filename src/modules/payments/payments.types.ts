@@ -18,6 +18,7 @@ export interface WalletView {
   availableBalance: { amount: number; currency: string };
   refunds: { amount: number; currency: string };
   totalSpent: { amount: number; currency: string };
+  heldInEscrow: { amount: number; currency: string };
   hasSavedCard: boolean;
   defaultCardId: string | null;
   savedCards: SavedPaymentMethodView[];

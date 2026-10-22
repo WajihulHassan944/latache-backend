@@ -845,16 +845,19 @@ export class AdminFinanceService {
       transactions.flatMap((row) => (row.booking?.service ? [row.booking.service.id] : [])),
       locale,
     );
-    const byDay = new Map<string, { charges: number; refunds: number }>();
+    const byDay = new Map<string, { charges: number; refunds: number; platformFees: number }>();
     const byService = new Map<
       string,
       { serviceId: number | null; serviceName: string; gross: number; refunds: number }
     >();
     for (const row of transactions) {
       const day = row.createdAt.toISOString().slice(0, 10);
-      const daily = byDay.get(day) ?? { charges: 0, refunds: 0 };
+      const daily = byDay.get(day) ?? { charges: 0, refunds: 0, platformFees: 0 };
       if (row.kind === 'refund') daily.refunds += Number(row.amount);
-      else daily.charges += Number(row.amount);
+      else {
+        daily.charges += Number(row.amount);
+        daily.platformFees += Number(row.booking?.platformFeeAmount ?? 0);
+      }
       byDay.set(day, daily);
       const service = row.booking?.service;
       const key = service ? String(service.id) : 'unallocated';
@@ -880,6 +883,7 @@ export class AdminFinanceService {
         gross: money(value.charges),
         refunds: money(value.refunds),
         net: money(value.charges - value.refunds),
+        platformFees: money(value.platformFees),
       })),
       items: [...byService.values()]
         .map((value) => ({

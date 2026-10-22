@@ -1679,28 +1679,32 @@ export class EliteProgramService {
   async performance(query: AdminDateRangeQueryDto): Promise<Record<string, unknown>> {
     const range = resolveAdminDateRange(query);
     const date = dateFilter(range);
-    const elite = await this.prisma.user.findMany({
-      where: { roles: { has: UserRole.Tasker }, deletedAt: null, isElite: true, eliteTierId: { not: null } },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        profilePicture: true,
-        rating: true,
-        completedTasks: true,
-        eliteTier: true,
-      },
-    });
+    const [elite, currency] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { roles: { has: UserRole.Tasker }, deletedAt: null, isElite: true, eliteTierId: { not: null } },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          profilePicture: true,
+          rating: true,
+          completedTasks: true,
+          eliteTier: true,
+        },
+      }),
+      this.platformSettings.currencyContext(),
+    ]);
     const ids = elite.map((tasker) => tasker.id);
     if (!ids.length) {
       return {
         range: this.rangeView(range),
+        currency: currency.code,
         metrics: {
           totalElite: 0,
           averageRating: 0,
           completionRate: 0,
           settledEarnings: 0,
-          platformFees: 0,
+          platformFeesFromPaidEliteBookings: 0,
           disputes: 0,
         },
         trend: [],
@@ -1757,11 +1761,15 @@ export class EliteProgramService {
 
     const earningsByTasker = new Map<number, number>();
     for (const row of earningRows) {
-      const amountUsd = this.platformSettings.convertCurrencyAmountToUsd(
+      const amountInPlatformCurrency = this.platformSettings.convertCurrencyAmount(
         Number(row.amount),
         row.currency,
+        currency,
       );
-      earningsByTasker.set(row.taskerId, (earningsByTasker.get(row.taskerId) ?? 0) + amountUsd);
+      earningsByTasker.set(
+        row.taskerId,
+        (earningsByTasker.get(row.taskerId) ?? 0) + amountInPlatformCurrency,
+      );
     }
     const topPerformers = [...elite]
       .sort((a, b) => (earningsByTasker.get(b.id) ?? 0) - (earningsByTasker.get(a.id) ?? 0))
@@ -1779,6 +1787,7 @@ export class EliteProgramService {
 
     return {
       range: this.rangeView(range),
+      currency: currency.code,
       metrics: {
         totalElite: elite.length,
         averageRating,
@@ -1787,9 +1796,10 @@ export class EliteProgramService {
           earnings.reduce(
             (total, row) =>
               total +
-              this.platformSettings.convertCurrencyAmountToUsd(
+              this.platformSettings.convertCurrencyAmount(
                 Number(row._sum.amount ?? 0),
                 row.currency,
+                currency,
               ),
             0,
           ),
@@ -1896,7 +1906,7 @@ export class EliteProgramService {
             ? [{ completedTasks: 'desc' }, { eliteSince: 'desc' }]
             : [{ eliteSince: 'desc' }, { createdAt: 'desc' }];
 
-    const [members, totalItems] = await Promise.all([
+    const [members, totalItems, currency] = await Promise.all([
       this.prisma.user.findMany({
         where,
         skip,
@@ -1920,6 +1930,7 @@ export class EliteProgramService {
         },
       }),
       this.prisma.user.count({ where }),
+      this.platformSettings.currencyContext(),
     ]);
     const ids = members.map((member) => member.id);
     const earningRows = ids.length
@@ -1956,6 +1967,7 @@ export class EliteProgramService {
     }
     return {
       view: 'members',
+      currency: currency.code,
       page,
       limit,
       totalItems,
@@ -1989,7 +2001,7 @@ export class EliteProgramService {
           }
         : {}),
     };
-    const [requests, totalItems] = await Promise.all([
+    const [requests, totalItems, currency] = await Promise.all([
       this.prisma.eliteMembershipRequest.findMany({
         where,
         skip,
@@ -2003,9 +2015,11 @@ export class EliteProgramService {
         },
       }),
       this.prisma.eliteMembershipRequest.count({ where }),
+      this.platformSettings.currencyContext(),
     ]);
     return {
       view: query.view,
+      currency: currency.code,
       page,
       limit,
       totalItems,

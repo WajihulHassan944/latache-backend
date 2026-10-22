@@ -13,7 +13,7 @@ import { PAYMENT_STATUS } from '../../payments/payments.constants';
 import { PaymentsService } from '../../payments/payments.service';
 import { RealtimeOutboxService } from '../../realtime/realtime-outbox.service';
 import { ReferralsService } from '../../referrals/services/referrals.service';
-import type { AdminBookingActionDto, AdminBookingsQueryDto } from '../dto';
+import type { AdminBookingActionDto, AdminBookingsQueryDto, AdminPaginationDto } from '../dto';
 import { fullName, money, pagination } from '../admin-dashboard.utils';
 import { ResponseLocalizationService } from '../../localization/response-localization.service';
 
@@ -407,6 +407,48 @@ export class AdminBookingsService {
       ),
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt.toISOString(),
+    };
+  }
+
+  async messages(id: number, query: AdminPaginationDto) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id },
+      select: { id: true, conversationId: true },
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    const { page, limit, skip } = pagination(query.page, query.limit);
+    const conversation = await this.prisma.conversation.findUniqueOrThrow({
+      where: { id: booking.conversationId },
+      select: { customerId: true, taskerId: true },
+    });
+
+    const [rows, totalItems] = await Promise.all([
+      this.prisma.taskMessage.findMany({
+        where: { conversationId: booking.conversationId },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        skip,
+        take: limit,
+        select: { id: true, senderId: true, body: true, readAt: true, createdAt: true },
+      }),
+      this.prisma.taskMessage.count({ where: { conversationId: booking.conversationId } }),
+    ]);
+
+    return {
+      conversationId: booking.conversationId,
+      bookingId: String(booking.id),
+      messages: rows.map((row) => ({
+        id: row.id,
+        senderId: String(row.senderId),
+        senderRole: row.senderId === conversation.customerId ? ('customer' as const) : ('tasker' as const),
+        body: row.body ?? '',
+        createdAt: row.createdAt.toISOString(),
+        readAt: row.readAt?.toISOString() ?? null,
+      })),
+      page,
+      limit,
+      totalItems,
+      totalPages: Math.ceil(totalItems / limit),
     };
   }
 

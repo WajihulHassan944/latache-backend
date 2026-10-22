@@ -17,6 +17,7 @@ import { NotificationsService } from '../../modules/notifications/notifications.
 import { CustomTimeRequestsService } from '../../modules/bookings/custom-time-requests.service';
 import { TaskerPlansService } from '../../modules/tasker-plans/tasker-plans.service';
 import { PaymentsService } from '../../modules/payments/payments.service';
+import { AdminCustomersService } from '../../modules/admin-dashboard/services/admin-customers.service';
 
 const JOB_NAMES = {
   ReleaseEarnings: 'finance.release-mature',
@@ -37,6 +38,7 @@ const JOB_NAMES = {
   CleanupGuestSessions: 'guest.cleanup-sessions',
   ExpireCustomTimeRequests: 'bookings.expire-custom-time-requests',
   MaintainTaskerPlans: 'tasker-plans.maintain',
+  ReactivateDueSuspensions: 'customers.reactivate-due-suspensions',
 } as const;
 
 export interface QueueHealth {
@@ -79,6 +81,7 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly customTimeRequests: CustomTimeRequestsService,
     private readonly taskerPlans: TaskerPlansService,
     private readonly payments: PaymentsService,
+    private readonly adminCustomers: AdminCustomersService,
   ) {
     this.enabled = this.config.get<boolean>('jobs.enabled', false);
     this.workerEnabled = this.config.get<boolean>('jobs.workerEnabled', false);
@@ -279,6 +282,11 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { every: this.config.get<number>('jobs.guestSessionCleanupIntervalMs', 3_600_000) },
         { name: JOB_NAMES.CleanupGuestSessions, data: {} },
       ),
+      queue.upsertJobScheduler(
+        'reactivate-due-suspensions-v1',
+        { every: this.config.get<number>('customers.suspensionSweepIntervalMs', 3_600_000) },
+        { name: JOB_NAMES.ReactivateDueSuspensions, data: {} },
+      ),
     ]);
   }
 
@@ -358,6 +366,8 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return this.taskerPlans.runMaintenance();
       case JOB_NAMES.CleanupGuestSessions:
         return this.guests.runOnce();
+      case JOB_NAMES.ReactivateDueSuspensions:
+        return this.adminCustomers.reactivateDueSuspensions();
       default: {
         throw new Error(`Unsupported maintenance job: ${job.name}`);
       }

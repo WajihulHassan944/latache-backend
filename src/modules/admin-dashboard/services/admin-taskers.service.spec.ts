@@ -56,12 +56,16 @@ describe('AdminTaskersService', () => {
     const notifications = { create: jest.fn() };
     const audit = { record: jest.fn() };
     const accountDeletion = { permanentlyDelete: jest.fn() };
+    const platformSettings = {
+      currencyContext: jest.fn().mockResolvedValue({ code: 'USD', symbol: '$', rateFromUsd: 1 }),
+    };
     const service = new AdminTaskersService(
       prisma as never,
       sessions as never,
       notifications as never,
       audit as never,
       accountDeletion as never,
+      platformSettings as never,
     );
     return { service, prisma, audit };
   }

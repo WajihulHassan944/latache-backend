@@ -7,7 +7,6 @@ import {
   IsOptional,
   IsString,
   Length,
-  Matches,
   Max,
   Min,
   ArrayMaxSize,
@@ -101,13 +100,6 @@ export class CreateServiceDto {
   @Length(1, 500, { each: true })
   tools?: string[];
 
-  @ApiProperty({ example: 'home-cleaning' })
-  @Transform(trim)
-  @IsString()
-  @Length(2, 120)
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-  slug!: string;
-
   @ApiProperty({
     enum: SERVICE_ICON_VALUES,
     example: 'Zap',
@@ -118,6 +110,13 @@ export class CreateServiceDto {
   @IsString()
   @IsIn(SERVICE_ICON_VALUES)
   icon!: string;
+
+  @ApiPropertyOptional({ example: 'Home Services', description: 'Optional free-text catalogue category label.' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 120)
+  category?: string;
 
   @ApiProperty({ example: 15, minimum: 0.01, description: 'Minimum Tasker hourly rate in the current platform currency.' })
   @Type(() => Number)
@@ -204,14 +203,6 @@ export class UpdateServiceDto {
   @Length(1, 500, { each: true })
   tools?: string[];
 
-  @ApiPropertyOptional({ example: 'home-cleaning' })
-  @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @Length(2, 120)
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-  slug?: string;
-
   @ApiPropertyOptional({
     enum: SERVICE_ICON_VALUES,
     example: 'Zap',
@@ -223,6 +214,13 @@ export class UpdateServiceDto {
   @IsString()
   @IsIn(SERVICE_ICON_VALUES)
   icon?: string;
+
+  @ApiPropertyOptional({ example: 'Home Services', description: 'Optional free-text catalogue category label.' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 120)
+  category?: string;
 
   @ApiPropertyOptional({ minimum: 0.01, description: 'Minimum Tasker hourly rate in the current platform currency.' })
   @IsOptional()

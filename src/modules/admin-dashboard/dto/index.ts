@@ -5,6 +5,7 @@ export * from './list-admin-taskers.dto';
 export * from './admin-user-moderation.dto';
 export * from './tasker-verification-action.dto';
 export * from './admin-tasker-profile-update.dto';
+export * from './admin-customer-profile-update.dto';
 export * from './admin-activity-query.dto';
 export * from './admin-customer-resource-query.dto';
 export * from './admin-bookings.dto';

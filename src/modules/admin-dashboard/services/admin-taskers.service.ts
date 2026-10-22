@@ -19,6 +19,7 @@ import type {
 } from '../dto';
 import { fullName, money, pagination, percentage } from '../admin-dashboard.utils';
 import { AccountDeletionService } from '../../account-deletion/account-deletion.service';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 
 @Injectable()
 export class AdminTaskersService {
@@ -28,6 +29,7 @@ export class AdminTaskersService {
     private readonly notifications: NotificationsService,
     private readonly audit: AdminAuditService,
     private readonly accountDeletion: AccountDeletionService,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   permanentlyDelete(actor: User, taskerId: number, reason: string) {
@@ -100,6 +102,10 @@ export class AdminTaskersService {
           lastRejectedAt: true,
           lastRejectionReason: true,
           lastRejectionReasonCode: true,
+          statusReason: true,
+          statusReasonCode: true,
+          suspendedAt: true,
+          deactivatedAt: true,
         },
       },
       isVerified: true,
@@ -159,7 +165,7 @@ export class AdminTaskersService {
     }
 
     const ids = taskers.map((tasker) => tasker.id);
-    const [earningRows, completionRates] = await Promise.all([
+    const [earningRows, completionRates, currency] = await Promise.all([
       ids.length
         ? this.prisma.taskerWalletLedgerEntry.groupBy({
             by: ['taskerId'],
@@ -168,10 +174,12 @@ export class AdminTaskersService {
           })
         : Promise.resolve([]),
       this.completionRatesFor(ids),
+      this.platformSettings.currencyContext(),
     ]);
     const earnings = new Map(earningRows.map((row) => [row.taskerId, money(row._sum.amount)]));
 
     return {
+      currency: currency.code,
       items: taskers.map((tasker) => ({
         id: String(tasker.id),
         taskerId: `TSK-${String(tasker.id).padStart(5, '0')}`,
@@ -190,6 +198,10 @@ export class AdminTaskersService {
         lastRejectedAt: tasker.taskerProfile?.lastRejectedAt?.toISOString() ?? null,
         lastRejectionReason: tasker.taskerProfile?.lastRejectionReason ?? null,
         lastRejectionReasonCode: tasker.taskerProfile?.lastRejectionReasonCode ?? null,
+        statusReason: tasker.taskerProfile?.statusReason ?? null,
+        statusReasonCode: tasker.taskerProfile?.statusReasonCode ?? null,
+        suspendedAt: tasker.taskerProfile?.suspendedAt?.toISOString() ?? null,
+        deactivatedAt: tasker.taskerProfile?.deactivatedAt?.toISOString() ?? null,
         completedTasks: tasker.completedTasks,
         completionRate: completionRates.get(tasker.id) ?? 0,
         bookingsCount: tasker._count.bookingsAsTasker,

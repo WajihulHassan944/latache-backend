@@ -28,6 +28,7 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import {
   AdminCustomerBookingsQueryDto,
   AdminCustomerPaymentsQueryDto,
+  AdminCustomerProfileUpdateDto,
   AdminDateRangeQueryDto,
   AdminUserModerationDto,
   ListAdminCustomersDto,
@@ -133,5 +134,22 @@ export class AdminCustomersController {
     @Body() dto: AdminUserModerationDto,
   ) {
     return this.customers.moderate(actor, id, dto);
+  }
+
+  @Patch(':id/profile')
+  @Permissions('customers.manage')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Customer user ID.', example: 42 })
+  @ApiOperation({
+    summary: "Edit a customer's account profile fields",
+    description: 'Updates name, email and/or phone. Requires at least one field. Email and phone must stay unique across all accounts.',
+  })
+  @ApiOkResponse({ description: 'Customer profile updated.' })
+  @ApiConflictResponse({ description: 'Email or phone number already belongs to a different account.' })
+  updateProfile(
+    @CurrentUser() actor: User,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AdminCustomerProfileUpdateDto,
+  ) {
+    return this.customers.updateProfile(actor, id, dto);
   }
 }

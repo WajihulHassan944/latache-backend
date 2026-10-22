@@ -37,9 +37,17 @@ const money = (value: Prisma.Decimal | number | string | null | undefined): numb
   Math.round((Number(value ?? 0) + Number.EPSILON) * 100) / 100;
 const toMinor = (value: number): number => Math.round(money(value) * 100);
 
+export interface SettlementTaskerView {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+}
+
 export interface SettlementView {
   id: string;
   taskerId: string;
+  tasker?: SettlementTaskerView;
   method: string;
   status: string;
   amount: number;
@@ -55,6 +63,13 @@ export interface SettlementView {
   reviewedAt: string | null;
   completedAt: string | null;
 }
+
+const SETTLEMENT_TASKER_SELECT = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+} as const;
 
 /**
  * How a Tasker pays Latache the commission owed on cash bookings (the payable
@@ -221,6 +236,7 @@ export class PlatformPayableSettlementsService {
     const [rows, totalItems] = await Promise.all([
       this.prisma.taskerPlatformSettlement.findMany({
         where,
+        include: { tasker: { select: SETTLEMENT_TASKER_SELECT } },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: paging.offset,
         take: paging.limit,
@@ -232,7 +248,7 @@ export class PlatformPayableSettlementsService {
       limit: paging.limit,
       totalItems,
       totalPages: Math.ceil(totalItems / paging.limit),
-      items: rows.map((row) => this.view(row)),
+      items: rows.map((row) => this.view(row, row.tasker)),
     };
   }
 
@@ -282,9 +298,12 @@ export class PlatformPayableSettlementsService {
           { actorId: adminId, targetUserId: input.taskerId, action: 'platform_payable_settlement_recorded', entityType: 'tasker_platform_settlement', entityId: created.id, reason: input.note ?? null, metadata: { method: input.method, amount: money(input.amount), reference: input.reference } },
           transaction,
         );
-        return transaction.taskerPlatformSettlement.findUniqueOrThrow({ where: { id: created.id } });
+        return transaction.taskerPlatformSettlement.findUniqueOrThrow({
+          where: { id: created.id },
+          include: { tasker: { select: SETTLEMENT_TASKER_SELECT } },
+        });
       });
-      return this.view(row);
+      return this.view(row, row.tasker);
     } catch (error) {
       if (hasPrismaErrorCode(error, 'P2002')) {
         const raced = await this.prisma.taskerPlatformSettlement.findUnique({
@@ -314,9 +333,12 @@ export class PlatformPayableSettlementsService {
         { actorId: adminId, targetUserId: locked.taskerId, action: 'platform_payable_settlement_approved', entityType: 'tasker_platform_settlement', entityId: id, reason: input.note ?? null, metadata: { declaredAmount: money(locked.amount), receivedAmount: received } },
         transaction,
       );
-      return transaction.taskerPlatformSettlement.findUniqueOrThrow({ where: { id } });
+      return transaction.taskerPlatformSettlement.findUniqueOrThrow({
+        where: { id },
+        include: { tasker: { select: SETTLEMENT_TASKER_SELECT } },
+      });
     });
-    return this.view(row);
+    return this.view(row, row.tasker);
   }
 
   async reject(adminId: number, id: string, note: string): Promise<SettlementView> {
@@ -328,6 +350,7 @@ export class PlatformPayableSettlementsService {
       const updated = await transaction.taskerPlatformSettlement.update({
         where: { id },
         data: { status: SETTLEMENT_STATUS.Rejected, reviewedById: adminId, reviewedAt: new Date(), adminNote: note.trim() },
+        include: { tasker: { select: SETTLEMENT_TASKER_SELECT } },
       });
       await this.notifications.create(
         locked.taskerId,
@@ -348,7 +371,7 @@ export class PlatformPayableSettlementsService {
       );
       return updated;
     });
-    return this.view(row);
+    return this.view(row, row.tasker);
   }
 
   // ----------------------------------------------------------------- webhook
@@ -480,10 +503,11 @@ export class PlatformPayableSettlementsService {
     return this.view(row);
   }
 
-  view(row: TaskerPlatformSettlement): SettlementView {
+  view(row: TaskerPlatformSettlement, tasker?: SettlementTaskerView | null): SettlementView {
     return {
       id: row.id,
       taskerId: String(row.taskerId),
+      ...(tasker ? { tasker } : {}),
       method: row.method,
       status: row.status,
       amount: money(row.amount),

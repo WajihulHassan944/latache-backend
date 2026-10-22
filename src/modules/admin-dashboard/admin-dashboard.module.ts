@@ -51,5 +51,6 @@ import { PlatformSettingsModule } from '../platform-settings/platform-settings.m
     AdminReviewsService,
     AdminAnalyticsCacheInterceptor,
   ],
+  exports: [AdminCustomersService],
 })
 export class AdminDashboardModule {}

@@ -13,6 +13,7 @@ import {
   pagination,
   percentage,
   resolveAdminDateRange,
+  resolvePreviousAdminDateRange,
   type ResolvedAdminDateRange,
 } from '../admin-dashboard.utils';
 
@@ -432,7 +433,7 @@ export class AdminAnalyticsService {
     const createdAt = dateFilter(range);
     const where = createdAt ? { createdAt } : undefined;
 
-    const [total, active, statusRows, paidAggregate, services] = await Promise.all([
+    const [total, active, statusRows, paidAggregate, services, currency] = await Promise.all([
       this.prisma.booking.count({ where }),
       this.prisma.booking.count({
         where: {
@@ -455,12 +456,14 @@ export class AdminAnalyticsService {
         _avg: { totalChargedAmount: true },
       }),
       this.bookingServiceAnalytics(range),
+      this.platformSettings.currencyContext(),
     ]);
     const completed = statusRows.find((row) => row.status === 'completed')?._count._all ?? 0;
     const cancelled = statusRows.find((row) => row.status === 'cancelled')?._count._all ?? 0;
 
     return {
       range: this.rangeView(range),
+      currency: currency.code,
       metrics: {
         totalBookings: total,
         activeBookings: active,
@@ -514,11 +517,12 @@ export class AdminAnalyticsService {
 
   async taskerEarnings(query: AdminDateRangeQueryDto) {
     const range = resolveAdminDateRange(query);
+    const previousRange = resolvePreviousAdminDateRange(range);
     const ledgerCreatedAt = dateFilter(range);
     const withdrawalCreatedAt = dateFilter(range);
     const paidAt = dateFilter(range);
 
-    const [earnings, payouts, platform, paidWithdrawalAverage, series, topEarners] =
+    const [earnings, payouts, platform, paidWithdrawalAverage, series, topEarners, currency] =
       await Promise.all([
         this.prisma.taskerWalletLedgerEntry.aggregate({
           where: {
@@ -548,19 +552,24 @@ export class AdminAnalyticsService {
         }),
         this.earningsSeries(range),
         this.topTaskerEarnings(range, false),
+        this.platformSettings.currencyContext(),
       ]);
 
     const ids = topEarners.map((row) => row.taskerId);
-    const taskers = ids.length
-      ? await this.prisma.user.findMany({
-          where: { id: { in: ids } },
-          select: { id: true, firstName: true, lastName: true, rating: true, profilePicture: true },
-        })
-      : [];
+    const [taskers, previousEarningsById] = await Promise.all([
+      ids.length
+        ? this.prisma.user.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, firstName: true, lastName: true, rating: true, profilePicture: true },
+          })
+        : Promise.resolve([]),
+      previousRange ? this.settledEarningsForTaskers(ids, previousRange) : Promise.resolve(null),
+    ]);
     const byId = new Map(taskers.map((tasker) => [tasker.id, tasker]));
 
     return {
       range: this.rangeView(range),
+      currency: currency.code,
       metrics: {
         settledTaskerEarnings: money(earnings._sum.amount),
         paidWithdrawals: money(payouts._sum.amount),
@@ -576,6 +585,9 @@ export class AdminAnalyticsService {
           profilePicture: tasker?.profilePicture ?? '',
           rating: Number(tasker?.rating ?? 0),
           settledEarnings: money(row.earnings),
+          previousSettledEarnings: previousEarningsById
+            ? (previousEarningsById.get(row.taskerId) ?? 0)
+            : null,
         };
       }),
     };
@@ -984,20 +996,67 @@ export class AdminAnalyticsService {
   }
 
   private async earningsSeries(range: ResolvedAdminDateRange) {
-    const bucket = this.bucket(Prisma.sql`l."createdAt"`, range);
+    const ledgerBucket = this.bucket(Prisma.sql`l."createdAt"`, range);
+    const ledgerCondition = this.sqlDateCondition(Prisma.sql`l."createdAt"`, range);
+    const feesBucket = this.bucket(Prisma.sql`b."paidAt"`, range);
+    const feesCondition = this.sqlDateCondition(Prisma.sql`b."paidAt"`, range);
+
+    const [earningRows, feeRows] = await Promise.all([
+      this.prisma.$queryRaw<
+        Array<{ bucket: Date; taskerEarnings: number | string | Prisma.Decimal }>
+      >(Prisma.sql`
+        SELECT ${ledgerBucket} AS bucket, COALESCE(SUM(l."amount"), 0) AS "taskerEarnings"
+        FROM "TaskerWalletLedger" l
+        WHERE l."kind" = 'earning' AND l."status" = 'settled' ${ledgerCondition}
+        GROUP BY 1 ORDER BY 1 ASC
+      `),
+      this.prisma.$queryRaw<
+        Array<{ bucket: Date; platformFees: number | string | Prisma.Decimal }>
+      >(Prisma.sql`
+        SELECT ${feesBucket} AS bucket, COALESCE(SUM(b."platformFeeAmount"), 0) AS "platformFees"
+        FROM "Bookings" b
+        WHERE b."paymentStatus" = ${PAYMENT_STATUS.Paid} AND b."paidAt" IS NOT NULL ${feesCondition}
+        GROUP BY 1 ORDER BY 1 ASC
+      `),
+    ]);
+
+    const byBucket = new Map<string, { taskerEarnings: number; platformFees: number }>();
+    for (const row of earningRows) {
+      const key = row.bucket.toISOString();
+      const entry = byBucket.get(key) ?? { taskerEarnings: 0, platformFees: 0 };
+      entry.taskerEarnings = money(row.taskerEarnings);
+      byBucket.set(key, entry);
+    }
+    for (const row of feeRows) {
+      const key = row.bucket.toISOString();
+      const entry = byBucket.get(key) ?? { taskerEarnings: 0, platformFees: 0 };
+      entry.platformFees = money(row.platformFees);
+      byBucket.set(key, entry);
+    }
+
+    return Array.from(byBucket.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([bucket, values]) => ({
+        bucket,
+        taskerEarnings: values.taskerEarnings,
+        platformFees: values.platformFees,
+      }));
+  }
+
+  private async settledEarningsForTaskers(
+    taskerIds: number[],
+    range: ResolvedAdminDateRange,
+  ): Promise<Map<number, number>> {
+    if (!taskerIds.length || !range.from || !range.toExclusive) return new Map();
     const condition = this.sqlDateCondition(Prisma.sql`l."createdAt"`, range);
-    const rows = await this.prisma.$queryRaw<
-      Array<{ bucket: Date; taskerEarnings: number | string | Prisma.Decimal }>
-    >(Prisma.sql`
-      SELECT ${bucket} AS bucket, COALESCE(SUM(l."amount"), 0) AS "taskerEarnings"
+    const rows = await this.prisma.$queryRaw<TopTaskerEarningsRow[]>(Prisma.sql`
+      SELECT l."taskerId", COALESCE(SUM(l."amount"), 0) AS earnings
       FROM "TaskerWalletLedger" l
-      WHERE l."kind" = 'earning' AND l."status" = 'settled' ${condition}
-      GROUP BY 1 ORDER BY 1 ASC
+      WHERE l."kind" = 'earning' AND l."status" = 'settled'
+        AND l."taskerId" IN (${Prisma.join(taskerIds)}) ${condition}
+      GROUP BY l."taskerId"
     `);
-    return rows.map((row) => ({
-      bucket: row.bucket.toISOString(),
-      taskerEarnings: money(row.taskerEarnings),
-    }));
+    return new Map(rows.map((row) => [row.taskerId, money(row.earnings)]));
   }
 
   private async topTaskerEarnings(

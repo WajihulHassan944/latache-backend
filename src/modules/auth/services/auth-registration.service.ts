@@ -500,7 +500,7 @@ export class AuthRegistrationService {
     this.assertDelegatedAdminCreationAccess(actor, effective.permissions);
 
     try {
-      await this.assertEmailAvailable(dto.email);
+      await this.assertEmailAvailableForAdminCreation(dto.email);
       const user = await this.repository.createUser({
         firstName: dto.firstName,
         lastName: dto.lastName,
@@ -623,6 +623,61 @@ export class AuthRegistrationService {
     if (existing) {
       throw new ConflictException('An account with this email already exists');
     }
+  }
+
+  /**
+   * Like {@link assertEmailAvailable}, but for the admin-creation flow: the
+   * caller already holds admins.create, so it's safe (and useful, per the
+   * ticket) to tell them exactly which kind of account already owns the
+   * email instead of a generic conflict message.
+   */
+  private async assertEmailAvailableForAdminCreation(
+    email: string,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const existing = await this.repository.findUserByEmailWithProfiles(email, transaction);
+    if (!existing) return;
+
+    const role = this.describeExistingAccountRole(existing);
+    const status = this.describeExistingAccountStatus(existing);
+
+    throw new ConflictException({
+      code: 'ADMIN_EMAIL_TAKEN',
+      message: `This email already belongs to a ${role} account`,
+      existingAccount: { role, status },
+    });
+  }
+
+  private describeExistingAccountRole(user: Pick<User, 'role' | 'roles'>): UserRole {
+    const roles = userRoles(user);
+    // Report the marketplace role first, since marketplace/admin collisions
+    // are the main case admins.create callers need to act on; fall back to
+    // whichever administrative role the account holds.
+    return (
+      roles.find((role) => role === UserRole.Customer) ??
+      roles.find((role) => role === UserRole.Tasker) ??
+      roles.find((role) => role === UserRole.Admin) ??
+      roles.find((role) => role === UserRole.SuperAdmin) ??
+      (user.role as UserRole)
+    );
+  }
+
+  private describeExistingAccountStatus(
+    user: Pick<User, 'deletedAt' | 'isVerified' | 'accountStatus'> & {
+      customerProfile: { status: string } | null;
+      taskerProfile: { status: string } | null;
+    },
+  ): 'active' | 'unverified' | 'suspended' | 'deactivated' | 'deleted' {
+    if (user.deletedAt) return 'deleted';
+    if (!user.isVerified || user.accountStatus === AccountStatus.PendingVerification) {
+      return 'unverified';
+    }
+    const profileStatus = user.customerProfile?.status ?? user.taskerProfile?.status;
+    if (profileStatus === AccountStatus.Suspended) return 'suspended';
+    if (profileStatus === AccountStatus.Deactivated) return 'deactivated';
+    if (user.accountStatus === AccountStatus.Suspended) return 'suspended';
+    if (user.accountStatus === AccountStatus.Deactivated) return 'deactivated';
+    return 'active';
   }
 
   private otpExpiry(): Date {

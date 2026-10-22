@@ -15,6 +15,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import type {
   AdminCustomerBookingsQueryDto,
   AdminCustomerPaymentsQueryDto,
+  AdminCustomerProfileUpdateDto,
   AdminDateRangeQueryDto,
   AdminUserModerationDto,
   ListAdminCustomersDto,
@@ -24,11 +25,40 @@ import {
   fullName,
   money,
   pagination,
+  parseCityArea,
   percentage,
   resolveAdminDateRange,
 } from '../admin-dashboard.utils';
 import { AccountDeletionService } from '../../account-deletion/account-deletion.service';
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
+
+type CustomerWithProfile = Prisma.UserGetPayload<{ include: { customerProfile: true } }>;
+
+interface RawCustomerListRow {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+  phoneCountryCode: string | null;
+  phoneNumber: string | null;
+  zipCode: string | null;
+  profilePicture: string | null;
+  accountStatus: string;
+  cpStatus: string | null;
+  cpRating: Prisma.Decimal | number | string | null;
+  cpReviewsCount: number | null;
+  cpStatusReason: string | null;
+  cpSuspendedUntil: Date | null;
+  cpSuspendedAt: Date | null;
+  cpDeactivatedAt: Date | null;
+  userRating: Prisma.Decimal | number | string;
+  userReviewsCount: number;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+  bookingsCount: number;
+  totalSpent: Prisma.Decimal | number | string;
+  defaultAddress: string | null;
+}
 
 const ACTIVE_DISPUTE_STATUSES = ['open', 'under_investigation', 'escalated'] as const;
 
@@ -151,6 +181,24 @@ export class AdminCustomersService {
         : {}),
     };
 
+    const currency = await this.platformSettings.currencyContext();
+
+    if (query.sort === 'name_asc' || query.sort === 'spend_desc') {
+      return this.listViaRawSql(query, {
+        page,
+        limit,
+        skip,
+        search,
+        phoneIds,
+        ipUserIds,
+        nearBox,
+        fromDate,
+        toExclusive,
+        location,
+        currencyCode: currency.code,
+      });
+    }
+
     const orderBy: Prisma.UserOrderByWithRelationInput[] =
       query.sort === 'oldest'
         ? [{ createdAt: 'asc' }]
@@ -160,7 +208,7 @@ export class AdminCustomersService {
             ? [{ bookingsAsCustomer: { _count: 'desc' } }, { createdAt: 'desc' }]
             : [{ createdAt: 'desc' }];
 
-    const [customers, totalItems, currency] = await Promise.all([
+    const [customers, totalItems] = await Promise.all([
       this.prisma.user.findMany({
         where,
         select: {
@@ -173,7 +221,17 @@ export class AdminCustomersService {
           zipCode: true,
           profilePicture: true,
           accountStatus: true,
-          customerProfile: { select: { status: true, rating: true, reviewsCount: true } },
+          customerProfile: {
+            select: {
+              status: true,
+              rating: true,
+              reviewsCount: true,
+              statusReason: true,
+              suspendedUntil: true,
+              suspendedAt: true,
+              deactivatedAt: true,
+            },
+          },
           rating: true,
           reviewsCount: true,
           lastLoginAt: true,
@@ -185,19 +243,29 @@ export class AdminCustomersService {
         take: limit,
       }),
       this.prisma.user.count({ where }),
-      this.platformSettings.currencyContext(),
     ]);
 
     const ids = customers.map((customer) => customer.id);
-    const spendRows = ids.length
-      ? await this.prisma.paymentTransaction.groupBy({
-          by: ['customerId'],
-          where: { customerId: { in: ids }, kind: 'booking_charge', status: 'succeeded' },
-          _sum: { amount: true },
-        })
-      : [];
+    const [spendRows, addressRows] = await Promise.all([
+      ids.length
+        ? this.prisma.paymentTransaction.groupBy({
+            by: ['customerId'],
+            where: { customerId: { in: ids }, kind: 'booking_charge', status: 'succeeded' },
+            _sum: { amount: true },
+          })
+        : Promise.resolve([]),
+      ids.length
+        ? this.prisma.customerAddress.findMany({
+            where: { customerId: { in: ids }, isDefault: true },
+            select: { customerId: true, address: true },
+          })
+        : Promise.resolve([]),
+    ]);
     const spendByCustomer = new Map(
       spendRows.map((row) => [row.customerId, money(row._sum.amount)]),
+    );
+    const addressByCustomer = new Map(
+      addressRows.map((row) => [row.customerId, parseCityArea(row.address)]),
     );
 
     return {
@@ -217,6 +285,160 @@ export class AdminCustomersService {
         reviewsCount: customer.customerProfile?.reviewsCount ?? customer.reviewsCount,
         lastLoginAt: customer.lastLoginAt?.toISOString() ?? null,
         joinedAt: customer.createdAt.toISOString(),
+        statusReason: customer.customerProfile?.statusReason ?? null,
+        suspendedUntil: customer.customerProfile?.suspendedUntil?.toISOString() ?? null,
+        suspendedAt: customer.customerProfile?.suspendedAt?.toISOString() ?? null,
+        deactivatedAt: customer.customerProfile?.deactivatedAt?.toISOString() ?? null,
+        ...(addressByCustomer.get(customer.id) ?? { city: null, area: null }),
+      })),
+      pagination: { page, limit, totalItems, totalPages: Math.ceil(totalItems / limit) },
+    };
+  }
+
+  /**
+   * Special-cased raw-SQL path for sort modes that need DB-level ordering
+   * before pagination (name_asc: case-insensitive display name; spend_desc:
+   * total successful booking-charge spend). The main list() stays on the
+   * Prisma query builder for its other sort modes; this mirrors the same
+   * filters by hand because Prisma's query builder can't express either
+   * ordering key directly. See taskers.repository.ts for the CTE pattern
+   * this follows.
+   */
+  private async listViaRawSql(
+    query: ListAdminCustomersDto,
+    ctx: {
+      page: number;
+      limit: number;
+      skip: number;
+      search?: string;
+      phoneIds: Array<{ id: number }> | null;
+      ipUserIds: number[] | null;
+      nearBox: { latMin: number; latMax: number; lngMin: number; lngMax: number } | null;
+      fromDate: Date | null;
+      toExclusive: Date | null;
+      location?: string;
+      currencyCode: string;
+    },
+  ) {
+    const { page, limit, skip, search, phoneIds, ipUserIds, nearBox, fromDate, toExclusive, location, currencyCode } =
+      ctx;
+
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`${UserRole.Customer} = ANY(u."roles")`,
+      Prisma.sql`u."deletedAt" IS NULL`,
+      Prisma.sql`EXISTS (SELECT 1 FROM "CustomerProfiles" rcp WHERE rcp."userId" = u."id")`,
+    ];
+    if (phoneIds) {
+      const ids = phoneIds.map((row) => row.id);
+      conditions.push(ids.length ? Prisma.sql`u."id" IN (${Prisma.join(ids)})` : Prisma.sql`false`);
+    }
+    if (ipUserIds) {
+      conditions.push(
+        ipUserIds.length ? Prisma.sql`u."id" IN (${Prisma.join(ipUserIds)})` : Prisma.sql`false`,
+      );
+    }
+    if (nearBox) {
+      conditions.push(Prisma.sql`EXISTS (
+        SELECT 1 FROM "CustomerAddresses" nca
+        WHERE nca."customerId" = u."id" AND nca."isDefault" = true
+          AND nca."latitude" BETWEEN ${nearBox.latMin} AND ${nearBox.latMax}
+          AND nca."longitude" BETWEEN ${nearBox.lngMin} AND ${nearBox.lngMax}
+      )`);
+    }
+    if (fromDate) conditions.push(Prisma.sql`u."createdAt" >= ${fromDate}`);
+    if (toExclusive) conditions.push(Prisma.sql`u."createdAt" < ${toExclusive}`);
+    if (location) {
+      const like = `%${location}%`;
+      conditions.push(Prisma.sql`EXISTS (
+        SELECT 1 FROM "Bookings" lb
+        WHERE lb."customerId" = u."id"
+          AND (
+            lb."venueAddress" ILIKE ${like}
+            OR lb."locationLabel" ILIKE ${like}
+            OR lb."locationCity" ILIKE ${like}
+            OR lb."locationArea" ILIKE ${like}
+          )
+      )`);
+    }
+    if (query.status === 'pending_verification') {
+      conditions.push(Prisma.sql`u."accountStatus" = ${AccountStatus.PendingVerification}`);
+    } else if (query.status) {
+      conditions.push(Prisma.sql`cp."status" = ${query.status}`);
+    }
+    if (search) {
+      const like = `%${search}%`;
+      conditions.push(Prisma.sql`(
+        u."firstName" ILIKE ${like} OR u."lastName" ILIKE ${like}
+        OR u."email" ILIKE ${like} OR u."phoneNumber" ILIKE ${like}
+      )`);
+    }
+
+    const cte = Prisma.sql`
+      WITH base AS (
+        SELECT
+          u."id", u."firstName", u."lastName", u."email", u."phoneCountryCode", u."phoneNumber",
+          u."zipCode", u."profilePicture", u."accountStatus",
+          cp."status" AS "cpStatus", cp."rating" AS "cpRating", cp."reviewsCount" AS "cpReviewsCount",
+          cp."statusReason" AS "cpStatusReason", cp."suspendedUntil" AS "cpSuspendedUntil",
+          cp."suspendedAt" AS "cpSuspendedAt", cp."deactivatedAt" AS "cpDeactivatedAt",
+          u."rating" AS "userRating", u."reviewsCount" AS "userReviewsCount",
+          u."lastLoginAt", u."createdAt",
+          (SELECT COUNT(*)::int FROM "Bookings" b WHERE b."customerId" = u."id") AS "bookingsCount",
+          COALESCE((
+            SELECT SUM(pt."amount") FROM "PaymentTransactions" pt
+            WHERE pt."customerId" = u."id" AND pt."kind" = 'booking_charge' AND pt."status" = 'succeeded'
+          ), 0) AS "totalSpent",
+          (
+            SELECT ca."address" FROM "CustomerAddresses" ca
+            WHERE ca."customerId" = u."id" AND ca."isDefault" = true
+            LIMIT 1
+          ) AS "defaultAddress"
+        FROM "Users" u
+        LEFT JOIN "CustomerProfiles" cp ON cp."userId" = u."id"
+        WHERE ${Prisma.join(conditions, ' AND ')}
+      )
+    `;
+
+    const orderSql =
+      query.sort === 'spend_desc'
+        ? Prisma.sql`"totalSpent" DESC, "id" ASC`
+        : Prisma.sql`lower(concat_ws(' ', "firstName", "lastName")) ASC, "id" ASC`;
+
+    const [rows, countRows] = await Promise.all([
+      this.prisma.$queryRaw<RawCustomerListRow[]>(
+        Prisma.sql`${cte} SELECT * FROM base ORDER BY ${orderSql} LIMIT ${limit} OFFSET ${skip}`,
+      ),
+      this.prisma.$queryRaw<Array<{ total: number }>>(
+        Prisma.sql`${cte} SELECT COUNT(*)::int AS total FROM base`,
+      ),
+    ]);
+    const totalItems = countRows[0]?.total ?? 0;
+
+    return {
+      currency: currencyCode,
+      items: rows.map((row) => ({
+        id: String(row.id),
+        customerId: `CUS-${String(row.id).padStart(5, '0')}`,
+        name: fullName(row.firstName, row.lastName),
+        email: row.email,
+        phone: `${row.phoneCountryCode ?? ''}${row.phoneNumber ?? ''}`,
+        zipCode: row.zipCode ?? '',
+        profilePicture: row.profilePicture ?? '',
+        accountStatus:
+          row.accountStatus === AccountStatus.PendingVerification
+            ? row.accountStatus
+            : (row.cpStatus ?? row.accountStatus),
+        bookingsCount: row.bookingsCount,
+        totalSpent: money(row.totalSpent),
+        rating: Number(row.cpRating ?? row.userRating),
+        reviewsCount: row.cpReviewsCount ?? row.userReviewsCount,
+        lastLoginAt: row.lastLoginAt?.toISOString() ?? null,
+        joinedAt: row.createdAt.toISOString(),
+        statusReason: row.cpStatusReason ?? null,
+        suspendedUntil: row.cpSuspendedUntil?.toISOString() ?? null,
+        suspendedAt: row.cpSuspendedAt?.toISOString() ?? null,
+        deactivatedAt: row.cpDeactivatedAt?.toISOString() ?? null,
+        ...parseCityArea(row.defaultAddress),
       })),
       pagination: { page, limit, totalItems, totalPages: Math.ceil(totalItems / limit) },
     };
@@ -306,7 +528,7 @@ export class AdminCustomersService {
           }
         : {}),
     };
-    const [rows, totalItems, collected, bookingValue, refunded, disputed] = await Promise.all([
+    const [rows, totalItems, collected, bookingValue, refunded, disputed, currency] = await Promise.all([
       this.prisma.paymentTransaction.findMany({
         where,
         include: {
@@ -345,8 +567,10 @@ export class AdminCustomersService {
         _sum: { totalChargedAmount: true },
         _count: { _all: true },
       }),
+      this.platformSettings.currencyContext(),
     ]);
     return {
+      currency: currency.code,
       summary: {
         totalCollected: money(collected._sum.amount),
         successfulBookingValue: money(bookingValue._sum.amount),
@@ -380,7 +604,7 @@ export class AdminCustomersService {
 
   async details(customerId: number) {
     const customer = await this.requireCustomer(customerId);
-    const [bookingCounts, spend, recentBookings, recentPayments, reviewsReceived] =
+    const [bookingCounts, spend, recentBookings, recentPayments, reviewsReceived, currency] =
       await Promise.all([
         this.prisma.booking.groupBy({
           by: ['status'],
@@ -425,28 +649,12 @@ export class AdminCustomersService {
           _avg: { rating: true },
           _count: { _all: true },
         }),
+        this.platformSettings.currencyContext(),
       ]);
 
     return {
-      customer: {
-        id: String(customer.id),
-        customerId: `CUS-${String(customer.id).padStart(5, '0')}`,
-        firstName: customer.firstName ?? '',
-        lastName: customer.lastName ?? '',
-        name: fullName(customer.firstName, customer.lastName),
-        email: customer.email,
-        phoneCountryCode: customer.phoneCountryCode ?? '',
-        phoneNumber: customer.phoneNumber ?? '',
-        zipCode: customer.zipCode ?? '',
-        profilePicture: customer.profilePicture ?? '',
-        accountStatus:
-          customer.accountStatus === AccountStatus.PendingVerification
-            ? customer.accountStatus
-            : (customer.customerProfile?.status ?? customer.accountStatus),
-        isVerified: customer.isVerified,
-        lastLoginAt: customer.lastLoginAt?.toISOString() ?? null,
-        memberSince: customer.createdAt.toISOString(),
-      },
+      currency: currency.code,
+      customer: this.serializeCustomerProfile(customer),
       metrics: {
         totalBookings: bookingCounts.reduce((sum, row) => sum + row._count._all, 0),
         completedBookings:
@@ -728,18 +936,33 @@ export class AdminCustomersService {
       );
     }
 
+    if (dto.until !== undefined && dto.action !== 'suspend') {
+      throw new BadRequestException('until can only be supplied together with action=suspend');
+    }
+    let until: Date | null = null;
+    if (dto.until !== undefined) {
+      until = new Date(dto.until);
+      if (Number.isNaN(until.getTime()) || until.getTime() <= Date.now()) {
+        throw new BadRequestException('until must be a valid date in the future');
+      }
+    }
+
     const nextStatus =
       dto.action === 'suspend' ? 'suspended' : dto.action === 'ban' ? 'deactivated' : 'active';
 
     const updated = await this.prisma.$transaction(async (transaction) => {
       const changed = await transaction.customerProfile.update({
         where: { userId: customerId },
-        data: {
-          status: nextStatus,
-          suspendedAt: nextStatus === 'suspended' ? new Date() : null,
-          deactivatedAt: nextStatus === 'deactivated' ? new Date() : null,
-          statusReason: nextStatus === 'active' ? null : dto.reason?.trim() ?? null,
-        },
+        data:
+          nextStatus === 'active'
+            ? this.reactivationData()
+            : {
+                status: nextStatus,
+                suspendedAt: nextStatus === 'suspended' ? new Date() : null,
+                deactivatedAt: nextStatus === 'deactivated' ? new Date() : null,
+                statusReason: dto.reason?.trim() ?? null,
+                suspendedUntil: nextStatus === 'suspended' ? until : null,
+              },
       });
       if (dto.action !== 'reactivate') {
         await this.sessions.revokeRole(customerId, UserRole.Customer, transaction);
@@ -783,6 +1006,158 @@ export class AdminCustomersService {
       accountStatus: updated.status,
       action: dto.action,
       sessionsRevoked: dto.action !== 'reactivate',
+    };
+  }
+
+  /**
+   * Field reset shared by the manual 'reactivate' moderation action and the
+   * hourly auto-reactivation sweep for elapsed suspendedUntil timers, so both
+   * paths clear exactly the same CustomerProfile fields.
+   */
+  private reactivationData(): Prisma.CustomerProfileUpdateInput {
+    return {
+      status: 'active',
+      suspendedAt: null,
+      deactivatedAt: null,
+      statusReason: null,
+      suspendedUntil: null,
+    };
+  }
+
+  /**
+   * Hourly maintenance sweep (wired into PerformanceJobsService): reactivates
+   * any customer whose timed suspension (suspendedUntil) has elapsed.
+   */
+  async reactivateDueSuspensions(): Promise<{ reactivated: number }> {
+    const due = await this.prisma.customerProfile.findMany({
+      where: { status: 'suspended', suspendedUntil: { lte: new Date() } },
+      select: { userId: true },
+    });
+
+    for (const row of due) {
+      await this.prisma.$transaction(async (transaction) => {
+        await transaction.customerProfile.update({
+          where: { userId: row.userId },
+          data: this.reactivationData(),
+        });
+        await this.audit.record(
+          {
+            actorId: null,
+            targetUserId: row.userId,
+            action: 'customer_auto_reactivated',
+            entityType: 'customer',
+            entityId: row.userId,
+            metadata: { reason: 'suspendedUntil elapsed' },
+          },
+          transaction,
+        );
+        await this.notifications.create(
+          row.userId,
+          {
+            category: 'system',
+            type: 'account_active',
+            title: 'Account reactivated',
+            body: 'Your suspension period has ended and your Latache account is active again.',
+            entityType: 'account',
+            entityId: String(row.userId),
+          },
+          transaction,
+        );
+      });
+    }
+
+    return { reactivated: due.length };
+  }
+
+  async updateProfile(actor: User, customerId: number, dto: AdminCustomerProfileUpdateDto) {
+    if (
+      dto.firstName === undefined &&
+      dto.lastName === undefined &&
+      dto.email === undefined &&
+      dto.phoneCountryCode === undefined &&
+      dto.phoneNumber === undefined
+    ) {
+      throw new BadRequestException('At least one field must be provided');
+    }
+
+    const customer = await this.requireCustomer(customerId);
+
+    let normalizedEmail: string | undefined;
+    if (dto.email !== undefined) {
+      normalizedEmail = dto.email.trim().toLowerCase();
+      const existingEmail = await this.prisma.user.findFirst({
+        where: { email: { equals: normalizedEmail, mode: 'insensitive' }, id: { not: customerId } },
+        select: { id: true },
+      });
+      if (existingEmail) throw new ConflictException('An account with this email already exists');
+    }
+
+    const nextCountryCode = dto.phoneCountryCode ?? customer.phoneCountryCode;
+    const nextPhoneNumber = dto.phoneNumber ?? customer.phoneNumber;
+    if ((dto.phoneCountryCode !== undefined || dto.phoneNumber !== undefined) && nextCountryCode && nextPhoneNumber) {
+      const existingPhone = await this.prisma.user.findFirst({
+        where: { phoneCountryCode: nextCountryCode, phoneNumber: nextPhoneNumber, id: { not: customerId } },
+        select: { id: true },
+      });
+      if (existingPhone) {
+        throw new ConflictException('An account with this phone number already exists');
+      }
+    }
+
+    const data: Prisma.UserUpdateInput = {
+      ...(dto.firstName === undefined ? {} : { firstName: dto.firstName }),
+      ...(dto.lastName === undefined ? {} : { lastName: dto.lastName }),
+      ...(normalizedEmail === undefined ? {} : { email: normalizedEmail }),
+      ...(dto.phoneCountryCode === undefined ? {} : { phoneCountryCode: dto.phoneCountryCode }),
+      ...(dto.phoneNumber === undefined ? {} : { phoneNumber: dto.phoneNumber }),
+    };
+
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      const changed = await transaction.user.update({
+        where: { id: customerId },
+        data,
+        include: { customerProfile: true },
+      });
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          targetUserId: customerId,
+          action: 'customer_profile_updated',
+          entityType: 'customer',
+          entityId: customerId,
+          metadata: { fields: Object.keys(data) },
+        },
+        transaction,
+      );
+      return changed;
+    });
+
+    return { customer: this.serializeCustomerProfile(updated) };
+  }
+
+  private serializeCustomerProfile(customer: CustomerWithProfile) {
+    return {
+      id: String(customer.id),
+      customerId: `CUS-${String(customer.id).padStart(5, '0')}`,
+      firstName: customer.firstName ?? '',
+      lastName: customer.lastName ?? '',
+      name: fullName(customer.firstName, customer.lastName),
+      email: customer.email,
+      phoneCountryCode: customer.phoneCountryCode ?? '',
+      phoneNumber: customer.phoneNumber ?? '',
+      zipCode: customer.zipCode ?? '',
+      profilePicture: customer.profilePicture ?? '',
+      accountStatus:
+        customer.accountStatus === AccountStatus.PendingVerification
+          ? customer.accountStatus
+          : (customer.customerProfile?.status ?? customer.accountStatus),
+      isVerified: customer.isVerified,
+      lastLoginAt: customer.lastLoginAt?.toISOString() ?? null,
+      memberSince: customer.createdAt.toISOString(),
+      statusReason: customer.customerProfile?.statusReason ?? null,
+      suspendedUntil: customer.customerProfile?.suspendedUntil?.toISOString() ?? null,
+      suspendedAt: customer.customerProfile?.suspendedAt?.toISOString() ?? null,
+      deactivatedAt: customer.customerProfile?.deactivatedAt?.toISOString() ?? null,
     };
   }
 

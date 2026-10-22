@@ -12,6 +12,7 @@ import { PaymentsModule } from '../../modules/payments/payments.module';
 import { NotificationsModule } from '../../modules/notifications/notifications.module';
 import { FcmModule } from '../../modules/fcm/fcm.module';
 import { GuestModule } from '../../modules/guest/guest.module';
+import { AdminDashboardModule } from '../../modules/admin-dashboard/admin-dashboard.module';
 
 @Global()
 @Module({
@@ -28,6 +29,7 @@ import { GuestModule } from '../../modules/guest/guest.module';
     NotificationsModule,
     FcmModule,
     GuestModule,
+    AdminDashboardModule,
   ],
   providers: [PerformanceJobsService],
   exports: [PerformanceJobsService],

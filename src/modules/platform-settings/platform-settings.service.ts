@@ -197,7 +197,7 @@ export class PlatformSettingsService {
             : this.normalizeMonetarySectionInput(key, value, effectiveCurrency);
         const merged = {
           ...(existing?.value as Record<string, unknown> | undefined),
-          ...normalizedValue,
+          ...this.stripUndefinedValues(normalizedValue),
         };
         await transaction.platformSetting.upsert({
           where: { key },
@@ -324,7 +324,9 @@ export class PlatformSettingsService {
           : pricingTierCode === 'diamond'
             ? commission.diamondRatePercent
             : commission.standardRatePercent;
-    const minimumTaskPriceUsd =
+    // Ticket 25: these fields are stored directly in the platform's active
+    // display currency (no USD intermediate), so they are used as-is here.
+    const minimumTaskPrice =
       pricingTierCode === 'gold'
         ? Number(commission.goldMinTaskPrice ?? 0)
         : pricingTierCode === 'platinum'
@@ -332,7 +334,6 @@ export class PlatformSettingsService {
           : pricingTierCode === 'diamond'
             ? Number(commission.diamondMinTaskPrice ?? 0)
             : Number(commission.standardMinTaskPrice ?? 0);
-    const minimumTaskPrice = this.convertUsdAmount(minimumTaskPriceUsd, currency);
     const rawServiceAmount = money(input.serviceAmount);
     const effectiveServiceAmount = money(Math.max(rawServiceAmount, minimumTaskPrice));
 
@@ -360,11 +361,10 @@ export class PlatformSettingsService {
     rate = Math.max(0, Math.min(100, rate));
 
     const calculatedFee = money(effectiveServiceAmount * (rate / 100));
+    // Ticket 25: minimumCommissionAmount is also stored directly in the
+    // platform's active display currency; no USD conversion here either.
     const platformFeeAmount = money(
-      Math.max(
-        calculatedFee,
-        this.convertUsdAmount(Number(commission.minimumCommissionAmount ?? 0), currency),
-      ),
+      Math.max(calculatedFee, Number(commission.minimumCommissionAmount ?? 0)),
     );
 
     let taxRatePercent = 0;
@@ -569,6 +569,20 @@ export class PlatformSettingsService {
       ...(this.defaults()[key] as Record<string, unknown>),
       ...((row?.value as Record<string, unknown> | undefined) ?? {}),
     } as T;
+  }
+
+  /**
+   * Ticket 28: `@Type(() => XxxSettingsDto)` + `useDefineForClassFields`
+   * (ES2022 target) causes class-validator/class-transformer to materialize
+   * every optional DTO field the client did NOT send as an explicit own
+   * property set to `undefined`. Spreading that object onto the previously
+   * saved section value then overwrites (wipes) untouched sibling fields
+   * with `undefined`. Stripping undefined-valued keys before the merge spread
+   * keeps a partial PATCH from clobbering fields the client never mentioned.
+   * Used for every section's merge in update() above.
+   */
+  private stripUndefinedValues(value: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined));
   }
 
   private parseSections(raw?: string): string[] {
@@ -837,15 +851,27 @@ export class PlatformSettingsService {
     return PLATFORM_CURRENCY_PRESETS[market];
   }
 
+  // Fields stored directly in the platform's active display currency (NOT USD).
+  // They are intentionally excluded from monetaryFields()/the USD round-trip
+  // below: entering 30 and reading back 30 must be exact, which a USD
+  // intermediate with repeated 2dp rounding cannot guarantee for non-USD
+  // currencies (e.g. MAD at rate 9). See ticket 25.
+  // NOTE for a future currency-migration path: if an admin switches the
+  // platform's display currency, these fields are NOT auto-converted today
+  // (they stay numerically the same, now interpreted in the new currency).
+  // A currency-switch migration step, if one is ever built, must explicitly
+  // re-convert these 5 fields by the old->new rate; no such step exists yet.
+  private static readonly DISPLAY_CURRENCY_COMMISSION_FIELDS = [
+    'standardMinTaskPrice',
+    'goldMinTaskPrice',
+    'platinumMinTaskPrice',
+    'diamondMinTaskPrice',
+    'minimumCommissionAmount',
+  ] as const;
+
   private monetaryFields(key: PlatformSettingKey): string[] {
     if (key === 'commission') {
-      return [
-        'standardMinTaskPrice',
-        'goldMinTaskPrice',
-        'platinumMinTaskPrice',
-        'diamondMinTaskPrice',
-        'minimumCommissionAmount',
-      ];
+      return [];
     }
     if (key === 'tax') return ['serviceSurchargeAmount'];
     if (key === 'taskerFinance') return ['maximumOutstandingPlatformDebt'];
@@ -873,6 +899,9 @@ export class PlatformSettingsService {
         normalized[field] = this.convertPlatformAmountToUsd(Number(normalized[field]), currency);
       }
     }
+    // Ticket 25: these 5 commission fields are stored/read directly in the
+    // platform's active display currency, with no USD intermediate, so they
+    // are deliberately left untouched here (no conversion on write).
     return normalized;
   }
 
@@ -887,7 +916,14 @@ export class PlatformSettingsService {
         serialized[field] = this.convertUsdAmount(Number(serialized[field]), currency);
       }
     }
-    if (this.monetaryFields(key).length) {
+    // Ticket 25: left as-is (no USD->display conversion) — already stored in
+    // the active display currency.
+    const hasDisplayCurrencyFields =
+      key === 'commission' &&
+      PlatformSettingsService.DISPLAY_CURRENCY_COMMISSION_FIELDS.some(
+        (field) => typeof serialized[field] === 'number',
+      );
+    if (this.monetaryFields(key).length || hasDisplayCurrencyFields) {
       serialized.currency = currency.code;
       serialized.currencySymbol = currency.symbol;
     }

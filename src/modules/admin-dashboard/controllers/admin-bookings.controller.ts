@@ -26,7 +26,7 @@ import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import type { User } from '../../../generated/prisma/client';
 import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
-import { AdminBookingActionDto, AdminBookingsQueryDto } from '../dto';
+import { AdminBookingActionDto, AdminBookingsQueryDto, AdminPaginationDto } from '../dto';
 import { AdminBookingsService } from '../services/admin-bookings.service';
 import { RequestLocale } from '../../localization/request-locale.decorator';
 
@@ -76,6 +76,18 @@ export class AdminBookingsController {
   })
   details(@Param('id', ParseIntPipe) id: number) {
     return this.bookings.details(id);
+  }
+
+  @Get(':id/messages')
+  @Permissions('bookings.read')
+  @ApiParam({ name: 'id', required: true, type: Number, description: 'Booking ID.', example: 8291 })
+  @ApiOperation({
+    summary: 'Read the booking conversation transcript (admin, read-only)',
+    description:
+      'Returns the paginated message history for the conversation attached to this booking, oldest first. Read-only: does not support sending messages.',
+  })
+  messages(@Param('id', ParseIntPipe) id: number, @Query() query: AdminPaginationDto) {
+    return this.bookings.messages(id, query);
   }
 
   @Post(':id/actions')

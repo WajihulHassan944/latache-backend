@@ -91,10 +91,10 @@ export class ListAdminCustomersDto extends AdminPaginationDto {
   status?: string;
 
   @ApiPropertyOptional({
-    enum: ['newest', 'oldest', 'bookings_desc', 'rating_desc'],
+    enum: ['newest', 'oldest', 'bookings_desc', 'rating_desc', 'name_asc', 'spend_desc'],
     default: 'newest',
   })
   @IsOptional()
-  @IsIn(['newest', 'oldest', 'bookings_desc', 'rating_desc'])
-  sort?: 'newest' | 'oldest' | 'bookings_desc' | 'rating_desc' = 'newest';
+  @IsIn(['newest', 'oldest', 'bookings_desc', 'rating_desc', 'name_asc', 'spend_desc'])
+  sort?: 'newest' | 'oldest' | 'bookings_desc' | 'rating_desc' | 'name_asc' | 'spend_desc' = 'newest';
 }

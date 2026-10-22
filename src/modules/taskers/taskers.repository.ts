@@ -47,6 +47,24 @@ interface CountRow {
   total: number;
 }
 
+export interface ActiveBadge {
+  code: string;
+  name: string;
+  assetUrl: string | null;
+}
+
+interface BadgeWithTier {
+  code: string;
+  name: string;
+  assetUrl: string | null;
+  tier: { rank: number } | null;
+}
+
+interface ActiveBadgeAssignment {
+  taskerId: number;
+  badge: BadgeWithTier;
+}
+
 export interface AvailabilityResponseSlot {
   id: string;
   startTime: string;
@@ -117,7 +135,15 @@ export class TaskersRepository {
       representativeConditions.push(Prisma.sql`us."hourlyRate" <= ${query.maxPrice}`);
     }
     if (query.isElite !== undefined) {
-      eligibleConditions.push(Prisma.sql`u."isElite" = ${query.isElite}`);
+      const activeSubscriptionExists = Prisma.sql`EXISTS (
+        SELECT 1 FROM "TaskerSubscriptions" elig_ts
+        WHERE elig_ts."taskerId" = u."id" AND elig_ts."status" = 'active'
+      )`;
+      eligibleConditions.push(
+        query.isElite
+          ? Prisma.sql`(u."isElite" = TRUE OR ${activeSubscriptionExists})`
+          : Prisma.sql`(u."isElite" = FALSE AND NOT ${activeSubscriptionExists})`,
+      );
     }
     if (query.minRating !== undefined) {
       eligibleConditions.push(Prisma.sql`u."rating" >= ${query.minRating}`);
@@ -267,6 +293,11 @@ export class TaskersRepository {
     ]);
     const totalItems = countRows[0]?.total ?? 0;
 
+    const taskerIds = rows.map((row) => row.id);
+    const activeBadgeByTaskerId = taskerIds.length
+      ? await this.activeBadgesByTaskerId(taskerIds)
+      : new Map<number, ActiveBadge>();
+
     return {
       items: rows.map((row) => ({
         id: row.id.toString(),
@@ -285,6 +316,7 @@ export class TaskersRepository {
         eliteTier: row.eliteTierCode ? { code: row.eliteTierCode, rank: row.eliteRank } : null,
         eliteProfileBadgeVisible: Boolean(row.eliteProfileBadgeVisible),
         planBadge: row.planBadge,
+        activeBadge: activeBadgeByTaskerId.get(row.id) ?? null,
         distanceKm: row.distanceKm === null ? null : Math.round(Number(row.distanceKm) * 10) / 10,
         location: formatLocation({
           lat: numberOrNull(row.serviceAreaLat),
@@ -306,6 +338,12 @@ export class TaskersRepository {
       where: { id, roles: { has: UserRole.Tasker }, accountStatus: 'active', deletedAt: null, onboardingStatus: 'approved', taskerProfile: { is: { status: 'active' } } },
       include: {
         taskerSubscriptions: { where: { status: 'active' }, select: { planId: true }, take: 1 },
+        eliteBadges: {
+          where: { revokedAt: null, badge: { isActive: true } },
+          select: {
+            badge: { select: { code: true, name: true, assetUrl: true, tier: { select: { rank: true } } } },
+          },
+        },
         eliteTier: {
           select: {
             code: true,
@@ -372,6 +410,7 @@ export class TaskersRepository {
       eliteProfileBadgeVisible:
         user.eliteTier?.benefits.some((benefit) => benefit.code === 'elite_profile_badge') ?? false,
       planBadge: user.taskerSubscriptions[0]?.planId ?? null,
+      activeBadge: this.pickHighestTierBadge(user.eliteBadges.map((assignment) => assignment.badge)),
       location: formatLocation({
         lat: user.serviceAreaLat === null ? null : Number(user.serviceAreaLat),
         lng: user.serviceAreaLng === null ? null : Number(user.serviceAreaLng),
@@ -422,6 +461,43 @@ export class TaskersRepository {
         slots: slotsForDay.sort((left, right) => left.startTime.localeCompare(right.startTime)),
       })),
     };
+  }
+
+  /**
+   * Batch-fetches each tasker's currently active EliteBadge assignment (one
+   * query for the whole page, keyed by taskerId) to avoid N+1 lookups.
+   * "Active" mirrors the elite-program dashboard's definition: not revoked
+   * and the badge itself still active. When a tasker holds more than one
+   * active badge, the highest-tier one wins (by EliteTier.rank).
+   */
+  private async activeBadgesByTaskerId(taskerIds: number[]): Promise<Map<number, ActiveBadge>> {
+    const assignments: ActiveBadgeAssignment[] = await this.prisma.eliteTaskerBadge.findMany({
+      where: { taskerId: { in: taskerIds }, revokedAt: null, badge: { isActive: true } },
+      select: {
+        taskerId: true,
+        badge: { select: { code: true, name: true, assetUrl: true, tier: { select: { rank: true } } } },
+      },
+    });
+    const byTaskerId = new Map<number, ActiveBadgeAssignment[]>();
+    for (const assignment of assignments) {
+      const list = byTaskerId.get(assignment.taskerId) ?? [];
+      list.push(assignment);
+      byTaskerId.set(assignment.taskerId, list);
+    }
+    const result = new Map<number, ActiveBadge>();
+    for (const [taskerId, taskerAssignments] of byTaskerId) {
+      const badge = this.pickHighestTierBadge(taskerAssignments.map((assignment) => assignment.badge));
+      if (badge) result.set(taskerId, badge);
+    }
+    return result;
+  }
+
+  private pickHighestTierBadge(badges: BadgeWithTier[]): ActiveBadge | null {
+    if (!badges.length) return null;
+    const best = badges.reduce((current, candidate) =>
+      (candidate.tier?.rank ?? -1) > (current.tier?.rank ?? -1) ? candidate : current,
+    );
+    return { code: best.code, name: best.name, assetUrl: best.assetUrl };
   }
 
   private distanceSql(latitude: number, longitude: number): Prisma.Sql {

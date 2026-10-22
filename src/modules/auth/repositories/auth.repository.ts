@@ -12,6 +12,25 @@ export class AuthRepository {
     });
   }
 
+  findUserByEmailWithProfiles(
+    email: string,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<
+    | (User & {
+        customerProfile: { status: string } | null;
+        taskerProfile: { status: string } | null;
+      })
+    | null
+  > {
+    return (transaction ?? this.prisma).user.findFirst({
+      where: { email: { equals: email.trim().toLowerCase(), mode: 'insensitive' } },
+      include: {
+        customerProfile: { select: { status: true } },
+        taskerProfile: { select: { status: true } },
+      },
+    });
+  }
+
   findUserById(id: number, transaction?: Prisma.TransactionClient): Promise<User | null> {
     return (transaction ?? this.prisma).user.findUnique({ where: { id } });
   }
