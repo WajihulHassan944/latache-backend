@@ -50,7 +50,7 @@ export class SeoManagementService {
     const configured = exact ?? english;
     const translation = content?.translations.find((item) => item.locale === locale) ?? content?.translations.find((item) => item.locale === this.locales.defaultLocale);
     const canonicalBase = this.publicBaseUrl(settings);
-    const canonical = configured?.canonicalUrl ?? `${canonicalBase}${path === '/' ? '/' : path}`;
+    const canonical = configured?.canonicalUrl ?? this.localizedUrl(canonicalBase, locale, path);
 
     let dynamicTitle: string | undefined;
     let dynamicDescription: string | undefined;
@@ -111,7 +111,7 @@ export class SeoManagementService {
 
   async sitemap(): Promise<string> {
     const settings = await this.settingsRow();
-    if (!settings.sitemapEnabled) return '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>';
+    if (!settings.sitemapEnabled) return '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml"></urlset>';
     const urls = new Map<string, { lastmod?: string; priority?: string; changefreq?: string }>();
     const add = (path: string, data: { lastmod?: Date | null; priority?: unknown; changefreq?: string | null } = {}) => {
       const normalized = normalizePath(path);
@@ -129,8 +129,14 @@ export class SeoManagementService {
     for (const service of services) if (service.slug) add(settings.servicePathTemplate.replace('{slug}', encodeURIComponent(service.slug)), { lastmod: service.updatedAt, priority: 0.8, changefreq: 'weekly' });
     for (const tasker of taskers) add(settings.taskerPathTemplate.replace('{id}', String(tasker.id)), { lastmod: tasker.updatedAt, priority: 0.6, changefreq: 'weekly' });
     const base = this.publicBaseUrl(settings);
-    const xml = [...urls.entries()].map(([path, data]) => `<url><loc>${this.xmlEscape(`${base}${path === '/' ? '/' : path}`)}</loc>${data.lastmod ? `<lastmod>${data.lastmod}</lastmod>` : ''}${data.changefreq ? `<changefreq>${this.xmlEscape(data.changefreq)}</changefreq>` : ''}${data.priority ? `<priority>${this.xmlEscape(data.priority)}</priority>` : ''}</url>`).join('');
-    return `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${xml}</urlset>`;
+    const locales = this.locales.supportedLocales;
+    const xml = [...urls.entries()].flatMap(([path, data]) => locales.map((locale) => {
+      const loc = this.localizedUrl(base, locale, path);
+      const alternates = locales.map((alt) => `<xhtml:link rel="alternate" hreflang="${this.xmlEscape(alt)}" href="${this.xmlEscape(this.localizedUrl(base, alt, path))}"/>`).join('');
+      const xDefault = `<xhtml:link rel="alternate" hreflang="x-default" href="${this.xmlEscape(this.localizedUrl(base, this.locales.defaultLocale, path))}"/>`;
+      return `<url><loc>${this.xmlEscape(loc)}</loc>${alternates}${xDefault}${data.lastmod ? `<lastmod>${data.lastmod}</lastmod>` : ''}${data.changefreq ? `<changefreq>${this.xmlEscape(data.changefreq)}</changefreq>` : ''}${data.priority ? `<priority>${this.xmlEscape(data.priority)}</priority>` : ''}</url>`;
+    })).join('');
+    return `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">${xml}</urlset>`;
   }
 
   async adminSettings() { return this.serializeSettings(await this.settingsRow()); }
@@ -268,5 +274,6 @@ export class SeoManagementService {
   private serializeSettings(row: Awaited<ReturnType<SeoManagementService['settingsRow']>>) { return { ...row, organizationSchema: row.organizationSchema, defaultStructuredData: row.defaultStructuredData, robotsRules: row.robotsRules }; }
   private publicBaseUrl(settings: { defaultCanonicalBaseUrl: string | null }) { return (settings.defaultCanonicalBaseUrl ?? this.config.get<string>('seo.publicBaseUrl') ?? this.config.get<string>('app.baseUrl', 'http://localhost:8080')).replace(/\/$/, ''); }
   private xmlEscape(value: string) { return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;'); }
+  private localizedUrl(base: string, locale: string, path: string) { return `${base}/${locale}${path === '/' ? '' : path}`; }
   private async invalidate() { await this.cache.invalidate(CacheNamespace.PlatformContent); }
 }
