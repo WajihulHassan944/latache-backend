@@ -169,8 +169,7 @@ export class TaskerWalletController {
   @Post('payout-pin')
   @ApiOperation({
     summary: 'Configure the six-digit payout PIN',
-    description:
-      'Initial setup requires the current Latache account password. The PIN is bcrypt-hashed and never returned or logged.',
+    description: 'The PIN is bcrypt-hashed and never returned or logged.',
   })
   configurePayoutPin(
     @CurrentUser() user: User,

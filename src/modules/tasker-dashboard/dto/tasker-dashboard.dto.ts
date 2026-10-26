@@ -552,15 +552,6 @@ export class CreatePayoutMethodDto {
 
 export class ConfigurePayoutPinDto {
   @ApiProperty({
-    example: 'CurrentAccountPassword@123',
-    description: 'Current Latache account password used to authorize initial payout-PIN setup.',
-  })
-  @IsString()
-  @MinLength(8)
-  @MaxLength(128)
-  password!: string;
-
-  @ApiProperty({
     example: '482913',
     description: 'Six-digit payout PIN. It is hashed and never returned.',
   })

@@ -302,18 +302,6 @@ export class TaskerWalletService {
     taskerId: number,
     dto: ConfigurePayoutPinDto,
   ): Promise<PayoutSecurityView> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: taskerId },
-      select: { password: true },
-    });
-    if (!user?.password) {
-      throw new ConflictException(
-        'A local account password is required before configuring a payout PIN',
-      );
-    }
-    if (!(await compare(dto.password, user.password))) {
-      throw new BadRequestException('Current account password is incorrect');
-    }
     const wallet = await this.ensureWallet(taskerId);
     if (wallet.payoutPinHash) {
       throw new ConflictException('Payout PIN is already configured; use the change-PIN endpoint');
