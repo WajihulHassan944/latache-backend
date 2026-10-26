@@ -16,6 +16,7 @@ import {
   emailPlainText,
   emailSubject,
   passwordResetOtpTemplate,
+  payoutPinResetOtpTemplate,
   verificationEmailTemplate,
 } from './email-templates';
 
@@ -82,6 +83,25 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
       subject: emailSubject('password-reset', params.locale),
       html: passwordResetOtpTemplate({ ...params, expiryMinutes }),
       text: emailPlainText('password-reset', {
+        locale: params.locale,
+        otp: params.otp,
+        expiryMinutes,
+      }),
+    });
+  }
+
+  async sendPayoutPinResetOtp(params: {
+    to: string;
+    name: string;
+    otp: number;
+    locale?: string;
+  }): Promise<void> {
+    const expiryMinutes = this.config.get<number>('auth.passwordResetOtpExpiresInMinutes', 15);
+    await this.send({
+      to: params.to,
+      subject: emailSubject('payout-pin-reset', params.locale),
+      html: payoutPinResetOtpTemplate({ ...params, expiryMinutes }),
+      text: emailPlainText('payout-pin-reset', {
         locale: params.locale,
         otp: params.otp,
         expiryMinutes,

@@ -57,6 +57,7 @@ import { TurnstileService } from './services/turnstile.service';
   ],
   exports: [
     AuthService,
+    AuthCodeService,
     JwtIdentityGuard,
     JwtAuthGuard,
     OptionalJwtAuthGuard,

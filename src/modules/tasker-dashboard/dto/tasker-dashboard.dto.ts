@@ -572,6 +572,24 @@ export class ChangePayoutPinDto {
   newPin!: string;
 }
 
+export class ResetPayoutPinDto {
+  @ApiProperty({
+    example: '482913',
+    description: 'Six-digit OTP sent to the tasker\'s email address to authorize the payout-PIN reset.',
+  })
+  @Transform(trim)
+  @Matches(/^\d{6}$/)
+  otp!: string;
+
+  @ApiProperty({
+    example: '739205',
+    description: 'New six-digit payout PIN. It is hashed and never returned.',
+  })
+  @Transform(trim)
+  @Matches(/^\d{6}$/)
+  newPin!: string;
+}
+
 export class RequestWithdrawalDto {
   @ApiProperty({ example: 'cm10abc123' })
   @Transform(trim)

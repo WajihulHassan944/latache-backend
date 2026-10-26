@@ -41,6 +41,7 @@ import {
   CreatePayoutMethodDto,
   ListWalletTransactionsQueryDto,
   RequestWithdrawalDto,
+  ResetPayoutPinDto,
   StringIdParamDto,
 } from '../dto';
 import { TaskerWalletService } from '../services/tasker-wallet.service';
@@ -189,6 +190,32 @@ export class TaskerWalletController {
     @Body() dto: ChangePayoutPinDto,
   ): Promise<PayoutSecurityView> {
     return this.wallet.changePayoutPin(user.id, dto);
+  }
+
+  @Post('payout-pin/forgot')
+  @ApiOperation({
+    summary: 'Request a payout PIN reset OTP',
+    description:
+      'Sends a six-digit one-time code to the tasker\'s registered email, valid for a limited time, used to authorize resetting a forgotten payout PIN.',
+  })
+  forgotPayoutPin(
+    @CurrentUser() user: User,
+    @RequestLocale() locale: string,
+  ): Promise<{ sent: true }> {
+    return this.wallet.forgotPayoutPin(user.id, locale);
+  }
+
+  @Post('payout-pin/reset')
+  @ApiOperation({
+    summary: 'Reset the payout PIN using an emailed OTP',
+    description:
+      'Requires the OTP from the forgot-PIN email. Five consecutive invalid attempts require requesting a new OTP.',
+  })
+  resetPayoutPin(
+    @CurrentUser() user: User,
+    @Body() dto: ResetPayoutPinDto,
+  ): Promise<PayoutSecurityView> {
+    return this.wallet.resetPayoutPin(user.id, dto);
   }
 
   @Get('payout-methods')

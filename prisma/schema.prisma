@@ -1821,6 +1821,9 @@ model TaskerWallet {
   payoutPinFailedAttempts Int       @default(0)
   payoutPinLockedUntil    DateTime? @db.Timestamptz(6)
   payoutPinUpdatedAt      DateTime? @db.Timestamptz(6)
+  payoutPinResetCodeHash  String?   @db.VarChar(64)
+  payoutPinResetExpires   DateTime? @db.Timestamptz(6)
+  payoutPinResetAttempts  Int       @default(0)
   createdAt               DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt               DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 

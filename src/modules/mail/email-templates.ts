@@ -158,6 +158,76 @@ export const passwordResetOtpTemplate = (params: {
   });
 };
 
+const payoutPinResetCopy: Record<EmailLocale, SecurityEmailCopy> = {
+  en: {
+    documentTitle: 'Reset your Latache payout PIN',
+    title: 'Reset your payout PIN',
+    greeting: (name) => `Hello ${name || 'there'},`,
+    intro: 'Use this one-time code to securely reset your Latache payout PIN:',
+    expiry: (minutes) =>
+      `This code expires in ${minutes} minutes. Ignore this email if you did not request a payout PIN reset.`,
+    preheader: (otp) => `Your Latache payout PIN reset code is ${otp}.`,
+  },
+  ar: {
+    documentTitle: 'إعادة تعيين رمز السحب الخاص بك في Latache',
+    title: 'إعادة تعيين رمز السحب',
+    greeting: (name) => `مرحباً ${name || 'بك'}،`,
+    intro: 'استخدم هذا الرمز لمرة واحدة لإعادة تعيين رمز السحب (PIN) في Latache بأمان:',
+    expiry: (minutes) =>
+      `تنتهي صلاحية هذا الرمز خلال ${minutes} دقائق. تجاهل الرسالة إذا لم تطلب إعادة تعيين رمز السحب.`,
+    preheader: (otp) => `رمز إعادة تعيين رمز السحب في Latache هو ${otp}.`,
+  },
+  ary: {
+    documentTitle: 'بدّل رمز السحب ديالك فـ Latache',
+    title: 'بدّل رمز السحب',
+    greeting: (name) => `سلام ${name || 'عليك'}،`,
+    intro: 'استعمل هاد الكود مرة وحدة باش تبدّل رمز السحب (PIN) ديالك فـ Latache بأمان:',
+    expiry: (minutes) =>
+      `هاد الكود غادي تسالي الصلاحية ديالو من بعد ${minutes} دقايق. إلا ماطلبتيش تبدّل رمز السحب، تجاهل هاد الإيميل.`,
+    preheader: (otp) => `كود بدّل رمز السحب ديالك فـ Latache هو ${otp}.`,
+  },
+  fr: {
+    documentTitle: 'Réinitialisez votre code PIN de paiement Latache',
+    title: 'Réinitialisez votre code PIN de paiement',
+    greeting: (name) => `Bonjour ${name || ''},`,
+    intro: 'Utilisez ce code à usage unique pour réinitialiser votre code PIN de paiement Latache en toute sécurité :',
+    expiry: (minutes) =>
+      `Ce code expire dans ${minutes} minutes. Ignorez cet e-mail si vous n'avez pas demandé de réinitialisation.`,
+    preheader: (otp) => `Votre code de réinitialisation du PIN Latache est ${otp}.`,
+  },
+  es: {
+    documentTitle: 'Restablece tu PIN de pago de Latache',
+    title: 'Restablece tu PIN de pago',
+    greeting: (name) => `Hola ${name || ''},`,
+    intro: 'Usa este código de un solo uso para restablecer tu PIN de pago de Latache de forma segura:',
+    expiry: (minutes) =>
+      `Este código vence en ${minutes} minutos. Ignora este correo si no solicitaste restablecer tu PIN.`,
+    preheader: (otp) => `Tu código para restablecer el PIN de Latache es ${otp}.`,
+  },
+};
+
+export const payoutPinResetOtpTemplate = (params: {
+  name: string;
+  otp: number;
+  expiryMinutes: number;
+  locale?: string;
+}): string => {
+  const locale = normalizeEmailLocale(params.locale);
+  const copy = payoutPinResetCopy[locale];
+  const name = escapeHtml(params.name);
+  return latacheEmailLayout({
+    documentTitle: copy.documentTitle,
+    preheader: copy.preheader(params.otp),
+    locale,
+    securityNotice: {},
+    content: `<h1 class="email-title" style="margin:0;color:#60230c;font-family:Georgia,'Times New Roman',serif;font-size:46px;line-height:54px;text-align:center">${copy.title}</h1>
+      <p style="margin:20px 0 18px;color:#a66229;font-size:21px;line-height:29px;text-align:center">${copy.greeting(name)}</p>
+      <p style="margin:0;color:#563226;font-size:16px;line-height:25px;text-align:center">${copy.intro}</p>
+      ${otpBlock(params.otp)}
+      ${expiryBlock(copy.expiry(params.expiryMinutes), isRtlEmailLocale(locale))}`,
+  });
+};
+
 interface AdminWelcomeCopy {
   documentTitle: string;
   title: string;
@@ -269,17 +339,18 @@ export const adminWelcomeTemplate = (params: {
 };
 
 export const emailSubject = (
-  type: 'verification' | 'password-reset' | 'admin-welcome',
+  type: 'verification' | 'password-reset' | 'payout-pin-reset' | 'admin-welcome',
   locale?: string,
 ): string => {
   const resolved = normalizeEmailLocale(locale);
   if (type === 'verification') return verificationCopy[resolved].documentTitle;
   if (type === 'password-reset') return passwordResetCopy[resolved].documentTitle;
+  if (type === 'payout-pin-reset') return payoutPinResetCopy[resolved].documentTitle;
   return adminWelcomeCopy[resolved].documentTitle;
 };
 
 export const emailPlainText = (
-  type: 'verification' | 'password-reset' | 'admin-welcome',
+  type: 'verification' | 'password-reset' | 'payout-pin-reset' | 'admin-welcome',
   params: {
     locale?: string;
     otp?: number;
@@ -310,6 +381,17 @@ export const emailPlainText = (
     if (locale === 'es')
       return `Tu código para restablecer la contraseña de Latache es ${params.otp}. Vence en ${params.expiryMinutes} minutos. Nunca lo compartas; ignora este correo si no lo solicitaste.`;
     return `Your Latache password reset code is ${params.otp}. It expires in ${params.expiryMinutes} minutes. Never share this code; ignore this email if you did not request it.`;
+  }
+  if (type === 'payout-pin-reset') {
+    if (locale === 'ar')
+      return `رمز إعادة تعيين رمز السحب في Latache هو ${params.otp}. تنتهي صلاحيته خلال ${params.expiryMinutes} دقائق. لا تشارك هذا الرمز مع أي شخص، وتجاهل الرسالة إذا لم تطلبه.`;
+    if (locale === 'ary')
+      return `كود بدّل رمز السحب ديالك فـ Latache هو ${params.otp}. غادي تسالي الصلاحية ديالو من بعد ${params.expiryMinutes} دقايق. ماتشاركش هاد الكود، وإلا ماطلبتيهش تجاهل هاد الإيميل.`;
+    if (locale === 'fr')
+      return `Votre code de réinitialisation du PIN de paiement Latache est ${params.otp}. Il expire dans ${params.expiryMinutes} minutes. Ne le partagez jamais ; ignorez cet e-mail si vous ne l'avez pas demandé.`;
+    if (locale === 'es')
+      return `Tu código para restablecer el PIN de pago de Latache es ${params.otp}. Vence en ${params.expiryMinutes} minutos. Nunca lo compartas; ignora este correo si no lo solicitaste.`;
+    return `Your Latache payout PIN reset code is ${params.otp}. It expires in ${params.expiryMinutes} minutes. Never share this code; ignore this email if you did not request it.`;
   }
   if (locale === 'ar')
     return `حساب مسؤول Latache جاهز. البريد الإلكتروني: ${params.email}. كلمة المرور المؤقتة: ${params.temporaryPassword}. غيّرها بعد تسجيل الدخول.`;

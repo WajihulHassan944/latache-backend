@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-type AuthCodePurpose = 'email-verification' | 'password-reset';
+type AuthCodePurpose = 'email-verification' | 'password-reset' | 'payout-pin-reset';
 
 @Injectable()
 export class AuthCodeService {

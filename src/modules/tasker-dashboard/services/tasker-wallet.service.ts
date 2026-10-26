@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { compare, hash } from 'bcryptjs';
 import { normalizePagination } from '../../../common/utils/pagination.util';
+import { generateNumericCode } from '../../../common/utils/crypto.util';
 import { PrismaService } from '../../../database/prisma.service';
 import { Prisma } from '../../../generated/prisma/client';
 import type {
@@ -33,6 +34,7 @@ import type {
   CreatePayoutMethodDto,
   ListWalletTransactionsQueryDto,
   RequestWithdrawalDto,
+  ResetPayoutPinDto,
 } from '../dto';
 import { monthStart, roundMoney } from '../tasker-dashboard.utils';
 import { PayoutDataSecurityService } from './payout-data-security.service';
@@ -41,6 +43,10 @@ import { TaskerFinanceService } from '../../tasker-finance/tasker-finance.servic
 import type { TaskerEarningsQueryDto } from '../../tasker-finance/dto/tasker-finance.dto';
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 import { ResponseLocalizationService } from '../../localization/response-localization.service';
+import { MailService } from '../../mail/mail.service';
+import { AuthCodeService } from '../../auth/services/auth-code.service';
+
+const MAX_PAYOUT_PIN_RESET_ATTEMPTS = 5;
 
 @Injectable()
 export class TaskerWalletService {
@@ -52,6 +58,8 @@ export class TaskerWalletService {
     private readonly taskerFinance: TaskerFinanceService,
     private readonly platformSettings: PlatformSettingsService,
     private readonly responseLocalization: ResponseLocalizationService,
+    private readonly mail: MailService,
+    private readonly authCodes: AuthCodeService,
   ) {}
 
   async summary(taskerId: number): Promise<WalletSummaryView> {
@@ -334,6 +342,66 @@ export class TaskerWalletService {
         payoutPinFailedAttempts: 0,
         payoutPinLockedUntil: null,
         payoutPinUpdatedAt: new Date(),
+      },
+    });
+    return this.payoutSecurity(taskerId);
+  }
+
+  async forgotPayoutPin(taskerId: number, locale?: string): Promise<{ sent: true }> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: taskerId },
+      select: { email: true, firstName: true, preferredLanguage: true },
+    });
+    const otp = generateNumericCode(6);
+    const expiryMinutes = this.config.get<number>('auth.passwordResetOtpExpiresInMinutes', 15);
+    await this.ensureWallet(taskerId);
+    await this.prisma.taskerWallet.update({
+      where: { taskerId },
+      data: {
+        payoutPinResetCodeHash: this.authCodes.hash('payout-pin-reset', otp),
+        payoutPinResetExpires: new Date(Date.now() + expiryMinutes * 60 * 1000),
+        payoutPinResetAttempts: 0,
+      },
+    });
+    await this.mail.sendPayoutPinResetOtp({
+      to: user.email,
+      name: user.firstName || user.email,
+      otp,
+      locale: user.preferredLanguage ?? locale ?? 'en',
+    });
+    return { sent: true };
+  }
+
+  async resetPayoutPin(taskerId: number, dto: ResetPayoutPinDto): Promise<PayoutSecurityView> {
+    const wallet = await this.ensureWallet(taskerId);
+    if (!wallet.payoutPinResetCodeHash || !wallet.payoutPinResetExpires) {
+      throw new BadRequestException('No payout PIN reset was requested');
+    }
+    if (wallet.payoutPinResetAttempts >= MAX_PAYOUT_PIN_RESET_ATTEMPTS) {
+      throw new BadRequestException('Too many invalid attempts. Request a new payout PIN reset OTP.');
+    }
+    const expired = wallet.payoutPinResetExpires < new Date();
+    const valid =
+      !expired && this.authCodes.matches('payout-pin-reset', dto.otp, wallet.payoutPinResetCodeHash);
+    if (!valid) {
+      await this.prisma.taskerWallet.update({
+        where: { taskerId },
+        data: { payoutPinResetAttempts: { increment: 1 } },
+      });
+      throw new BadRequestException('Invalid or expired payout PIN reset OTP');
+    }
+    const rounds = this.config.get<number>('auth.bcryptRounds', 12);
+    const payoutPinHash = await hash(dto.newPin, rounds);
+    await this.prisma.taskerWallet.update({
+      where: { taskerId },
+      data: {
+        payoutPinHash,
+        payoutPinFailedAttempts: 0,
+        payoutPinLockedUntil: null,
+        payoutPinUpdatedAt: new Date(),
+        payoutPinResetCodeHash: null,
+        payoutPinResetExpires: null,
+        payoutPinResetAttempts: 0,
       },
     });
     return this.payoutSecurity(taskerId);

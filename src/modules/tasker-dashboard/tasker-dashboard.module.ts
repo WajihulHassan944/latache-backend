@@ -8,6 +8,7 @@ import { PlatformSettingsModule } from '../platform-settings/platform-settings.m
 import { AdminAuditModule } from '../admin-audit/admin-audit.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { MailModule } from '../mail/mail.module';
 import { TaskerProfileController } from './controllers/tasker-profile.controller';
 import { TaskerWalletController } from './controllers/tasker-wallet.controller';
 import { PayoutDataSecurityService } from './services/payout-data-security.service';
@@ -27,6 +28,7 @@ import { TaskerWalletService } from './services/tasker-wallet.service';
     AdminAuditModule,
     ReferralsModule,
     PaymentsModule,
+    MailModule,
   ],
   controllers: [TaskerProfileController, TaskerWalletController],
   providers: [
