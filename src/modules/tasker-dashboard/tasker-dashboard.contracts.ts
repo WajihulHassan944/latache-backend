@@ -344,6 +344,8 @@ export interface DashboardOverviewView {
     averageRatingGiven: number;
     taskCompletionPercent: number;
     completedTasks: number;
+    cancelledTasks: number;
+    pendingTasks: number;
   };
   nextTask: TaskerTaskView | null;
   monthlyEarnings: Array<{ month: string; amount: number; currency: string }>;

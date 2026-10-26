@@ -777,18 +777,25 @@ export class TaskerTasksService {
 
   async completionMetrics(taskerId: number): Promise<{
     completedTasks: number;
+    cancelledTasks: number;
+    pendingTasks: number;
     taskCompletionPercent: number;
   }> {
-    const [completed, terminal] = await Promise.all([
+    const [completed, terminal, pending] = await Promise.all([
       this.prisma.booking.count({
         where: { taskerId, status: TASKER_BOOKING_STATUS.Completed },
       }),
       this.prisma.booking.count({
         where: { taskerId, status: { in: [...TASKER_HISTORY_STATUSES] } },
       }),
+      this.prisma.booking.count({
+        where: { taskerId, status: { notIn: [...TASKER_HISTORY_STATUSES] } },
+      }),
     ]);
     return {
       completedTasks: completed,
+      cancelledTasks: terminal - completed,
+      pendingTasks: pending,
       taskCompletionPercent: terminal === 0 ? 0 : Math.round((completed / terminal) * 100),
     };
   }

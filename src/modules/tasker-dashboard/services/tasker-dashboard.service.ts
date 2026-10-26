@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { PrismaService } from '../../../database/prisma.service';
 import type { DashboardOverviewView } from '../tasker-dashboard.contracts';
-import { WALLET_ENTRY_KIND } from '../tasker-dashboard.constants';
+import { EARNING_LEDGER_KIND } from '../../tasker-finance/tasker-finance.constants';
 import { ReviewsService } from '../../reviews/reviews.service';
 import { TaskerTasksService } from './tasker-tasks.service';
 import { TaskerWalletService } from './tasker-wallet.service';
@@ -59,13 +59,13 @@ export class TaskerDashboardService {
       }),
       this.prisma.userService.count({ where: { userId: taskerId } }),
       this.prisma.taskerWalletLedgerEntry.aggregate({
-        where: { taskerId, kind: WALLET_ENTRY_KIND.Earning, status: 'settled' },
+        where: { taskerId, kind: EARNING_LEDGER_KIND.EarningRelease, status: 'settled' },
         _sum: { amount: true },
       }),
       this.prisma.taskerWalletLedgerEntry.findMany({
         where: {
           taskerId,
-          kind: WALLET_ENTRY_KIND.Earning,
+          kind: EARNING_LEDGER_KIND.EarningRelease,
           status: 'settled',
           createdAt: { gte: yearStart, lt: yearEnd },
         },
@@ -124,6 +124,8 @@ export class TaskerDashboardService {
         averageRatingGiven: averageGiven,
         taskCompletionPercent: completion.taskCompletionPercent,
         completedTasks: completion.completedTasks,
+        cancelledTasks: completion.cancelledTasks,
+        pendingTasks: completion.pendingTasks,
       },
       nextTask,
       monthlyEarnings: monthly,
