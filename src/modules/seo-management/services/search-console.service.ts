@@ -21,7 +21,7 @@ interface StoredConnection {
   encryptedRefreshToken: string | null;
 }
 
-interface TopQueryRow {
+export interface TopQueryRow {
   query: string;
   impressions: number;
   clicks: number;
@@ -29,7 +29,7 @@ interface TopQueryRow {
   position: number;
 }
 
-interface SearchConsoleSummary {
+export interface SearchConsoleSummary {
   impressions: number;
   clicks: number;
   avgCtr: number;
