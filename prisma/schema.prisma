@@ -737,8 +737,8 @@ model Service {
   category         String?  @db.VarChar(120)
   isActive         Boolean  @default(true)
   sortOrder        Int      @default(0)
-  minHourlyRateUsd Decimal  @default(1) @db.Decimal(10, 2)
-  maxHourlyRateUsd Decimal  @default(10000) @db.Decimal(10, 2)
+  minHourlyRateUsd Decimal  @default(1) @db.Decimal(14, 6)
+  maxHourlyRateUsd Decimal  @default(10000) @db.Decimal(14, 6)
   createdAt        DateTime @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @db.Timestamptz(6)
 

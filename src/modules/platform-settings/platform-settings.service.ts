@@ -38,6 +38,12 @@ import {
 } from './platform-currency.presets';
 
 const money = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
+// Higher-precision rounding for USD amounts that get stored and later converted
+// back to a non-USD display currency (e.g. Service hourly-rate bounds). Rounding
+// straight to 2 decimals here loses enough precision that a round trip through a
+// rate like 9 (MAD) or 280 (PKR) visibly drifts the admin's original input
+// (e.g. 30 -> 29.97). Final display values still go through `money()`.
+const moneyPrecise = (value: number): number => Math.round((value + Number.EPSILON) * 1e6) / 1e6;
 
 const dateOnly = (value: Date): string => value.toISOString().slice(0, 10);
 
@@ -770,7 +776,7 @@ export class PlatformSettingsService {
   }
 
   convertPlatformAmountToUsd(value: number, context: PlatformCurrencyContext): number {
-    return money(value / context.rateFromUsd);
+    return moneyPrecise(value / context.rateFromUsd);
   }
 
   convertCurrencyAmountToUsd(value: number | Prisma.Decimal, currencyCode: string): number {

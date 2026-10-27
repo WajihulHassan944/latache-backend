@@ -190,8 +190,8 @@ export class ServicesService {
           category: dto.category ?? null,
           isActive: dto.isActive ?? true,
           sortOrder: dto.sortOrder ?? 0,
-          minHourlyRateUsd: minHourlyRateUsd.toFixed(2),
-          maxHourlyRateUsd: maxHourlyRateUsd.toFixed(2),
+          minHourlyRateUsd: minHourlyRateUsd.toFixed(6),
+          maxHourlyRateUsd: maxHourlyRateUsd.toFixed(6),
           createdAt: now,
           updatedAt: now,
         },
@@ -273,10 +273,10 @@ export class ServicesService {
           ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
           ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
           ...(dto.minimumHourlyRate !== undefined
-            ? { minHourlyRateUsd: minHourlyRateUsd.toFixed(2) }
+            ? { minHourlyRateUsd: minHourlyRateUsd.toFixed(6) }
             : {}),
           ...(dto.maximumHourlyRate !== undefined
-            ? { maxHourlyRateUsd: maxHourlyRateUsd.toFixed(2) }
+            ? { maxHourlyRateUsd: maxHourlyRateUsd.toFixed(6) }
             : {}),
         },
       });
