@@ -90,3 +90,8 @@ export class UpdateSeoKeywordDto {
   @IsOptional() @IsString() @IsIn(['high', 'medium', 'low']) priority?: string;
   @IsOptional() @IsString() @IsIn(['active', 'paused']) status?: string;
 }
+
+export class SearchConsoleSummaryQueryDto {
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) startDate?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) endDate?: string;
+}

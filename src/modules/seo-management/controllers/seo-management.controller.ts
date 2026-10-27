@@ -1,13 +1,15 @@
-import { Controller, Delete, Get, Header, Param, Patch, Post, Query, Body, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Controller, Delete, Get, Header, Param, Patch, Post, Query, Body, Res, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiExcludeController, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import type { User } from '../../../generated/prisma/client';
 import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { SeoManagementService } from '../services/seo-management.service';
-import { CreateSeoKeywordDto, SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntryDto, SeoSettingsDto, UpdateSeoKeywordDto, UpsertSeoPageDto } from '../dto/seo.dto';
+import { SearchConsoleService } from '../services/search-console.service';
+import { CreateSeoKeywordDto, SearchConsoleSummaryQueryDto, SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntryDto, SeoSettingsDto, UpdateSeoKeywordDto, UpsertSeoPageDto } from '../dto/seo.dto';
 
 @ApiTags('20 SEO')
 @Controller('seo')
@@ -23,7 +25,10 @@ export class SeoPublicController {
 @UseGuards(AdminAuthGuard, PermissionsGuard)
 @Controller('admin/seo')
 export class AdminSeoController {
-  constructor(private readonly seo: SeoManagementService) {}
+  constructor(
+    private readonly seo: SeoManagementService,
+    private readonly searchConsole: SearchConsoleService,
+  ) {}
   @Get('settings') @Permissions('seo.read') getSettings() { return this.seo.adminSettings(); }
   @Patch('settings') @Permissions('seo.manage') updateSettings(@CurrentUser() actor: User, @Body() dto: SeoSettingsDto) { return this.seo.updateSettings(actor, dto); }
   @Get('pages') @Permissions('seo.read') listPages(@Query() query: SeoPageListQueryDto) { return this.seo.listPages(query); }
@@ -40,4 +45,21 @@ export class AdminSeoController {
   @Get('sitemap-entries') @Permissions('seo.read') listSitemapEntries() { return this.seo.listSitemapEntries(); }
   @Post('sitemap-entries') @Permissions('seo.manage') upsertSitemapEntry(@CurrentUser() actor: User, @Body() dto: SeoSitemapEntryDto) { return this.seo.upsertSitemapEntry(actor, dto); }
   @Delete('sitemap-entries/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO sitemap entry ID.' }) deleteSitemapEntry(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deleteSitemapEntry(actor, id); }
+  @Get('search-console/status') @Permissions('seo.read') @ApiOperation({ summary: 'Google Search Console connection status' }) searchConsoleStatus() { return this.searchConsole.status(); }
+  @Get('search-console/connect') @Permissions('seo.manage') @ApiOperation({ summary: 'Build the Google OAuth consent URL to connect Search Console' }) searchConsoleConnect() { return this.searchConsole.connect(); }
+  @Delete('search-console') @Permissions('seo.manage') @ApiOperation({ summary: 'Disconnect Google Search Console' }) searchConsoleDisconnect(@CurrentUser() actor: User) { return this.searchConsole.disconnect(actor); }
+  @Get('search-console/summary') @Permissions('seo.read') @ApiOperation({ summary: 'Cached Search Console analytics summary, defaults to the last 28 days' }) searchConsoleSummary(@Query() query: SearchConsoleSummaryQueryDto) { return this.searchConsole.summary(query); }
+}
+
+/** Hit directly by Google in the admin's browser as a raw redirect - no Authorization header is ever present here, so it cannot sit behind AdminAuthGuard/PermissionsGuard. Security instead comes from the signed, short-lived `state` param minted by AdminSeoController#searchConsoleConnect and verified here. */
+@ApiTags('63 Admin - SEO')
+@ApiExcludeController()
+@Controller('admin/seo/search-console')
+export class SeoSearchConsoleCallbackController {
+  constructor(private readonly searchConsole: SearchConsoleService) {}
+  @Get('callback')
+  async callback(@Query('code') code: string | undefined, @Query('state') state: string | undefined, @Res({ passthrough: false }) response: Response) {
+    const redirectTo = await this.searchConsole.handleCallback(code, state);
+    response.redirect(302, redirectTo);
+  }
 }

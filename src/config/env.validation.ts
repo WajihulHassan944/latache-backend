@@ -828,6 +828,22 @@ export const validateEnvironment = (environment: Environment): Environment => {
   if (present(environment.SEO_PUBLIC_BASE_URL) && !isHttpUrl(environment.SEO_PUBLIC_BASE_URL as string)) {
     errors.push('SEO_PUBLIC_BASE_URL must be a valid http(s) URL');
   }
+  if (present(environment.FRONTEND_BASE_URL) && !isHttpUrl(environment.FRONTEND_BASE_URL as string)) {
+    errors.push('FRONTEND_BASE_URL must be a valid http(s) URL');
+  }
+  if (
+    present(environment.GOOGLE_SEARCH_CONSOLE_REDIRECT_URI) &&
+    !isHttpUrl(environment.GOOGLE_SEARCH_CONSOLE_REDIRECT_URI as string)
+  ) {
+    errors.push('GOOGLE_SEARCH_CONSOLE_REDIRECT_URI must be a valid http(s) URL');
+  }
+  const gscClientId = present(environment.GOOGLE_SEARCH_CONSOLE_CLIENT_ID);
+  const gscClientSecret = present(environment.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET);
+  if (gscClientId !== gscClientSecret) {
+    errors.push(
+      'GOOGLE_SEARCH_CONSOLE_CLIENT_ID and GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET must either both be set or both be empty',
+    );
+  }
 
   if (present(environment.CORS_ORIGINS)) {
     for (const origin of (environment.CORS_ORIGINS as string).split(',')) {

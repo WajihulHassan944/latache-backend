@@ -63,6 +63,17 @@ export default () => {
     seo: {
       publicBaseUrl: process.env.SEO_PUBLIC_BASE_URL?.trim() || appBaseUrl,
     },
+    frontend: {
+      baseUrl: process.env.FRONTEND_BASE_URL?.trim() || 'http://localhost:3000',
+    },
+    googleSearchConsole: {
+      clientId: process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID?.trim(),
+      clientSecret: process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET?.trim(),
+      redirectUri:
+        process.env.GOOGLE_SEARCH_CONSOLE_REDIRECT_URI?.trim() ||
+        `${appBaseUrl}/api/admin/seo/search-console/callback`,
+      siteUrl: process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL?.trim(),
+    },
     database: {
       url: process.env.DATABASE_URL,
       logging: asBoolean(process.env.DB_LOGGING, false),
