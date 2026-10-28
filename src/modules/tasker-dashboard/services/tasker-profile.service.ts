@@ -131,6 +131,7 @@ export class TaskerProfileService {
         byService.get(service.id)?.hourlyRate ?? null,
         currency,
         nameMap.get(service.id) ?? service.name ?? '',
+        byService.get(service.id)?.yearsOfExperience ?? null,
       ),
     );
   }
@@ -166,8 +167,14 @@ export class TaskerProfileService {
           userId: taskerId,
           serviceId: service.id,
           hourlyRate: canonicalRate.toFixed(2),
+          yearsOfExperience: dto.yearsOfExperience ?? null,
         },
-        update: { hourlyRate: canonicalRate.toFixed(2) },
+        update: {
+          hourlyRate: canonicalRate.toFixed(2),
+          ...(dto.yearsOfExperience !== undefined
+            ? { yearsOfExperience: dto.yearsOfExperience }
+            : {}),
+        },
       });
       await this.syncTaskerSkillSnapshot(taskerId, transaction);
       return { selected, service, currency };
@@ -177,7 +184,13 @@ export class TaskerProfileService {
       result.service.id,
       locale,
     );
-    return this.skillView(result.service, result.selected.hourlyRate, result.currency, serviceName);
+    return this.skillView(
+      result.service,
+      result.selected.hourlyRate,
+      result.currency,
+      serviceName,
+      result.selected.yearsOfExperience,
+    );
   }
 
   async updateSkill(
@@ -202,7 +215,12 @@ export class TaskerProfileService {
       const canonicalRate = this.canonicalTaskerRate(dto.hourlyRate, existing.service, currency);
       const updated = await transaction.userService.update({
         where: { userId_serviceId: { userId: taskerId, serviceId } },
-        data: { hourlyRate: canonicalRate.toFixed(2) },
+        data: {
+          hourlyRate: canonicalRate.toFixed(2),
+          ...(dto.yearsOfExperience !== undefined
+            ? { yearsOfExperience: dto.yearsOfExperience }
+            : {}),
+        },
       });
       await this.syncTaskerSkillSnapshot(taskerId, transaction);
       return { existing, updated, currency };
@@ -216,6 +234,7 @@ export class TaskerProfileService {
       result.updated.hourlyRate,
       result.currency,
       serviceName,
+      result.updated.yearsOfExperience,
     );
   }
 
@@ -419,6 +438,7 @@ export class TaskerProfileService {
     canonicalRate: Prisma.Decimal | string | number | null,
     currency: PlatformCurrencyContext,
     serviceName: string,
+    yearsOfExperience: number | null = null,
   ): TaskerSkillView {
     return {
       serviceId: String(service.id),
@@ -431,6 +451,7 @@ export class TaskerProfileService {
         canonicalRate === null
           ? null
           : this.platformSettings.convertUsdAmount(Number(canonicalRate), currency),
+      yearsOfExperience,
       rateLimits: {
         minimumHourlyRate: this.platformSettings.convertUsdAmount(
           Number(service.minHourlyRateUsd),

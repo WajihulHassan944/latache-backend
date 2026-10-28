@@ -137,6 +137,7 @@ export interface TaskerSkillView {
   icon: string;
   active: boolean;
   hourlyRate: number | null;
+  yearsOfExperience: number | null;
   rateLimits: { minimumHourlyRate: number; maximumHourlyRate: number };
   currency: string;
   currencySymbol: string;

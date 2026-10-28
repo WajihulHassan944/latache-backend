@@ -311,6 +311,19 @@ export class ActivateTaskerSkillDto {
   @Min(0.01)
   @Max(1000000)
   hourlyRate!: number;
+
+  @ApiPropertyOptional({
+    example: 2,
+    minimum: 0,
+    maximum: 100,
+    description: 'Years of experience with this specific skill, distinct from the overall profile years of experience.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  yearsOfExperience?: number;
 }
 
 export class UpdateTaskerSkillDto {
@@ -325,6 +338,19 @@ export class UpdateTaskerSkillDto {
   @Min(0.01)
   @Max(1000000)
   hourlyRate!: number;
+
+  @ApiPropertyOptional({
+    example: 3,
+    minimum: 0,
+    maximum: 100,
+    description: 'Years of experience with this specific skill, distinct from the overall profile years of experience.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  yearsOfExperience?: number;
 }
 
 export class ListNotificationsQueryDto {
