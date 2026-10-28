@@ -265,7 +265,12 @@ export class TaskerProfileService {
         },
       },
     });
-    return slots.map((slot) => this.availabilityView(slot));
+    // A custom slot only reaches here via the isBooked=true branch of the OR above; once
+    // its booking is cancelled it has no active booking left and is not real availability
+    // (see comment on the query) — drop it instead of exposing it as an editable "Open" slot.
+    return slots
+      .filter((slot) => !slot.isCustom || slot.bookings.length > 0)
+      .map((slot) => this.availabilityView(slot));
   }
 
   async addAvailability(
@@ -446,9 +451,18 @@ export class TaskerProfileService {
     date: Date;
     startTime: string;
     endTime: string;
+    isCustom: boolean;
     isBooked: boolean;
     bookings?: { status: string }[];
   }): TaskerAvailabilitySlotView {
+    // isBooked is derived from the same cancelled-filtered bookings relation as
+    // bookingStatus, not trusted from the stored column, so a cancellation that doesn't
+    // reset the column can never leave a regular slot stuck "booked" with no actions
+    // (self-correcting at read time, no data migration needed for already-stale rows).
+    // Custom slots are excluded from this derivation: listAvailability only lets a custom
+    // slot through when it still has an active booking, so its stored isBooked stays true
+    // there; a custom slot with no active booking is dropped before reaching this method.
+    const isBooked = slot.isCustom ? slot.isBooked : (slot.bookings?.length ?? 0) > 0;
     return {
       id: slot.id.toString(),
       date: dateOnlyFromDate(slot.date),
@@ -456,8 +470,8 @@ export class TaskerProfileService {
       endTime: to24Hour(slot.endTime),
       startTimeAMPM: to12Hour(slot.startTime),
       endTimeAMPM: to12Hour(slot.endTime),
-      isBooked: slot.isBooked,
-      bookingStatus: slot.isBooked ? (slot.bookings?.[0]?.status ?? null) : null,
+      isBooked,
+      bookingStatus: isBooked ? (slot.bookings?.[0]?.status ?? null) : null,
     };
   }
 
