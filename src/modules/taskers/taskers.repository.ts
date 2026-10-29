@@ -400,6 +400,7 @@ export class TaskersRepository {
         slug: entry.service.slug ?? '',
         icon: entry.service.icon ?? '',
         hourlyRate: Number(entry.hourlyRate),
+        yearsOfExperience: entry.yearsOfExperience,
       })),
       workImages: user.workImages,
       isElite: user.isElite,
