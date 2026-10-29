@@ -18,7 +18,7 @@ import {
 } from '../../payments/payments.constants';
 import { DisputeLifecycleService } from '../../disputes/dispute-lifecycle.service';
 import type { AdminDisputeActionDto, AdminDisputesQueryDto } from '../dto';
-import { fullName, money, pagination } from '../admin-dashboard.utils';
+import { fullName, money, pagination, workVerificationView } from '../admin-dashboard.utils';
 
 const ACTIVE_DISPUTE_STATUSES = ['open', 'under_investigation', 'escalated'] as const;
 const REFUND_RESOLUTION_TYPES = new Set([
@@ -218,6 +218,7 @@ export class AdminDisputesService {
             serviceOption: { select: { id: true, name: true, slug: true } },
             paymentTransactions: { orderBy: { createdAt: 'desc' } },
             workSession: true,
+            workProofs: { orderBy: { createdAt: 'asc' } },
             stripeChargebacks: { orderBy: { updatedAt: 'desc' } },
           },
         },
@@ -343,6 +344,7 @@ export class AdminDisputesService {
               notes: complaint.booking.workSession.notes,
             }
           : null,
+        workVerification: workVerificationView(complaint.booking),
       },
       payment: {
         source: complaint.booking.paymentSource,

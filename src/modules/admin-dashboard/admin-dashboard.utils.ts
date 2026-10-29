@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { BookingWorkProof } from '../../generated/prisma/client';
 import type { AdminAnalyticsRange, AdminDateRangeQueryDto } from './dto';
 
 export interface ResolvedAdminDateRange {
@@ -119,6 +120,38 @@ export const pagination = (pageInput?: number, limitInput?: number) => {
 
 export const fullName = (firstName?: string | null, lastName?: string | null): string =>
   `${firstName ?? ''} ${lastName ?? ''}`.trim();
+
+const workProofView = (row: BookingWorkProof) => ({
+  id: row.id,
+  kind: row.kind,
+  publicId: row.publicId,
+  secureUrl: row.secureUrl,
+  mimeType: row.mimeType,
+  bytes: row.bytes,
+  capturedAt: row.capturedAt.toISOString(),
+});
+
+/**
+ * Same shape GET /bookings/:id/work-verification already returns for
+ * frontDoor/completionProof, exposed to admin booking/dispute detail views so
+ * review (e.g. a "customer no-show" dispute) can see the Tasker's arrival and
+ * completion proof photos, which no admin endpoint surfaced before.
+ */
+export const workVerificationView = (booking: {
+  workProofs: BookingWorkProof[];
+  frontDoorVerifiedAt: Date | null;
+  completionProofAt: Date | null;
+}) => {
+  const proof = (kind: string) => booking.workProofs.find((item) => item.kind === kind) ?? null;
+  const frontDoor = proof('front_door');
+  const completion = proof('completion');
+  return {
+    frontDoor: frontDoor ? workProofView(frontDoor) : null,
+    frontDoorVerifiedAt: booking.frontDoorVerifiedAt?.toISOString() ?? null,
+    completionProof: completion ? workProofView(completion) : null,
+    completionProofAt: booking.completionProofAt?.toISOString() ?? null,
+  };
+};
 
 /**
  * CustomerAddress only stores a free-text label/address (no structured

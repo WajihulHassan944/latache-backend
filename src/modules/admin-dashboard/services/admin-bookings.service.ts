@@ -14,7 +14,7 @@ import { PaymentsService } from '../../payments/payments.service';
 import { RealtimeOutboxService } from '../../realtime/realtime-outbox.service';
 import { ReferralsService } from '../../referrals/services/referrals.service';
 import type { AdminBookingActionDto, AdminBookingsQueryDto, AdminPaginationDto } from '../dto';
-import { fullName, money, pagination } from '../admin-dashboard.utils';
+import { fullName, money, pagination, workVerificationView } from '../admin-dashboard.utils';
 import { ResponseLocalizationService } from '../../localization/response-localization.service';
 
 const ACTIVE_BOOKING_STATUSES = [
@@ -226,6 +226,7 @@ export class AdminBookingsService {
         serviceOption: true,
         availability: true,
         workSession: true,
+        workProofs: { orderBy: { createdAt: 'asc' } },
         latestLocation: true,
         complaints: {
           orderBy: { createdAt: 'desc' },
@@ -308,6 +309,7 @@ export class AdminBookingsService {
       },
       description: booking.description,
       attachments: Array.isArray(booking.attachments) ? booking.attachments : [],
+      workVerification: workVerificationView(booking),
       lifecycle: {
         confirmedAt: booking.confirmedAt?.toISOString() ?? null,
         enRouteAt: booking.enRouteAt?.toISOString() ?? null,

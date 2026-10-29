@@ -333,9 +333,20 @@ export class TaskerProfileService {
     await this.requireTasker(taskerId);
     const slot = await this.prisma.userAvailability.findFirst({
       where: { id: slotId, userId: taskerId },
+      include: {
+        bookings: {
+          where: { status: { not: 'cancelled' } },
+          select: { id: true },
+          take: 1,
+        },
+      },
     });
     if (!slot) throw new NotFoundException('Availability slot not found');
-    if (slot.isBooked) {
+    // Same derivation as availabilityView(): a regular slot is booked only while it still
+    // has an active (non-cancelled) booking, not whatever the stored column says — otherwise
+    // a slot the GET endpoint already reports as "Open" still rejects deletion here.
+    const isBooked = slot.isCustom ? slot.isBooked : slot.bookings.length > 0;
+    if (isBooked) {
       throw new ConflictException('This slot has a booking and cannot be removed');
     }
     const referenced = await this.prisma.booking.findFirst({ where: { availabilityId: slotId } });
