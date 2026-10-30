@@ -923,10 +923,20 @@ export class AdminFinanceService {
       currency: row.currency,
       status: row.status,
       tasker: {
-        ...row.tasker,
-        ...('rating' in row.tasker ? { rating: money(row.tasker.rating) } : {}),
+        id: row.tasker.id,
+        firstName: row.tasker.firstName,
+        lastName: row.tasker.lastName,
+        email: row.tasker.email,
+        ...('rating' in row.tasker && row.tasker.rating !== undefined
+          ? { rating: money(row.tasker.rating) }
+          : {}),
       },
-      payoutMethod: row.payoutMethod,
+      payoutMethod: {
+        id: row.payoutMethod.id,
+        type: row.payoutMethod.type,
+        label: row.payoutMethod.label,
+        maskedIdentifier: row.payoutMethod.maskedIdentifier,
+      },
       providerReference: row.providerReference,
       failureReason: row.failureReason,
       adminNote: row.adminNote,
