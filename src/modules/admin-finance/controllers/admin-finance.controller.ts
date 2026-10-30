@@ -172,6 +172,18 @@ export class AdminFinanceController {
     return this.finance.payoutAction(actor, id, dto);
   }
 
+  @Get('payouts/:id/reveal-destination')
+  @Permissions('finance.manage')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'Payout request ID.' })
+  @ApiOperation({
+    summary: 'Decrypt and reveal the real payout destination for one approved payout request',
+    description:
+      'Only available once a payout request is approved (status=processing), immediately before the admin manually executes the transfer and calls mark_paid. Decrypts the Tasker payout method\'s stored destination (IBAN, phone, or PayPal email). Every call is written to the admin audit log since this exposes sensitive financial PII.',
+  })
+  revealPayoutDestination(@CurrentUser() actor: User, @Param('id') id: string) {
+    return this.finance.revealPayoutDestination(actor, id);
+  }
+
   @Post('earnings/:id/actions')
   @Permissions('finance.manage')
   @ApiParam({ name: 'id', required: true, type: String, description: 'Earning record ID.' })

@@ -11,6 +11,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import {
+  PAYOUT_METHOD_TYPE,
   WALLET_ENTRY_KIND,
   WITHDRAWAL_STATUS,
 } from '../../tasker-dashboard/tasker-dashboard.constants';
@@ -20,6 +21,7 @@ import { AdminFinanceQueryDto, AdminPayoutActionDto } from '../dto/admin-finance
 import { TaskerFinanceService } from '../../tasker-finance/tasker-finance.service';
 import type { AdminEarningActionDto } from '../../tasker-finance/dto/tasker-finance.dto';
 import { ResponseLocalizationService } from '../../localization/response-localization.service';
+import { PayoutDataSecurityService } from '../../tasker-dashboard/services/payout-data-security.service';
 
 const money = (value: Prisma.Decimal | number | string | null | undefined): number =>
   Math.round((Number(value ?? 0) + Number.EPSILON) * 100) / 100;
@@ -38,6 +40,7 @@ export class AdminFinanceService {
     private readonly settings: PlatformSettingsService,
     private readonly taskerFinance: TaskerFinanceService,
     private readonly responseLocalization: ResponseLocalizationService,
+    private readonly payoutSecurity: PayoutDataSecurityService,
   ) {}
 
   async read(query: AdminFinanceQueryDto, locale: string) {
@@ -348,6 +351,54 @@ export class AdminFinanceService {
     });
 
     return this.serializePayout(result);
+  }
+
+  async revealPayoutDestination(actor: User, id: string) {
+    const withdrawal = await this.prisma.taskerWithdrawal.findUnique({
+      where: { id },
+      include: { payoutMethod: true },
+    });
+    if (!withdrawal) throw new NotFoundException('Payout request not found');
+    if (withdrawal.status !== WITHDRAWAL_STATUS.Processing) {
+      throw new ConflictException(
+        'Payout destination can only be revealed for an approved (processing) payout request',
+      );
+    }
+    const payload = this.payoutSecurity.decrypt(withdrawal.payoutMethod.encryptedPayload);
+    const type = withdrawal.payoutMethod.type;
+    const destination =
+      type === PAYOUT_METHOD_TYPE.BankTransfer
+        ? {
+            type,
+            accountHolderName: payload.accountHolderName,
+            bankName: payload.bankName,
+            iban: payload.iban,
+          }
+        : type === PAYOUT_METHOD_TYPE.OrangeMoney
+          ? {
+              type,
+              accountHolderName: payload.accountHolderName,
+              phoneCountryCode: payload.phoneCountryCode,
+              phoneNumber: payload.phoneNumber,
+            }
+          : type === PAYOUT_METHOD_TYPE.Paypal
+            ? {
+                type,
+                accountHolderName: payload.accountHolderName,
+                paypalEmail: payload.email,
+              }
+            : (() => {
+                throw new BadRequestException('Unsupported payout method type');
+              })();
+    await this.audit.record({
+      actorId: actor.id,
+      targetUserId: withdrawal.taskerId,
+      action: 'tasker_payout_destination_revealed',
+      entityType: 'tasker_withdrawal',
+      entityId: id,
+      metadata: { payoutMethodType: type, payoutMethodId: withdrawal.payoutMethodId },
+    });
+    return destination;
   }
 
   earningAction(actor: User, id: string, dto: AdminEarningActionDto) {

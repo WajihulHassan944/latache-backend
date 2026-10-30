@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PlatformSettingsModule } from '../platform-settings/platform-settings.module';
 import { TaskerFinanceModule } from '../tasker-finance/tasker-finance.module';
+import { PayoutDataSecurityService } from '../tasker-dashboard/services/payout-data-security.service';
 import { AdminFinanceController } from './controllers/admin-finance.controller';
 import { AdminFinanceService } from './services/admin-finance.service';
 
@@ -16,6 +17,6 @@ import { AdminFinanceService } from './services/admin-finance.service';
     TaskerFinanceModule,
   ],
   controllers: [AdminFinanceController],
-  providers: [AdminFinanceService],
+  providers: [AdminFinanceService, PayoutDataSecurityService],
 })
 export class AdminFinanceModule {}
