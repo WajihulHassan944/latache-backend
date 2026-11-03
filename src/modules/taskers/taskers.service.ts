@@ -189,6 +189,7 @@ export class TaskersService {
           userId,
           serviceId: serviceIdBySlug.get(service.slug) as number,
           hourlyRate: (canonicalRateBySlug.get(service.slug) as number).toFixed(2),
+          yearsOfExperience: dto.yearsOfExperience,
         })),
       });
 

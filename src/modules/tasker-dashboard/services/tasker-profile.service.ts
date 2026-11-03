@@ -574,6 +574,10 @@ export class TaskerProfileService {
       include: { service: { select: { slug: true } } },
       orderBy: { hourlyRate: 'asc' },
     });
+    const totalYearsOfExperience = selected.reduce(
+      (sum, row) => sum + (row.yearsOfExperience ?? 0),
+      0,
+    );
     await transaction.user.update({
       where: { id: taskerId },
       data: {
@@ -581,6 +585,7 @@ export class TaskerProfileService {
           .map((row) => row.service.slug)
           .filter((slug): slug is string => Boolean(slug)),
         hourlyRate: selected[0]?.hourlyRate ?? null,
+        yearsOfExperience: selected.length ? totalYearsOfExperience : null,
       },
     });
   }
