@@ -114,7 +114,6 @@ export class AdminTaskersService {
       rating: true,
       reviewsCount: true,
       completedTasks: true,
-      yearsOfExperience: true,
       serviceAreaCity: true,
       serviceAreaArea: true,
       submittedAt: true,
@@ -207,7 +206,6 @@ export class AdminTaskersService {
         bookingsCount: tasker._count.bookingsAsTasker,
         serviceCount: tasker._count.userServices,
         totalSettledEarnings: earnings.get(tasker.id) ?? 0,
-        yearsOfExperience: tasker.yearsOfExperience,
         location: [tasker.serviceAreaArea, tasker.serviceAreaCity].filter(Boolean).join(', '),
         submittedAt: tasker.submittedAt?.toISOString() ?? null,
         joinedAt: tasker.createdAt.toISOString(),
@@ -295,6 +293,7 @@ export class AdminTaskersService {
         name: item.service.name ?? '',
         slug: item.service.slug ?? '',
         hourlyRate: money(item.hourlyRate),
+        yearsOfExperience: item.yearsOfExperience,
       })),
       availability: tasker.availability.map((slot) => ({
         id: String(slot.id),
@@ -605,7 +604,6 @@ export class AdminTaskersService {
       lastRejectionReason: tasker.taskerProfile?.lastRejectionReason ?? null,
       lastRejectionReasonCode: tasker.taskerProfile?.lastRejectionReasonCode ?? null,
       completedTasks: tasker.completedTasks,
-      yearsOfExperience: tasker.yearsOfExperience,
       submittedAt: tasker.submittedAt?.toISOString() ?? null,
       joinedAt: tasker.createdAt.toISOString(),
     };

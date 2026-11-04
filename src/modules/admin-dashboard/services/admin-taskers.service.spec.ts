@@ -20,7 +20,6 @@ describe('AdminTaskersService', () => {
     rating: 4.5,
     reviewsCount: 10,
     completedTasks: 20,
-    yearsOfExperience: 2,
     serviceAreaCity: 'Casablanca',
     serviceAreaArea: 'Maarif',
     submittedAt: null,
