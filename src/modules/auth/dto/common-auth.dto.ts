@@ -89,11 +89,12 @@ export class BaseRegistrationDto {
   })
   password!: string;
 
-  @ApiProperty({ example: '10001', minLength: 3, maxLength: 16 })
+  @ApiPropertyOptional({ example: '10001', minLength: 3, maxLength: 16 })
+  @IsOptional()
   @Transform(trim)
   @IsString()
   @Length(3, 16)
-  zipCode!: string;
+  zipCode?: string;
 
   @ApiProperty({
     example: true,
