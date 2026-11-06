@@ -13,6 +13,25 @@ Latache v3.18.0 distinguishes account lifecycle state from deletion. Suspension,
 
 Deletion is intentionally blocked with `409 ACCOUNT_PURGE_BLOCKED` when the account owns booking, payment, wallet, earning, receivable, withdrawal, dispute, review, conversation, or other protected history. Those records are shared with another user or are provider/ledger-backed sources of truth; destroying them would violate financial reconciliation and platform audit guarantees. The response lists each blocker and its real count. Once blockers do not exist, PostgreSQL locks and rechecks the target, writes the audit event, queues assets, deletes dependent rows, and deletes the user in one transaction.
 
+### Purge mode (v3.73.0) — delete the account and all of its data
+
+Send `"mode": "purge"` in the same `DELETE` body to remove the Customer/Tasker **together with** everything that would otherwise block deletion:
+
+```json
+{ "confirmation": "PERMANENT_DELETE", "mode": "purge", "reason": "Test account cleanup requested by ops" }
+```
+
+- Permission: `customers.purge` / `taskers.purge` **in addition to** `customers.delete` / `taskers.delete`. Super Admin always passes. Missing → `403 PURGE_PERMISSION_REQUIRED`.
+- Removes, for the role being deleted: every booking where the user is that party, plus each booking's payments, customer/tasker wallet ledger rows, platform (cash commission) ledger rows, earnings, receivables, disputes (incl. cash refunds), reviews, work proofs, chargebacks, calls, conversations/messages; the role's referrals and referral rewards; withdrawals, payout methods, wallets, platform account/settlements, subscriptions, custom-time requests, favourites, addresses, Elite history and disciplinary actions.
+- **Counterparties are kept consistent:** when a deleted ledger row belonged to someone else (e.g. the Tasker's earning on the deleted Customer's booking), its delta is reversed on that person's wallet/platform account, so each remaining balance still equals the sum of its remaining ledger. Rebalanced user IDs are returned in `data.purged.counterpartiesRebalanced`.
+- Referrals owned by other people that merely qualified through a deleted booking are kept; only their `qualifyingBookingId` is cleared.
+- Dual-role users: purging one role removes only that role's data and keeps the other role (`identityRetained: true`).
+- Everything runs in one transaction (120 s timeout). Cloudinary assets from proofs, dispute evidence and chat attachments are queued in the same outbox.
+- No Stripe calls are made — uncaptured authorizations simply expire on Stripe's side.
+- Response `data` includes `mode: "purge"` and `purged` counts; the audit event stores the same counts.
+
+Default `mode` is `safe` (previous behaviour, unchanged).
+
 ## Other delete controls
 
 - Custom RBAC roles are permanently deleted when unassigned.

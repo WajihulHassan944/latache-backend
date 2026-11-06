@@ -1,4 +1,5 @@
 import {
+  GoneException,
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -893,136 +894,19 @@ export class BookingsService {
     };
   }
 
-  /**
-   * Customer: the payer adds minutes directly (authorization ceiling only, no charge now).
-   * Tasker: creates a pending request; nothing is added until the customer approves it
-   * via respondExtensionRequest(). One pending request per booking at a time.
-   */
-  async extend(user: User, bookingId: number, dto: ExtendBookingDto) {
-    if (![UserRole.Customer, UserRole.Tasker].includes(user.role as UserRole)) {
-      throw new ForbiddenException('Only booking participants can extend task time');
-    }
-    const result = await this.prisma.$transaction(async (transaction) => {
-      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
-      const booking = await transaction.booking.findUnique({ where: { id: bookingId } });
-      if (!booking) throw new NotFoundException('Booking not found');
-
-      const isCustomer = user.role === UserRole.Customer && booking.customerId === user.id;
-      const isTasker = user.role === UserRole.Tasker && booking.taskerId === user.id;
-      if (!isCustomer && !isTasker) throw new NotFoundException('Booking not found');
-      if (booking.status !== 'in_progress') {
-        throw new ConflictException(
-          'Additional time can be added only while the task is in progress',
-        );
-      }
-
-      if (isTasker) {
-        const pending = await transaction.bookingExtensionRequest.findFirst({
-          where: { bookingId, status: 'pending' },
-        });
-        if (pending) {
-          throw new ConflictException({
-            code: 'EXTENSION_REQUEST_PENDING',
-            message: 'An extra-time request is already waiting for the customer',
-          });
-        }
-        const request = await transaction.bookingExtensionRequest.create({
-          data: {
-            bookingId,
-            requestedById: user.id,
-            requestedByRole: 'tasker',
-            minutes: dto.minutes,
-            note: dto.note ?? null,
-          },
-        });
-        await this.notifications.create(
-          booking.customerId,
-          {
-            category: 'tasks',
-            type: 'task_time_extension_requested',
-            title: 'Extra time requested',
-            body: `Your Tasker is asking for ${dto.minutes} more minutes. Approve or decline the request.`,
-            entityType: 'booking',
-            entityId: String(bookingId),
-            metadata: { extensionRequestId: request.id, requestedMinutes: dto.minutes },
-          },
-          transaction,
-        );
-        await this.audit.record(
-          {
-            actorId: user.id,
-            targetUserId: booking.customerId,
-            action: 'booking_extension_requested',
-            entityType: 'booking',
-            entityId: bookingId,
-            metadata: { extensionRequestId: request.id, requestedMinutes: dto.minutes },
-          },
-          transaction,
-        );
-        await this.enqueueBookingUpdate(bookingId, booking.status, 'extension_requested', transaction, {
-          extensionRequestId: request.id,
-          requestedMinutes: dto.minutes,
-        });
-        return { booking, request };
-      }
-
-      const updated = await transaction.booking.update({
-        where: { id: bookingId },
-        data: { extensionMinutes: { increment: dto.minutes } },
-      });
-      const estimate = await this.payments.refreshPaymentEstimate(bookingId, transaction);
-      await this.notifications.create(
-        booking.taskerId,
-        {
-          category: 'tasks',
-          type: 'task_time_extended',
-          title: 'Task time extended',
-          body: `${dto.minutes} additional minutes were added by the Customer.`,
-          entityType: 'booking',
-          entityId: String(bookingId),
-          metadata: {
-            addedByRole: user.role,
-            addedMinutes: dto.minutes,
-            extensionMinutes: updated.extensionMinutes,
-          },
-        },
-        transaction,
-      );
-      await this.audit.record(
-        {
-          actorId: user.id,
-          targetUserId: booking.taskerId,
-          action: 'booking_duration_extended',
-          entityType: 'booking',
-          entityId: bookingId,
-          metadata: {
-            actorRole: user.role,
-            addedMinutes: dto.minutes,
-            extensionMinutes: updated.extensionMinutes,
-          },
-        },
-        transaction,
-      );
-      await this.enqueueBookingUpdate(bookingId, booking.status, 'duration_extended', transaction, {
-        extensionMinutes: updated.extensionMinutes,
-        addedByRole: user.role,
-        ...(estimate ? { estimateTotal: estimate.total } : {}),
-      });
-      return { booking: updated, request: null, estimate };
+  /** Mid-job time extension is disabled for both roles (410 MID_JOB_EXTENSION_DISABLED). */
+  extend(_user: User, _bookingId: number, _dto: ExtendBookingDto): never {
+    // Product decision (2026-11-06): no mid-job extra-time flow. The Tasker simply keeps the
+    // timer running past the booked time; the overtime is visible live (GET :id/timer
+    // extraTimeMinutes) and the customer approves it once, at the end, through the mandatory
+    // duration review (POST :id/duration-review/approve). Never turn this back into a
+    // Tasker self-extend: that would raise the authorized ceiling and skip customer consent.
+    throw new GoneException({
+      code: 'MID_JOB_EXTENSION_DISABLED',
+      message:
+        'Adding time during the task is no longer supported. Keep working past the booked time; ' +
+        'the customer approves the extra time at the end of the job.',
     });
-    return {
-      bookingId: String(bookingId),
-      /** added = minutes applied now; pending_customer_approval = nothing applied yet. */
-      outcome: result.request ? ('pending_customer_approval' as const) : ('added' as const),
-      estimatedDurationMinutes: result.booking.estimatedDurationMinutes,
-      extensionMinutes: result.booking.extensionMinutes,
-      authorizedDurationMinutes: result.booking.estimatedDurationMinutes + result.booking.extensionMinutes,
-      extensionRequest: result.request ? this.serializeExtensionRequest(result.request) : null,
-      /** Updated payment.estimate after added minutes; unchanged (stored) for a pending request. */
-      estimate: 'estimate' in result
-        ? result.estimate
-        : (result.booking.paymentEstimate as unknown as PaymentEstimate | null),
-    };
   }
 
   /** Customer approves (minutes are added) or declines a Tasker's pending extra-time request. */
@@ -2054,11 +1938,14 @@ export class BookingsService {
     });
     if (!booking) throw new NotFoundException('Booking not found');
     const session = booking.workSession;
+    const authorizedDurationMinutes = booking.estimatedDurationMinutes + booking.extensionMinutes;
     if (!session)
       return {
         bookingId: String(bookingId),
         status: 'not_started',
         elapsedSeconds: 0,
+        authorizedDurationMinutes,
+        extraTimeMinutes: 0,
         startedAt: null,
         pausedAt: null,
         stoppedAt: null,
@@ -2078,7 +1965,9 @@ export class BookingsService {
       pausedAt: session.pausedAt?.toISOString() ?? null,
       stoppedAt: session.stoppedAt?.toISOString() ?? null,
       notes: session.notes ?? '',
-      authorizedDurationMinutes: booking.estimatedDurationMinutes + booking.extensionMinutes,
+      authorizedDurationMinutes,
+      /** Billable minutes beyond the booked time so far (same ceil rounding as the final review). */
+      extraTimeMinutes: Math.max(0, Math.ceil(elapsedSeconds / 60) - authorizedDurationMinutes),
     };
   }
 

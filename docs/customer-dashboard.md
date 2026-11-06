@@ -22,7 +22,7 @@ Version 3.6 maps the supplied customer dashboard/booking designs to the existing
 | Reschedule/cancel                   | `/api/bookings/:bookingId/reschedule`, `/cancel`                                      |
 | Track Tasker                        | `GET /api/bookings/:bookingId/navigation`                                             |
 | Task timer                          | `GET /api/bookings/:bookingId/timer`                                                  |
-| Extend time                         | `POST /api/bookings/:bookingId/extend`                                                |
+| Extend time (disabled, 410)         | `POST /api/bookings/:bookingId/extend` — extra time is approved at end of job         |
 | Complaint/dispute                   | `POST /api/bookings/:bookingId/disputes`                                              |
 | Chat                                | `/api/conversations/*`                                                                |
 | Notifications                       | `/api/notifications/*`                                                                |

@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, GoneException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { UserRole } from '../../common/enums/user-role.enum';
 import type { PrismaService } from '../../database/prisma.service';
@@ -78,42 +78,26 @@ const lastRealtimePayload = (realtime: RealtimeOutboxService) => {
 const user = (id: number, role: UserRole) => ({ id, role }) as unknown as User;
 
 describe('BookingsService extra task time', () => {
-  it('a Tasker request adds no minutes and notifies the customer', async () => {
+  it.each([
+    ['Tasker', TASKER_ID, UserRole.Tasker],
+    ['Customer', CUSTOMER_ID, UserRole.Customer],
+  ])('mid-job extend is disabled for the %s and touches nothing', (_label, id, role) => {
     const { service, tx, notifications, payments } = setup();
-    const result = await service.extend(user(TASKER_ID, UserRole.Tasker), 7, { minutes: 30 });
-
-    expect(result.outcome).toBe('pending_customer_approval');
-    expect(result.extensionMinutes).toBe(0);
-    expect(result.extensionRequest).toMatchObject({ minutes: 30, status: 'pending' });
+    let thrown: unknown;
+    try {
+      service.extend(user(id, role), 7, { minutes: 30 });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(GoneException);
+    expect((thrown as GoneException).getResponse()).toMatchObject({ code: 'MID_JOB_EXTENSION_DISABLED' });
     expect(tx.booking.update).not.toHaveBeenCalled();
-    expect(payments.refreshPaymentEstimate).not.toHaveBeenCalled();
-    expect(notifications.create).toHaveBeenCalledWith(
-      CUSTOMER_ID,
-      expect.objectContaining({ type: 'task_time_extension_requested' }),
-      tx,
-    );
-  });
-
-  it('refuses a second Tasker request while one is pending', async () => {
-    const { service } = setup({ existingPending: pendingRequest });
-    await expect(
-      service.extend(user(TASKER_ID, UserRole.Tasker), 7, { minutes: 15 }),
-    ).rejects.toBeInstanceOf(ConflictException);
-  });
-
-  it('a customer extension is applied immediately and refreshes the estimate', async () => {
-    const { service, tx, payments, realtime } = setup();
-    const result = await service.extend(user(CUSTOMER_ID, UserRole.Customer), 7, { minutes: 30 });
-
-    expect(result.outcome).toBe('added');
-    expect(result.extensionMinutes).toBe(30);
     expect(tx.bookingExtensionRequest.create).not.toHaveBeenCalled();
-    expect(payments.refreshPaymentEstimate).toHaveBeenCalledWith(7, tx);
-    expect(result.estimate).toEqual({ total: 129.38 });
-    expect(lastRealtimePayload(realtime)).toMatchObject({ reason: 'duration_extended', estimateTotal: 129.38 });
+    expect(payments.refreshPaymentEstimate).not.toHaveBeenCalled();
+    expect(notifications.create).not.toHaveBeenCalled();
   });
 
-  it('customer approval adds the requested minutes and refreshes the estimate', async () => {
+  it('legacy: customer approval of a pre-existing request adds the requested minutes and refreshes the estimate', async () => {
     const { service, tx, payments, realtime } = setup({ existingPending: pendingRequest });
     await service.respondExtensionRequest(CUSTOMER_ID, 7, 'ext_1', { approve: true }, 'en');
 

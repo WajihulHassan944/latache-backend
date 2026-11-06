@@ -81,6 +81,12 @@ export const PERMISSION_CATALOG = [
           'Irreversibly delete eligible customer accounts and managed assets. Protected financial and booking history blocks deletion.',
       },
       {
+        key: 'customers.purge',
+        label: 'Purge customers with all data',
+        description:
+          'Irreversibly delete a customer together with ALL of their bookings, payments, wallet history, disputes, reviews, chats and referrals (DELETE with mode=purge). Also requires customers.delete.',
+      },
+      {
         key: 'customers.read_sensitive',
         label: 'View customer IP/location signals',
         description:
@@ -107,6 +113,12 @@ export const PERMISSION_CATALOG = [
         label: 'Permanently delete taskers',
         description:
           'Irreversibly delete eligible Tasker accounts and managed assets. Protected financial and booking history blocks deletion.',
+      },
+      {
+        key: 'taskers.purge',
+        label: 'Purge taskers with all data',
+        description:
+          'Irreversibly delete a Tasker together with ALL of their bookings, earnings, wallet/platform ledgers, withdrawals, disputes, reviews, chats and referrals (DELETE with mode=purge). Also requires taskers.delete.',
       },
       {
         key: 'taskers.read_sensitive',

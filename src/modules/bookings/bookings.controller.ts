@@ -242,12 +242,12 @@ export class BookingsController {
   @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @Roles(UserRole.Customer, UserRole.Tasker)
   @ApiOperation({
-    summary: 'Customer adds task time, or Tasker requests extra time',
+    summary: 'DISABLED (410): mid-job time extension is no longer supported',
+    deprecated: true,
     description:
-      'Only while in_progress. Customer: minutes are added immediately (outcome=added). Tasker: creates a ' +
-      'pending request (outcome=pending_customer_approval) and adds nothing until the customer approves it via ' +
-      'POST :bookingId/extension-requests/:requestId/respond. One pending request at a time (409 ' +
-      'EXTENSION_REQUEST_PENDING). This raises the billing authorization ceiling; it does not charge immediately.',
+      'Always returns 410 MID_JOB_EXTENSION_DISABLED for both roles. Extra time is handled at the end of the job: ' +
+      'the Tasker keeps the timer running past the booked time, GET :bookingId/timer shows extraTimeMinutes live, ' +
+      'and the customer approves the overtime via POST :bookingId/duration-review/approve (or disputes it).',
   })
   extend(
     @CurrentUser() user: User,
@@ -262,7 +262,8 @@ export class BookingsController {
   @ApiParam({ name: 'requestId', required: true, type: String, description: 'Extension request ID.' })
   @Roles(UserRole.Customer)
   @ApiOperation({
-    summary: 'Customer approves or declines a Tasker extra-time request',
+    summary: 'LEGACY: customer approves or declines a pre-existing Tasker extra-time request',
+    deprecated: true,
     description:
       'approve=true adds the requested minutes to timing.extensionMinutes; approve=false leaves timing unchanged. ' +
       'Returns the updated booking.',
@@ -286,7 +287,7 @@ export class BookingsController {
   @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiParam({ name: 'requestId', required: true, type: String, description: 'Extension request ID.' })
   @Roles(UserRole.Tasker)
-  @ApiOperation({ summary: 'Tasker withdraws their pending extra-time request' })
+  @ApiOperation({ summary: 'LEGACY: Tasker withdraws a pre-existing pending extra-time request', deprecated: true })
   cancelExtensionRequest(
     @CurrentUser() user: User,
     @Param() params: ExtensionRequestParamDto,

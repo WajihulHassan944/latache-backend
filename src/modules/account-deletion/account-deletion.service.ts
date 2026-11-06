@@ -10,6 +10,10 @@ import { UserRole } from '../../common/enums/user-role.enum';
 import { AdminAuditService } from '../admin-audit/admin-audit.service';
 import { ObjectStorageDeletionService } from './object-storage-deletion.service';
 import { AppCacheService, CacheNamespace } from '../../infrastructure/redis/app-cache.service';
+import { purgeMarketplaceRoleData, type PurgeSummary } from './account-purge';
+import type { PermanentDeleteMode } from './dto/permanent-delete.dto';
+
+const PURGE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 120_000 } as const;
 
 export interface DeletionBlocker {
   resource: string;
@@ -26,7 +30,15 @@ export class AccountDeletionService {
     private readonly cache: AppCacheService,
   ) {}
 
-  async permanentlyDelete(actor: User, userId: number, expectedRole: UserRole, reason: string) {
+  async permanentlyDelete(
+    actor: User,
+    userId: number,
+    expectedRole: UserRole,
+    reason: string,
+    mode: PermanentDeleteMode = 'safe',
+  ) {
+    const purge = mode === 'purge';
+    if (purge) this.assertCanPurge(actor, expectedRole);
     if (actor.id === userId) {
       throw new ForbiddenException({
         code: 'SELF_DELETION_FORBIDDEN',
@@ -53,7 +65,7 @@ export class AccountDeletionService {
       });
     }
 
-    const blockers = await this.blockers(userId, expectedRole);
+    const blockers = purge ? [] : await this.blockers(userId, expectedRole);
     if (blockers.length > 0) {
       throw new ConflictException({
         code: 'ACCOUNT_PURGE_BLOCKED',
@@ -70,7 +82,7 @@ export class AccountDeletionService {
       (expectedRole === UserRole.Customer || expectedRole === UserRole.Tasker) &&
       marketplaceRoles.length > 1
     ) {
-      return this.removeMarketplaceRole(actor, user, expectedRole, reason);
+      return this.removeMarketplaceRole(actor, user, expectedRole, reason, purge);
     }
 
     const assets = this.storage.extractManagedAssets(
@@ -86,6 +98,13 @@ export class AccountDeletionService {
       `);
       if (!locked[0]?.roles?.includes(expectedRole)) {
         throw new NotFoundException(`${this.roleLabel(expectedRole)} not found`);
+      }
+      let purged: PurgeSummary | null = null;
+      let purgedAssets: typeof assets = [];
+      if (purge && (expectedRole === UserRole.Customer || expectedRole === UserRole.Tasker)) {
+        const result = await purgeMarketplaceRoleData(tx, userId, expectedRole);
+        purged = result.summary;
+        purgedAssets = this.storage.extractManagedAssets(...result.assetSources);
       }
       const rechecked = await this.blockers(userId, expectedRole, tx);
       if (rechecked.length > 0) {
@@ -106,13 +125,21 @@ export class AccountDeletionService {
           reason,
           metadata: {
             deletedRole: expectedRole,
-            assetCount: assets.length,
+            mode,
+            assetCount: assets.length + purgedAssets.length,
             irreversible: true,
+            ...(purged ? { purged: { ...purged } } : {}),
           },
         },
         tx,
       );
-      const taskCount = await this.storage.enqueue(tx, assets, entityType, userId, actor.id);
+      const taskCount = await this.storage.enqueue(
+        tx,
+        [...assets, ...purgedAssets],
+        entityType,
+        userId,
+        actor.id,
+      );
 
       await tx.supportTicketMessage.deleteMany({ where: { senderId: userId } });
       await tx.supportTicket.deleteMany({ where: { userId } });
@@ -125,13 +152,13 @@ export class AccountDeletionService {
       await tx.customerWallet.deleteMany({ where: { customerId: userId } });
       await tx.realtimeOutboxEvent.deleteMany({ where: { room: `user:${userId}` } });
       await tx.user.delete({ where: { id: userId } });
-      return taskCount;
-    });
+      return { taskCount, purged };
+    }, purge ? PURGE_TRANSACTION_OPTIONS : undefined);
 
-    const assetCleanup = await this.storage.attemptImmediate(entityType, userId, queued);
+    const assetCleanup = await this.storage.attemptImmediate(entityType, userId, queued.taskCount);
     await Promise.all([
       this.cache.invalidate(CacheNamespace.AdminAnalytics),
-      ...(expectedRole === UserRole.Tasker
+      ...(expectedRole === UserRole.Tasker || purge
         ? [this.cache.invalidate(CacheNamespace.EliteProgram)]
         : []),
     ]);
@@ -141,10 +168,14 @@ export class AccountDeletionService {
         id: String(userId),
         role: expectedRole,
         deleted: true,
+        mode,
         irreversible: true,
         assetCleanup,
+        purged: queued.purged,
       },
-      message: `${this.roleLabel(expectedRole)} permanently deleted.`,
+      message: purge
+        ? `${this.roleLabel(expectedRole)} and all related data permanently purged.`
+        : `${this.roleLabel(expectedRole)} permanently deleted.`,
     };
   }
 
@@ -159,6 +190,7 @@ export class AccountDeletionService {
     },
     role: UserRole.Customer | UserRole.Tasker,
     reason: string,
+    purge = false,
   ) {
     const roleSupportTickets = user.supportTickets.filter((ticket) => ticket.requesterRole === role);
     const assets = this.storage.extractManagedAssets(
@@ -168,7 +200,8 @@ export class AccountDeletionService {
       roleSupportTickets,
     );
     const entityType = role;
-    const blockers = await this.blockers(user.id, role);
+    const mode: PermanentDeleteMode = purge ? 'purge' : 'safe';
+    const blockers = purge ? [] : await this.blockers(user.id, role);
     if (blockers.length > 0) {
       throw new ConflictException({
         code: 'ACCOUNT_ROLE_PURGE_BLOCKED',
@@ -184,6 +217,13 @@ export class AccountDeletionService {
       if (!locked?.roles?.includes(role)) throw new NotFoundException(`${this.roleLabel(role)} not found`);
       const remainingRoles = locked.roles.filter((value) => value !== role);
       if (remainingRoles.length === 0) throw new ConflictException('Cannot remove the final identity role through profile removal');
+      let purged: PurgeSummary | null = null;
+      let purgedAssets: typeof assets = [];
+      if (purge) {
+        const result = await purgeMarketplaceRoleData(tx, user.id, role);
+        purged = result.summary;
+        purgedAssets = this.storage.extractManagedAssets(...result.assetSources);
+      }
       const rechecked = await this.blockers(user.id, role, tx);
       if (rechecked.length > 0) {
         throw new ConflictException({
@@ -201,11 +241,24 @@ export class AccountDeletionService {
           entityType,
           entityId: user.id,
           reason,
-          metadata: { deletedRole: role, remainingRoles, assetCount: assets.length, irreversible: true },
+          metadata: {
+            deletedRole: role,
+            mode,
+            remainingRoles,
+            assetCount: assets.length + purgedAssets.length,
+            irreversible: true,
+            ...(purged ? { purged: { ...purged } } : {}),
+          },
         },
         tx,
       );
-      const taskCount = await this.storage.enqueue(tx, assets, entityType, user.id, actor.id);
+      const taskCount = await this.storage.enqueue(
+        tx,
+        [...assets, ...purgedAssets],
+        entityType,
+        user.id,
+        actor.id,
+      );
 
       await tx.refreshToken.updateMany({
         where: { userId: user.id, activeRole: role, revokedAt: null },
@@ -282,17 +335,26 @@ export class AccountDeletionService {
           },
         });
       }
-      return taskCount;
-    });
+      return { taskCount, purged };
+    }, purge ? PURGE_TRANSACTION_OPTIONS : undefined);
 
-    const assetCleanup = await this.storage.attemptImmediate(entityType, user.id, queued);
+    const assetCleanup = await this.storage.attemptImmediate(entityType, user.id, queued.taskCount);
     await Promise.all([
       this.cache.invalidate(CacheNamespace.AdminAnalytics),
-      ...(role === UserRole.Tasker ? [this.cache.invalidate(CacheNamespace.EliteProgram)] : []),
+      ...(role === UserRole.Tasker || purge ? [this.cache.invalidate(CacheNamespace.EliteProgram)] : []),
     ]);
     return {
       success: true,
-      data: { id: String(user.id), role, deleted: true, identityRetained: true, irreversible: true, assetCleanup },
+      data: {
+        id: String(user.id),
+        role,
+        deleted: true,
+        mode,
+        identityRetained: true,
+        irreversible: true,
+        assetCleanup,
+        purged: queued.purged,
+      },
       message: `${this.roleLabel(role)} profile permanently deleted; the other role remains active.`,
     };
   }
@@ -435,6 +497,24 @@ export class AccountDeletionService {
     return values
       .filter(([, count]) => count > 0)
       .map(([resource, count, blockerReason]) => ({ resource, count, reason: blockerReason }));
+  }
+
+  /** Purge needs `<role>s.purge` on top of `<role>s.delete`; Super Admin always passes. */
+  private assertCanPurge(actor: User, role: UserRole): void {
+    if (role !== UserRole.Customer && role !== UserRole.Tasker) {
+      throw new ForbiddenException({
+        code: 'PURGE_NOT_SUPPORTED',
+        message: 'Purge mode is only available for Customer and Tasker accounts.',
+      });
+    }
+    if (actor.role === UserRole.SuperAdmin) return;
+    const required = role === UserRole.Customer ? 'customers.purge' : 'taskers.purge';
+    if (!actor.permissions?.includes(required)) {
+      throw new ForbiddenException({
+        code: 'PURGE_PERMISSION_REQUIRED',
+        message: `${required} is required to purge an account together with all of its data.`,
+      });
+    }
   }
 
   private roleLabel(role: UserRole): string {

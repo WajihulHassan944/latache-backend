@@ -1,7 +1,24 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsString, Length } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsIn, IsOptional, IsString, Length } from 'class-validator';
+
+export const PERMANENT_DELETE_MODES = ['safe', 'purge'] as const;
+export type PermanentDeleteMode = (typeof PERMANENT_DELETE_MODES)[number];
 
 export class PermanentDeleteDto {
+  @ApiPropertyOptional({
+    enum: PERMANENT_DELETE_MODES,
+    default: 'safe',
+    description:
+      'safe (default): refuse with 409 ACCOUNT_PURGE_BLOCKED when the account has bookings, payments, ' +
+      'ledgers, reviews, disputes, etc. purge: delete the account together with ALL of that data ' +
+      '(bookings, payments, wallet/ledger rows, earnings, disputes, reviews, chats, calls, referrals, ' +
+      'withdrawals). Counterparty wallet balances are rebalanced. Requires customers.purge / ' +
+      'taskers.purge (Super Admin always allowed).',
+  })
+  @IsOptional()
+  @IsIn(PERMANENT_DELETE_MODES)
+  mode?: PermanentDeleteMode;
+
   @ApiProperty({
     enum: ['PERMANENT_DELETE'],
     example: 'PERMANENT_DELETE',

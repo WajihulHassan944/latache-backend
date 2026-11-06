@@ -107,7 +107,7 @@ export class AdminTaskersController {
   @ApiOperation({
     summary: 'Permanently delete an eligible Tasker and managed assets',
     description:
-      'Irreversible hard deletion. Requires the exact confirmation phrase. Protected bookings, earnings, wallet/platform ledgers, cash receivables, withdrawals, disputes, reviews, or other immutable history block deletion. Cloudinary deletion is durable and retryable.',
+      'Irreversible hard deletion. Requires the exact confirmation phrase. mode=safe (default) is rejected with 409 ACCOUNT_PURGE_BLOCKED when the Tasker owns bookings, earnings, wallet/platform ledgers, cash receivables, withdrawals, disputes, reviews or other history. mode=purge (needs taskers.purge, Super Admin always allowed) deletes the Tasker AND all of that data in one transaction, rebalancing counterparty wallets; the response lists purged counts. Cloudinary deletion is durable and retryable.',
   })
   @ApiOkResponse({ description: 'Tasker and eligible dependent records permanently deleted.' })
   @ApiConflictResponse({
@@ -118,7 +118,7 @@ export class AdminTaskersController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: PermanentDeleteDto,
   ) {
-    return this.taskers.permanentlyDelete(actor, id, dto.reason);
+    return this.taskers.permanentlyDelete(actor, id, dto.reason, dto.mode ?? 'safe');
   }
 
   @Post(':id/verification')

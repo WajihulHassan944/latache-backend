@@ -1,3 +1,4 @@
+import type { PermanentDeleteMode } from '../../account-deletion/dto/permanent-delete.dto';
 import {
   BadRequestException,
   ConflictException,
@@ -73,8 +74,8 @@ export class AdminCustomersService {
     private readonly platformSettings: PlatformSettingsService,
   ) {}
 
-  permanentlyDelete(actor: User, customerId: number, reason: string) {
-    return this.accountDeletion.permanentlyDelete(actor, customerId, UserRole.Customer, reason);
+  permanentlyDelete(actor: User, customerId: number, reason: string, mode: PermanentDeleteMode = 'safe') {
+    return this.accountDeletion.permanentlyDelete(actor, customerId, UserRole.Customer, reason, mode);
   }
 
   async list(actor: User, query: ListAdminCustomersDto) {

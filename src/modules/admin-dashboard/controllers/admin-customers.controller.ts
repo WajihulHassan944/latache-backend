@@ -89,7 +89,7 @@ export class AdminCustomersController {
   @ApiOperation({
     summary: 'Permanently delete an eligible customer and managed assets',
     description:
-      'Irreversible hard deletion. Requires the exact confirmation phrase. The operation is rejected when the customer owns protected bookings, provider payments, wallet ledger entries, disputes, reviews, or other immutable history. Cloudinary deletion is durable and retryable.',
+      'Irreversible hard deletion. Requires the exact confirmation phrase. mode=safe (default) is rejected with 409 ACCOUNT_PURGE_BLOCKED when the account owns bookings, payments, ledgers, disputes, reviews or other history. mode=purge (needs customers.purge, Super Admin always allowed) deletes the account AND all of that data in one transaction, rebalancing counterparty wallets; the response lists purged counts. Cloudinary deletion is durable and retryable.',
   })
   @ApiOkResponse({ description: 'Customer and eligible dependent records permanently deleted.' })
   @ApiConflictResponse({
@@ -100,7 +100,7 @@ export class AdminCustomersController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: PermanentDeleteDto,
   ) {
-    return this.customers.permanentlyDelete(actor, id, dto.reason);
+    return this.customers.permanentlyDelete(actor, id, dto.reason, dto.mode ?? 'safe');
   }
 
   @Get(':id/bookings')
