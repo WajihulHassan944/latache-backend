@@ -517,6 +517,18 @@ export class PlatformSettingsService {
     };
   }
 
+  async bookingNotStartedExpiryPolicy(transaction?: Prisma.TransactionClient): Promise<{
+    graceHours: number;
+  }> {
+    const section = await this.section<BookingRulesSettingsDto>('bookingRules', transaction);
+    return {
+      graceHours: Number(
+        section.notStartedExpiryHours ??
+          this.config.get<number>('bookingExpiration.notStartedHours', 24),
+      ),
+    };
+  }
+
   async bookingAwaitingPaymentPolicy(transaction?: Prisma.TransactionClient): Promise<{
     awaitingPaymentMinutes: number;
   }> {

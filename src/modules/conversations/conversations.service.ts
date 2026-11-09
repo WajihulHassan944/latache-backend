@@ -28,6 +28,7 @@ import {
 import type {
   BookingSummaryView,
   ConversationCapabilitiesView,
+  ConversationLastCallView,
   ConversationListView,
   ConversationMessageView,
   ConversationReadResultView,
@@ -46,6 +47,9 @@ const ACTIVE_BOOKING_STATUSES = [
   'in_progress',
   'awaiting_customer_approval',
 ];
+
+/** Only these count as a thread's "last call"; ringing/accepted are covered by the live call overlay. */
+const FINISHED_CALL_STATUSES = ['ended', 'missed', 'rejected', 'cancelled'] as const;
 
 const PERSON_SELECT = {
   id: true,
@@ -192,14 +196,20 @@ export class ConversationsService {
       this.prisma.conversation.count({ where }),
     ]);
 
-    const buckets = await this.loadBookingBuckets(conversations.map((row) => row.id));
+    const conversationIds = conversations.map((row) => row.id);
+    const [buckets, lastCalls] = await Promise.all([
+      this.loadBookingBuckets(conversationIds),
+      this.loadLastCalls(conversationIds, userId),
+    ]);
 
     return {
       page,
       limit,
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
-      items: conversations.map((row) => this.conversationView(row, userId, buckets.get(row.id))),
+      items: conversations.map((row) =>
+        this.conversationView(row, userId, buckets.get(row.id), lastCalls.get(row.id) ?? null),
+      ),
     };
   }
 
@@ -218,8 +228,16 @@ export class ConversationsService {
 
   async summaryByConversationId(user: User, conversationId: string): Promise<ConversationView> {
     const conversation = await this.requireParticipantConversation(user, conversationId, true);
-    const buckets = await this.loadBookingBuckets([conversationId]);
-    return this.conversationView(conversation, user.id, buckets.get(conversationId));
+    const [buckets, lastCalls] = await Promise.all([
+      this.loadBookingBuckets([conversationId]),
+      this.loadLastCalls([conversationId], user.id),
+    ]);
+    return this.conversationView(
+      conversation,
+      user.id,
+      buckets.get(conversationId),
+      lastCalls.get(conversationId) ?? null,
+    );
   }
 
   async summaryWithUser(user: User, otherUserId: number): Promise<ConversationView> {
@@ -234,8 +252,16 @@ export class ConversationsService {
       },
     });
     if (!conversation) return this.emptyConversationView(user, pair, otherUserId);
-    const buckets = await this.loadBookingBuckets([conversation.id]);
-    return this.conversationView(conversation, user.id, buckets.get(conversation.id));
+    const [buckets, lastCalls] = await Promise.all([
+      this.loadBookingBuckets([conversation.id]),
+      this.loadLastCalls([conversation.id], user.id),
+    ]);
+    return this.conversationView(
+      conversation,
+      user.id,
+      buckets.get(conversation.id),
+      lastCalls.get(conversation.id) ?? null,
+    );
   }
 
   async messagesByConversationId(
@@ -556,6 +582,7 @@ export class ConversationsService {
       otherParty: this.personSummary(other, user.id === pair.customerId ? 'tasker' : 'customer'),
       lastMessageAt: null,
       lastMessage: null,
+      lastCall: null,
       unreadCount: 0,
       activeBooking: null,
       bookingHistory: [],
@@ -600,6 +627,53 @@ export class ConversationsService {
     return map;
   }
 
+  /**
+   * The single most recent finished call per conversation, scoped to the conversation's bookings
+   * (the same scope lastMessage is resolved against). "Most recent" is by endedAt, falling back to
+   * createdAt for calls that never got an end timestamp.
+   */
+  private async loadLastCalls(
+    conversationIds: string[],
+    viewerId: number,
+  ): Promise<Map<string, ConversationLastCallView>> {
+    const map = new Map<string, ConversationLastCallView>();
+    if (conversationIds.length === 0) return map;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        conversationId: string;
+        type: string;
+        status: string;
+        initiatorId: number;
+        answeredAt: Date | null;
+        endedAt: Date | null;
+        createdAt: Date;
+      }>
+    >`
+      SELECT DISTINCT ON (b."conversationId")
+        b."conversationId", c."type", c."status", c."initiatorId",
+        c."answeredAt", c."endedAt", c."createdAt"
+      FROM "ConversationCalls" c
+      JOIN "Bookings" b ON b."id" = c."bookingId"
+      WHERE b."conversationId" IN (${Prisma.join(conversationIds)})
+        AND c."status" IN (${Prisma.join([...FINISHED_CALL_STATUSES])})
+      ORDER BY b."conversationId", COALESCE(c."endedAt", c."createdAt") DESC, c."id" DESC
+    `;
+    for (const row of rows) {
+      const at = row.endedAt ?? row.createdAt;
+      map.set(row.conversationId, {
+        type: row.type === 'video' ? 'video' : 'voice',
+        status: row.status as ConversationLastCallView['status'],
+        // Same formula as RealtimeCallsService.toView (0 when never answered).
+        durationSeconds: row.answeredAt
+          ? Math.max(0, Math.floor((at.getTime() - row.answeredAt.getTime()) / 1000))
+          : 0,
+        createdAt: at.toISOString(),
+        isInitiator: row.initiatorId === viewerId,
+      });
+    }
+    return map;
+  }
+
   private conversationView(
     conversation: {
       id: string;
@@ -623,6 +697,7 @@ export class ConversationsService {
     },
     userId: number,
     buckets: { activeBooking: BookingSummaryRow | null; bookingHistory: BookingSummaryRow[] } | undefined,
+    lastCall: ConversationLastCallView | null = null,
   ): ConversationView {
     return {
       id: conversation.id,
@@ -630,6 +705,7 @@ export class ConversationsService {
       lastMessageAt:
         conversation.lastMessageAt?.toISOString() ?? conversation.messages[0]?.createdAt.toISOString() ?? null,
       lastMessage: conversation.messages[0] ? this.message(conversation.messages[0], userId) : null,
+      lastCall,
       unreadCount: conversation._count.messages,
       activeBooking: buckets?.activeBooking ? this.bookingSummary(buckets.activeBooking) : null,
       bookingHistory: (buckets?.bookingHistory ?? []).map((row) => this.bookingSummary(row)),

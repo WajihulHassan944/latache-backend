@@ -234,6 +234,18 @@ export class BookingRulesSettingsDto {
   @Min(5)
   @Max(10080)
   awaitingPaymentExpiryMinutes?: number;
+  @ApiPropertyOptional({
+    example: 24,
+    default: 24,
+    description:
+      'Hours after the scheduled start an accepted, en-route, or arrived booking that was never started waits before it is automatically cancelled (no-show expiry) and any prepayment refunded.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  notStartedExpiryHours?: number;
 }
 
 export class ServiceRadiusSettingsDto {

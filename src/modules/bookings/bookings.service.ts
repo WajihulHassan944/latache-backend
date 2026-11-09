@@ -65,7 +65,11 @@ const BOOKED = ['pending', 'awaiting_payment', 'confirmed'];
 const ONGOING = ['en_route', 'arrived', 'in_progress', 'awaiting_customer_approval'];
 const HISTORY = ['completed', 'cancelled'];
 const ACTIVE = [...BOOKED, ...ONGOING];
-const CUSTOMER_REMINDER_ALLOWED_STATUSES = new Set(['pending', 'confirmed', 'en_route', 'arrived']);
+/** Accepted bookings that can still expire as "never started" (see expireDueNotStartedBookings). */
+const NOT_STARTED_EXPIRABLE_STATUSES = ['confirmed', 'en_route', 'arrived'] as const;
+/** A booking under an open dispute is left for dispute resolution, never auto-expired. */
+const ACTIVE_COMPLAINT_STATUSES = ['open', 'under_investigation', 'escalated'] as const;
+const CUSTOMER_REMINDER_ALLOWED_STATUSES =new Set(['pending', 'confirmed', 'en_route', 'arrived']);
 const CUSTOMER_REMINDER_COOLDOWN_MS = 15 * 60 * 1000;
 const money = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 const uniqueEvidenceByPublicId = <T extends { publicId: string }>(items: T[]): T[] => {
@@ -1253,6 +1257,160 @@ export class BookingsService {
       );
       await this.enqueueBookingUpdate(bookingId, 'cancelled', 'booking_expired_no_response', transaction);
       return true;
+    });
+  }
+
+  /**
+   * An accepted (confirmed / en_route / arrived) booking whose work never
+   * started must not stay "live" forever once its scheduled start is long gone
+   * (it would keep showing as the conversation's activeBooking and keep the
+   * chat/call affordances open). After the configured grace window past
+   * bookingDate + startTime (UTC, same convention as assertBookingRules) it is
+   * cancelled by the system with a distinct reason/audit action, the slot is
+   * released and any acceptance prepayment is refunded in full.
+   *
+   * Reuses status 'cancelled' (cancelledByRole 'system') rather than a new
+   * status so every existing history/stats/filter list keeps working; the
+   * no-show is distinguishable via cancellationReason and the
+   * booking_expired_not_started audit action.
+   */
+  async expireDueNotStartedBookings(): Promise<{ examined: number; expired: number }> {
+    const { graceHours } = await this.platformSettings.bookingNotStartedExpiryPolicy();
+    const batchSize = this.config.get<number>('bookingExpiration.batchSize', 100);
+    const cutoff = new Date(Date.now() - graceHours * 3_600_000);
+    // Coarse date prefilter in SQL; the exact start-time comparison is done per row.
+    const candidates = await this.prisma.booking.findMany({
+      where: {
+        status: { in: [...NOT_STARTED_EXPIRABLE_STATUSES] },
+        taskStartedAt: null,
+        workSession: { is: null },
+        complaints: { none: { status: { in: [...ACTIVE_COMPLAINT_STATUSES] } } },
+        bookingDate: { lte:new Date(`${dateOnlyFromDate(cutoff)}T00:00:00.000Z`) },
+      },
+      select: { id: true, bookingDate: true, startTime: true },
+      orderBy: [{ bookingDate: 'asc' }, { id: 'asc' }],
+      take: batchSize,
+    });
+
+    let expired = 0;
+    for (const candidate of candidates) {
+      if (this.scheduledStart(candidate.bookingDate, candidate.startTime) > cutoff) continue;
+      try {
+        const outcome = await this.expireOneNotStartedBooking(candidate.id, graceHours);
+        if (outcome === false) continue;
+        expired += 1;
+        if (outcome === 'card_refund_pending') await this.payments.processAcceptanceRefund(candidate.id);
+      } catch (error) {
+        this.logger.error(
+          `Failed to expire not-started booking ${candidate.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    return { examined: candidates.length, expired };
+  }
+
+  /** bookingDate (UTC date) + startTime; an unparseable time counts as end of that day. */
+  private scheduledStart(bookingDate: Date, startTime: string): Date {
+    const minutes = parseTimeToMinutes(startTime) ?? 24 * 60 - 1;
+    const start = new Date(`${dateOnlyFromDate(bookingDate)}T00:00:00.000Z`);
+    return new Date(start.getTime() + minutes * 60_000);
+  }
+
+  private async expireOneNotStartedBooking(
+    bookingId: number,
+    graceHours: number,
+  ): Promise<false | 'none' | 'wallet_refunded' | 'card_refund_pending'> {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Bookings" WHERE "id" = ${bookingId} FOR UPDATE`;
+      const booking = await transaction.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+          workSession: { select: { id: true } },
+          complaints: {
+            where: { status: { in: [...ACTIVE_COMPLAINT_STATUSES] } },
+            select: { id: true },
+          },
+        },
+      });
+      // Re-checked under the row lock: a Tasker starting work (or anyone
+      // cancelling/rescheduling) at the same instant always wins the race.
+      if (
+        !booking ||
+        !NOT_STARTED_EXPIRABLE_STATUSES.includes(booking.status as never) ||
+        booking.taskStartedAt ||
+        booking.workSession ||
+        booking.complaints.length > 0
+      ) {
+        return false;
+      }
+      const scheduledStart = this.scheduledStart(booking.bookingDate, booking.startTime);
+      if (scheduledStart.getTime() > Date.now() - graceHours * 3_600_000) return false;
+
+      const reason = 'Automatically expired: booking was never started';
+      await transaction.userAvailability.updateMany({
+        where: { id: booking.availabilityId },
+        data: { isBooked: false },
+      });
+      await this.referrals.releaseCustomerDiscountReservation(transaction, bookingId, reason);
+      await transaction.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          cancelledByRole: 'system',
+          cancellationReason: reason,
+        },
+      });
+      const refund = await this.payments.refundAcceptanceCaptureOnCancel(bookingId, reason, transaction);
+      const when = `${dateOnlyFromDate(booking.bookingDate)} at ${booking.startTime}`;
+      await this.notifications.create(
+        booking.customerId,
+        {
+          category: 'tasks',
+          type: 'booking_expired_not_started',
+          title: 'Booking expired',
+          body:
+            refund === 'none'
+              ? `Your booking for ${when} was never started, so it was automatically cancelled.`
+              : `Your booking for ${when} was never started, so it was automatically cancelled. Your payment is being refunded in full.`,
+          entityType: 'booking',
+          entityId: String(bookingId),
+          audienceRole: UserRole.Customer,
+        },
+        transaction,
+      );
+      await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'tasks',
+          type: 'booking_expired_not_started',
+          title: 'Booking expired',
+          body: `The booking for ${when} was never started, so it was automatically cancelled.`,
+          entityType: 'booking',
+          entityId: String(bookingId),
+          audienceRole: UserRole.Tasker,
+        },
+        transaction,
+      );
+      await this.audit.record(
+        {
+          targetUserId: booking.taskerId,
+          action: 'booking_expired_not_started',
+          entityType: 'booking',
+          entityId: bookingId,
+          reason: 'Scheduled start plus the configured grace window elapsed without the task being started',
+          metadata: {
+            customerId: booking.customerId,
+            previousStatus: booking.status,
+            scheduledStart: scheduledStart.toISOString(),
+            graceHours,
+            refund,
+          },
+        },
+        transaction,
+      );
+      await this.enqueueBookingUpdate(bookingId, 'cancelled', 'booking_expired_not_started', transaction);
+      return refund;
     });
   }
 

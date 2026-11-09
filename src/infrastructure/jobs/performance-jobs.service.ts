@@ -27,6 +27,7 @@ const JOB_NAMES = {
   AutoCompleteBookings: 'bookings.auto-complete',
   ExpirePendingBookings: 'bookings.expire-pending',
   ExpireAwaitingPaymentBookings: 'bookings.expire-awaiting-payment',
+  ExpireNotStartedBookings: 'bookings.expire-not-started',
   ProcessAcceptanceRefunds: 'payments.process-acceptance-refunds',
   MaintainReferrals: 'referrals.maintain',
   MaintainDisputes: 'disputes.maintain',
@@ -263,6 +264,11 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { name: JOB_NAMES.ExpireAwaitingPaymentBookings, data: {} },
       ),
       queue.upsertJobScheduler(
+        'expire-not-started-bookings-v1',
+        { every: this.config.get<number>('bookingExpiration.notStartedSweepIntervalMs', 300_000) },
+        { name: JOB_NAMES.ExpireNotStartedBookings, data: {} },
+      ),
+      queue.upsertJobScheduler(
         'process-acceptance-refunds-v1',
         { every: this.config.get<number>('payments.acceptanceRefundSweepMs', 120_000) },
         { name: JOB_NAMES.ProcessAcceptanceRefunds, data: {} },
@@ -344,6 +350,8 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return this.payments.processPendingAcceptanceRefunds();
       case JOB_NAMES.ExpireAwaitingPaymentBookings:
         return this.bookings.expireDueAwaitingPaymentBookings();
+      case JOB_NAMES.ExpireNotStartedBookings:
+        return this.bookings.expireDueNotStartedBookings();
       case JOB_NAMES.ExpirePendingBookings:
         return this.bookings.expireDuePendingBookings();
       case JOB_NAMES.MaintainReferrals:

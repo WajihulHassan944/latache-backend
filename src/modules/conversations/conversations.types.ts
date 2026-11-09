@@ -95,9 +95,21 @@ export interface ConversationView {
   otherParty: PersonSummaryView;
   lastMessageAt: string | null;
   lastMessage: ConversationMessageView | null;
+  /** Most recent finished call across this conversation's bookings (never a ringing/accepted one). */
+  lastCall: ConversationLastCallView | null;
   unreadCount: number;
   activeBooking: BookingSummaryView | null;
   bookingHistory: BookingSummaryView[];
+}
+
+export interface ConversationLastCallView {
+  type: 'voice' | 'video';
+  status: 'ended' | 'missed' | 'rejected' | 'cancelled';
+  durationSeconds: number;
+  /** The call's endedAt (falls back to its createdAt), ISO 8601 - same clock as lastMessageAt. */
+  createdAt: string;
+  /** Viewer-relative, same convention as ConversationCallView.isInitiator. */
+  isInitiator: boolean;
 }
 
 export interface ConversationListView {
