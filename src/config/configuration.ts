@@ -74,6 +74,14 @@ export default () => {
         `${appBaseUrl}/api/admin/seo/search-console/callback`,
       siteUrl: process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL?.trim(),
     },
+    googleAnalytics: {
+      clientId: process.env.GOOGLE_ANALYTICS_CLIENT_ID?.trim(),
+      clientSecret: process.env.GOOGLE_ANALYTICS_CLIENT_SECRET?.trim(),
+      redirectUri:
+        process.env.GOOGLE_ANALYTICS_REDIRECT_URI?.trim() ||
+        `${appBaseUrl}/api/admin/seo/analytics/callback`,
+      propertyId: process.env.GOOGLE_ANALYTICS_PROPERTY_ID?.trim(),
+    },
     database: {
       url: process.env.DATABASE_URL,
       logging: asBoolean(process.env.DB_LOGGING, false),

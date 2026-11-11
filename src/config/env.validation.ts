@@ -844,6 +844,22 @@ export const validateEnvironment = (environment: Environment): Environment => {
       'GOOGLE_SEARCH_CONSOLE_CLIENT_ID and GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET must either both be set or both be empty',
     );
   }
+  if (
+    present(environment.GOOGLE_ANALYTICS_REDIRECT_URI) &&
+    !isHttpUrl(environment.GOOGLE_ANALYTICS_REDIRECT_URI as string)
+  ) {
+    errors.push('GOOGLE_ANALYTICS_REDIRECT_URI must be a valid http(s) URL');
+  }
+  const ga4ClientId = present(environment.GOOGLE_ANALYTICS_CLIENT_ID);
+  const ga4ClientSecret = present(environment.GOOGLE_ANALYTICS_CLIENT_SECRET);
+  if (ga4ClientId !== ga4ClientSecret) {
+    errors.push(
+      'GOOGLE_ANALYTICS_CLIENT_ID and GOOGLE_ANALYTICS_CLIENT_SECRET must either both be set or both be empty',
+    );
+  }
+  if (present(environment.GOOGLE_ANALYTICS_PROPERTY_ID) && !/^\d+$/.test(String(environment.GOOGLE_ANALYTICS_PROPERTY_ID).trim())) {
+    errors.push('GOOGLE_ANALYTICS_PROPERTY_ID must be the numeric GA4 property id');
+  }
 
   if (present(environment.CORS_ORIGINS)) {
     for (const origin of (environment.CORS_ORIGINS as string).split(',')) {

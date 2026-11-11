@@ -9,6 +9,7 @@ import type { User } from '../../../generated/prisma/client';
 import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { SeoManagementService } from '../services/seo-management.service';
 import { SearchConsoleService } from '../services/search-console.service';
+import { GoogleAnalyticsService } from '../services/google-analytics.service';
 import { CreateSeoKeywordDto, SearchConsoleSummaryQueryDto, SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntryDto, SeoSettingsDto, UpdateSeoKeywordDto, UpsertSeoPageDto } from '../dto/seo.dto';
 
 @ApiTags('20 SEO')
@@ -28,6 +29,7 @@ export class AdminSeoController {
   constructor(
     private readonly seo: SeoManagementService,
     private readonly searchConsole: SearchConsoleService,
+    private readonly analytics: GoogleAnalyticsService,
   ) {}
   @Get('settings') @Permissions('seo.read') getSettings() { return this.seo.adminSettings(); }
   @Patch('settings') @Permissions('seo.manage') updateSettings(@CurrentUser() actor: User, @Body() dto: SeoSettingsDto) { return this.seo.updateSettings(actor, dto); }
@@ -49,6 +51,10 @@ export class AdminSeoController {
   @Get('search-console/connect') @Permissions('seo.manage') @ApiOperation({ summary: 'Build the Google OAuth consent URL to connect Search Console' }) searchConsoleConnect() { return this.searchConsole.connect(); }
   @Delete('search-console') @Permissions('seo.manage') @ApiOperation({ summary: 'Disconnect Google Search Console' }) searchConsoleDisconnect(@CurrentUser() actor: User) { return this.searchConsole.disconnect(actor); }
   @Get('search-console/summary') @Permissions('seo.read') @ApiOperation({ summary: 'Cached Search Console analytics summary, defaults to the last 28 days' }) searchConsoleSummary(@Query() query: SearchConsoleSummaryQueryDto) { return this.searchConsole.summary(query); }
+  @Get('analytics/status') @Permissions('seo.read') @ApiOperation({ summary: 'Google Analytics (GA4) connection status' }) analyticsStatus() { return this.analytics.status(); }
+  @Get('analytics/connect') @Permissions('seo.manage') @ApiOperation({ summary: 'Build the Google OAuth consent URL to connect GA4' }) analyticsConnect() { return this.analytics.connect(); }
+  @Delete('analytics') @Permissions('seo.manage') @ApiOperation({ summary: 'Disconnect Google Analytics (GA4)' }) analyticsDisconnect(@CurrentUser() actor: User) { return this.analytics.disconnect(actor); }
+  @Get('analytics/summary') @Permissions('seo.read') @ApiOperation({ summary: 'Cached GA4 summary (sessions, users, pageviews, top pages), defaults to the last 28 days' }) analyticsSummary(@Query() query: SearchConsoleSummaryQueryDto) { return this.analytics.summary(query); }
 }
 
 /** Hit directly by Google in the admin's browser as a raw redirect - no Authorization header is ever present here, so it cannot sit behind AdminAuthGuard/PermissionsGuard. Security instead comes from the signed, short-lived `state` param minted by AdminSeoController#searchConsoleConnect and verified here. */
@@ -60,6 +66,19 @@ export class SeoSearchConsoleCallbackController {
   @Get('callback')
   async callback(@Query('code') code: string | undefined, @Query('state') state: string | undefined, @Res({ passthrough: false }) response: Response) {
     const redirectTo = await this.searchConsole.handleCallback(code, state);
+    response.redirect(302, redirectTo);
+  }
+}
+
+/** Same rationale as the Search Console callback: raw browser redirect from Google, gated only by the signed `state` param. */
+@ApiTags('63 Admin - SEO')
+@ApiExcludeController()
+@Controller('admin/seo/analytics')
+export class SeoGoogleAnalyticsCallbackController {
+  constructor(private readonly analytics: GoogleAnalyticsService) {}
+  @Get('callback')
+  async callback(@Query('code') code: string | undefined, @Query('state') state: string | undefined, @Res({ passthrough: false }) response: Response) {
+    const redirectTo = await this.analytics.handleCallback(code, state);
     response.redirect(302, redirectTo);
   }
 }
