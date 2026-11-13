@@ -15,5 +15,7 @@ export class AddTaskerRoleDto extends OmitType(RegisterTaskerDto, [
   'password',
   'zipCode',
   'device',
+  'deviceId',
+  'deviceName',
   'preferredLanguage',
 ] as const) {}

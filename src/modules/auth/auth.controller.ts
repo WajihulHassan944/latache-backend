@@ -143,7 +143,7 @@ export class AuthController {
     @RequestLocale() locale: string,
   ) {
     await this.captcha.verify(dto.captchaToken, request.ip, 'signup');
-    return this.auth.registerCustomer(dto, this.metadata(dto.device, request), locale);
+    return this.auth.registerCustomer(dto, this.metadata(dto, request), locale);
   }
 
   @Post('taskers/register')
@@ -209,7 +209,7 @@ export class AuthController {
     @RequestLocale() locale: string,
   ) {
     await this.captcha.verify(dto.captchaToken, request.ip, 'signup');
-    return this.auth.registerTasker(dto, this.metadata(dto.device, request), locale);
+    return this.auth.registerTasker(dto, this.metadata(dto, request), locale);
   }
 
   @Post('roles/customer')
@@ -338,7 +338,7 @@ export class AuthController {
     return this.auth.socialAuthenticate(
       SOCIAL_AUTH_PROVIDER.Google,
       dto,
-      this.metadata(dto.device, request),
+      this.metadata(dto, request),
     );
   }
 
@@ -357,7 +357,7 @@ export class AuthController {
     return this.auth.socialAuthenticate(
       SOCIAL_AUTH_PROVIDER.Apple,
       dto,
-      this.metadata(dto.device, request),
+      this.metadata(dto, request),
     );
   }
 
@@ -448,7 +448,7 @@ export class AuthController {
   })
   async login(@Body() dto: LoginDto, @Req() request: Request) {
     await this.captcha.verify(dto.captchaToken, request.ip, 'login');
-    return this.auth.login(dto, this.metadata(dto.device, request));
+    return this.auth.login(dto, this.metadata(dto, request));
   }
 
   @Post('switch-role')
@@ -471,7 +471,7 @@ export class AuthController {
       user.id,
       request.auth.sessionId,
       dto.role,
-      this.metadata(dto.device, request),
+      this.metadata(dto, request),
     );
   }
 
@@ -533,7 +533,7 @@ export class AuthController {
   })
   @ApiBadRequestResponse({ description: 'OTP invalid, expired, or attempt limit reached.' })
   verifyEmail(@Body() dto: VerifyEmailDto, @Req() request: Request) {
-    return this.auth.verifyEmail(dto, this.metadata(dto.device, request));
+    return this.auth.verifyEmail(dto, this.metadata(dto, request));
   }
 
   @Post('resend-verification-email')
@@ -783,6 +783,8 @@ export class AuthController {
               ipAddress: '127.0.0.1',
               userAgent: 'Mozilla/5.0',
               lastUsedAt: '2026-08-05T08:00:00.000Z',
+              deviceName: 'Samsung SM-A546E · Android 14',
+              isCurrent: true,
               createdAt: '2026-08-05T08:00:00.000Z',
               expiresAt: '2026-09-04T08:00:00.000Z',
             },
@@ -792,8 +794,8 @@ export class AuthController {
       },
     },
   })
-  listSessions(@CurrentUser() user: User) {
-    return this.auth.listSessions(user.id);
+  listSessions(@CurrentUser() user: User, @Req() request: AuthenticatedRequest) {
+    return this.auth.listSessions(user.id, request.auth.sessionId);
   }
 
   @Delete('sessions/:id')
@@ -845,10 +847,15 @@ export class AuthController {
     return this.auth.logoutAll(user.id);
   }
 
-  private metadata(device: string | undefined, request: Request) {
+  private metadata(
+    dto: { device?: string; deviceId?: string; deviceName?: string } | undefined,
+    request: Request,
+  ) {
     const userAgent = request.headers['user-agent'];
     return {
-      device,
+      device: dto?.device,
+      deviceId: dto?.deviceId,
+      deviceName: dto?.deviceName,
       ipAddress: request.ip,
       userAgent: Array.isArray(userAgent) ? userAgent.join(', ') : userAgent,
     };

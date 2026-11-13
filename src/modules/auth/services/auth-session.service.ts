@@ -6,13 +6,15 @@ import { AuthSessionsRepository } from '../repositories/auth-sessions.repository
 export class AuthSessionService {
   constructor(private readonly sessions: AuthSessionsRepository) {}
 
-  async list(userId: number): Promise<SuccessEnvelope<{ sessions: unknown[] }>> {
+  async list(userId: number, currentSessionId?: number): Promise<SuccessEnvelope<{ sessions: unknown[] }>> {
     const sessions = await this.sessions.listActive(userId);
     return success(
       {
         sessions: sessions.map((session) => ({
           id: session.id,
           device: session.device,
+          deviceName: session.deviceName,
+          isCurrent: session.id === currentSessionId,
           ipAddress: session.ipAddress,
           userAgent: session.userAgent,
           activeRole: session.activeRole,

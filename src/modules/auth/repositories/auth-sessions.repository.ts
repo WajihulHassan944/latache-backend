@@ -101,4 +101,48 @@ export class AuthSessionsRepository {
     });
     return rows.map((row) => row.ipAddress as string);
   }
+
+  /** Revokes active sessions held by the same physical device (same role) so one device keeps one session. */
+  revokeSameDevice(
+    userId: number,
+    activeRole: string,
+    match: { deviceId?: string | null; userAgent: string | null; device: string | null },
+    transaction?: Prisma.TransactionClient,
+  ): Promise<Prisma.BatchPayload> {
+    const deviceFilter = match.deviceId
+      ? { deviceId: match.deviceId }
+      : { deviceId: null, userAgent: match.userAgent, device: match.device };
+    return (transaction ?? this.prisma).refreshToken.updateMany({
+      where: { userId, activeRole, revokedAt: null, ...deviceFilter },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  /** Keeps only the `max` most recently used active sessions; older ones are revoked. */
+  async enforceActiveCap(
+    userId: number,
+    max: number,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const client = transaction ?? this.prisma;
+    const stale = await client.refreshToken.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: [{ lastUsedAt: 'desc' }, { id: 'desc' }],
+      skip: max,
+      select: { id: true },
+    });
+    if (stale.length === 0) return;
+    await client.refreshToken.updateMany({
+      where: { id: { in: stale.map((row) => row.id) }, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  /** Conditional, so concurrent requests collapse to a single write per throttle window. */
+  touch(id: number, olderThan: Date): Promise<Prisma.BatchPayload> {
+    return this.prisma.refreshToken.updateMany({
+      where: { id, revokedAt: null, lastUsedAt: { lt: olderThan } },
+      data: { lastUsedAt: new Date() },
+    });
+  }
 }

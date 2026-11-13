@@ -131,8 +131,8 @@ export class AuthService {
     return this.profiles.update(userId, dto, activeRole);
   }
 
-  listSessions(userId: number) {
-    return this.sessions.list(userId);
+  listSessions(userId: number, currentSessionId?: number) {
+    return this.sessions.list(userId, currentSessionId);
   }
 
   logout(userId: number, sessionId: number) {

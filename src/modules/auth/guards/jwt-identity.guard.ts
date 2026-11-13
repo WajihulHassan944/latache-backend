@@ -16,6 +16,8 @@ import { UsersService } from '../../users/users.service';
 import { AuthSessionsRepository } from '../repositories/auth-sessions.repository';
 import { AuthRoleService } from '../services/auth-role.service';
 
+const LAST_USED_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
+
 /**
  * Resolves a bearer token to an active database user and active refresh-token
  * session. It intentionally allows an unverified account so registration can
@@ -58,6 +60,12 @@ export class JwtIdentityGuard implements CanActivate {
     }
     if (session.activeRole && session.activeRole !== payload.role) {
       throw new UnauthorizedException('Session role does not match this access token');
+    }
+    // Throttled so "last used" is meaningful without a write on every request.
+    if (session.lastUsedAt.getTime() < Date.now() - LAST_USED_TOUCH_INTERVAL_MS) {
+      void this.sessions
+        .touch(session.id, new Date(Date.now() - LAST_USED_TOUCH_INTERVAL_MS))
+        .catch(() => undefined);
     }
     if (user.accountStatus === AccountStatus.Suspended) {
       throw new ForbiddenException('Account is suspended');

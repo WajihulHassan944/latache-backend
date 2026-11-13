@@ -11,8 +11,13 @@ import type { Prisma, User } from '../../../generated/prisma/client';
 import { AuthRepository } from '../repositories/auth.repository';
 import { AuthSessionsRepository } from '../repositories/auth-sessions.repository';
 
+/** Maximum simultaneously active sessions per account; the least recently used are revoked beyond this. */
+const MAX_ACTIVE_SESSIONS = 10;
+
 export interface SessionMetadata {
   device?: string;
+  deviceId?: string;
+  deviceName?: string;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -47,11 +52,14 @@ export class AuthTokenService {
       throw new UnauthorizedException('Selected role is not enabled for this account');
     }
     const refreshToken = generateOpaqueToken();
+    await this.supersedeDeviceSessions(user.id, selectedRole, metadata, transaction);
     const session = await this.sessions.create(
       {
         userId: user.id,
         tokenHash: hashOpaqueToken(refreshToken),
         device: metadata.device ?? null,
+        deviceId: metadata.deviceId ?? null,
+        deviceName: metadata.deviceName ?? null,
         ipAddress: metadata.ipAddress?.slice(0, 64) ?? null,
         userAgent: metadata.userAgent?.slice(0, 512) ?? null,
         activeRole: selectedRole,
@@ -60,6 +68,7 @@ export class AuthTokenService {
       },
       transaction,
     );
+    await this.sessions.enforceActiveCap(user.id, MAX_ACTIVE_SESSIONS, transaction);
 
     return {
       accessToken: await this.signAccessToken(user, session.id, selectedRole),
@@ -84,11 +93,14 @@ export class AuthTokenService {
     }
 
     const refreshToken = generateOpaqueToken();
+    await this.supersedeDeviceSessions(user.id, pendingRole, metadata, transaction);
     const session = await this.sessions.create(
       {
         userId: user.id,
         tokenHash: hashOpaqueToken(refreshToken),
         device: metadata.device ?? null,
+        deviceId: metadata.deviceId ?? null,
+        deviceName: metadata.deviceName ?? null,
         ipAddress: metadata.ipAddress?.slice(0, 64) ?? null,
         userAgent: metadata.userAgent?.slice(0, 512) ?? null,
         activeRole: pendingRole,
@@ -97,6 +109,7 @@ export class AuthTokenService {
       },
       transaction,
     );
+    await this.sessions.enforceActiveCap(user.id, MAX_ACTIVE_SESSIONS, transaction);
 
     return {
       accessToken: await this.signAccessToken(user, session.id, pendingRole, true),
@@ -138,6 +151,8 @@ export class AuthTokenService {
             userId: user.id,
             tokenHash: replacementHash,
             device: metadata.device ?? stored.device,
+            deviceId: metadata.deviceId ?? stored.deviceId,
+            deviceName: metadata.deviceName ?? stored.deviceName,
             ipAddress: metadata.ipAddress?.slice(0, 64) ?? stored.ipAddress,
             userAgent: metadata.userAgent?.slice(0, 512) ?? stored.userAgent,
             activeRole: this.resolveRefreshRole(user, stored.activeRole),
@@ -178,6 +193,24 @@ export class AuthTokenService {
     if (outcome.kind === 'account')
       throw new UnauthorizedException('Account cannot use this session');
     return outcome.tokens;
+  }
+
+  private async supersedeDeviceSessions(
+    userId: number,
+    role: UserRole,
+    metadata: SessionMetadata,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.sessions.revokeSameDevice(
+      userId,
+      role,
+      {
+        deviceId: metadata.deviceId,
+        userAgent: metadata.userAgent?.slice(0, 512) ?? null,
+        device: metadata.device ?? null,
+      },
+      transaction,
+    );
   }
 
   private canUseTokens(user: User): boolean {

@@ -1,17 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import {
-  Equals,
-  IsBoolean,
-  IsEmail,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  Length,
-  Matches,
-  MaxLength,
-  ValidateIf,
-} from 'class-validator';
+import { Equals, IsBoolean, IsEmail, IsNotEmpty, IsOptional, IsString, Length, Matches, MaxLength, ValidateIf } from 'class-validator';
 import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
@@ -115,6 +104,29 @@ export class BaseRegistrationDto {
   @IsString()
   @MaxLength(255)
   device?: string;
+
+  @ApiPropertyOptional({
+    example: '6f1c2d9a-4b7e-4f0a-9c1e-3a5d8e2b7c40',
+    minLength: 16,
+    maxLength: 64,
+    description: 'Stable per-install device identifier generated once by the app. Used so one device holds one session.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(16, 64)
+  deviceId?: string;
+
+  @ApiPropertyOptional({
+    example: 'Samsung SM-A546E · Android 14',
+    maxLength: 255,
+    description: 'Human-readable phone model and OS shown in the sessions list.',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(255)
+  deviceName?: string;
 
   @ApiPropertyOptional({
     enum: ['en', 'ar', 'ary', 'fr', 'es'],

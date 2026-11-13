@@ -12,6 +12,7 @@ import { ReferralRewardsWorker } from '../../modules/referrals/referral-rewards.
 import { DisputeLifecycleService } from '../../modules/disputes/dispute-lifecycle.service';
 import { EliteProgramService } from '../../modules/elite-program/services/elite-program.service';
 import { FcmService } from '../../modules/fcm/fcm.service';
+import { PrismaService } from '../../database/prisma.service';
 import { GuestService } from '../../modules/guest/guest.service';
 import { NotificationsService } from '../../modules/notifications/notifications.service';
 import { CustomTimeRequestsService } from '../../modules/bookings/custom-time-requests.service';
@@ -40,6 +41,7 @@ const JOB_NAMES = {
   ExpireCustomTimeRequests: 'bookings.expire-custom-time-requests',
   MaintainTaskerPlans: 'tasker-plans.maintain',
   ReactivateDueSuspensions: 'customers.reactivate-due-suspensions',
+  CleanupAuthSessions: 'auth.cleanup-sessions',
 } as const;
 
 export interface QueueHealth {
@@ -83,6 +85,7 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly taskerPlans: TaskerPlansService,
     private readonly payments: PaymentsService,
     private readonly adminCustomers: AdminCustomersService,
+    private readonly prisma: PrismaService,
   ) {
     this.enabled = this.config.get<boolean>('jobs.enabled', false);
     this.workerEnabled = this.config.get<boolean>('jobs.workerEnabled', false);
@@ -289,6 +292,11 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { name: JOB_NAMES.CleanupGuestSessions, data: {} },
       ),
       queue.upsertJobScheduler(
+        'cleanup-auth-sessions-v1',
+        { every: this.config.get<number>('jobs.authSessionCleanupIntervalMs', 3_600_000) },
+        { name: JOB_NAMES.CleanupAuthSessions, data: {} },
+      ),
+      queue.upsertJobScheduler(
         'reactivate-due-suspensions-v1',
         { every: this.config.get<number>('customers.suspensionSweepIntervalMs', 3_600_000) },
         { name: JOB_NAMES.ReactivateDueSuspensions, data: {} },
@@ -374,6 +382,14 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return this.taskerPlans.runMaintenance();
       case JOB_NAMES.CleanupGuestSessions:
         return this.guests.runOnce();
+      case JOB_NAMES.CleanupAuthSessions: {
+        // Revoked/expired rows are kept 30 days so refresh-token reuse detection and IP history still work.
+        const cutoff = new Date(Date.now() - 30 * 86_400_000);
+        const result = await this.prisma.refreshToken.deleteMany({
+          where: { OR: [{ expiresAt: { lt: cutoff } }, { revokedAt: { lt: cutoff } }] },
+        });
+        return { deleted: result.count };
+      }
       case JOB_NAMES.ReactivateDueSuspensions:
         return this.adminCustomers.reactivateDueSuspensions();
       default: {
