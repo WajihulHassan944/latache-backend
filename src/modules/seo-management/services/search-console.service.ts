@@ -7,7 +7,8 @@ import { AppCacheService, CacheNamespace } from '../../../infrastructure/redis/a
 import type { User } from '../../../generated/prisma/client';
 
 const SETTING_KEY = 'google_search_console';
-const SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
+const SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly email';
+const USERINFO_ENDPOINT = 'https://www.googleapis.com/oauth2/v2/userinfo';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes - plenty for an admin to complete the Google consent screen.
@@ -18,6 +19,7 @@ interface StoredConnection {
   connected: boolean;
   propertyUrl: string | null;
   connectedAt: string | null;
+  connectedEmail: string | null;
   encryptedRefreshToken: string | null;
 }
 
@@ -41,6 +43,7 @@ const EMPTY_CONNECTION: StoredConnection = {
   connected: false,
   propertyUrl: null,
   connectedAt: null,
+  connectedEmail: null,
   encryptedRefreshToken: null,
 };
 
@@ -60,7 +63,7 @@ export class SearchConsoleService {
 
   async status() {
     const connection = await this.connectionRow();
-    return { connected: connection.connected, propertyUrl: connection.propertyUrl, connectedAt: connection.connectedAt };
+    return { connected: connection.connected, propertyUrl: connection.propertyUrl, connectedAt: connection.connectedAt, connectedEmail: connection.connectedEmail };
   }
 
   connect(): { authUrl: string } {
@@ -107,6 +110,7 @@ export class SearchConsoleService {
         this.logger.error('Search Console token exchange did not return a refresh_token (prompt=consent should always issue one)');
         return failure;
       }
+      const connectedEmail = await this.fetchEmail(payload.access_token);
       await this.prisma.platformSetting.upsert({
         where: { key: SETTING_KEY },
         create: {
@@ -115,6 +119,7 @@ export class SearchConsoleService {
             connected: true,
             propertyUrl: siteUrl,
             connectedAt: new Date().toISOString(),
+            connectedEmail,
             encryptedRefreshToken: this.encrypt(payload.refresh_token),
           },
         },
@@ -123,6 +128,7 @@ export class SearchConsoleService {
             connected: true,
             propertyUrl: siteUrl,
             connectedAt: new Date().toISOString(),
+            connectedEmail,
             encryptedRefreshToken: this.encrypt(payload.refresh_token),
           },
         },
@@ -130,11 +136,28 @@ export class SearchConsoleService {
       this.accessToken = payload.access_token && payload.expires_in
         ? { token: payload.access_token, expiresAt: Date.now() + payload.expires_in * 1000 }
         : null;
-      await this.audit.record({ action: 'seo_search_console_connected', entityType: 'seo_search_console', entityId: 'global', metadata: { propertyUrl: siteUrl } });
+      await this.audit.record({ action: 'seo_search_console_connected', entityType: 'seo_search_console', entityId: 'global', metadata: { propertyUrl: siteUrl, connectedEmail } });
       return success;
     } catch (error) {
       this.logger.error(`Search Console callback failed: ${error instanceof Error ? error.message : String(error)}`);
       return failure;
+    }
+  }
+
+  /** Best-effort: a userinfo failure must not block the connection, the email just stays null. */
+  private async fetchEmail(accessToken: string | undefined): Promise<string | null> {
+    if (!accessToken) return null;
+    try {
+      const response = await fetch(USERINFO_ENDPOINT, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!response.ok) {
+        this.logger.warn(`Search Console userinfo lookup failed: ${response.status}`);
+        return null;
+      }
+      const info = (await response.json()) as { email?: string };
+      return info.email ?? null;
+    } catch (error) {
+      this.logger.warn(`Search Console userinfo lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
     }
   }
 
@@ -244,6 +267,7 @@ export class SearchConsoleService {
       connected: Boolean(value.connected),
       propertyUrl: value.propertyUrl ?? null,
       connectedAt: value.connectedAt ?? null,
+      connectedEmail: value.connectedEmail ?? null,
       encryptedRefreshToken: value.encryptedRefreshToken ?? null,
     };
   }

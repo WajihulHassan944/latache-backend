@@ -7,7 +7,8 @@ import { AppCacheService, CacheNamespace } from '../../../infrastructure/redis/a
 import type { User } from '../../../generated/prisma/client';
 
 const SETTING_KEY = 'google_analytics_ga4';
-const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
+const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly email';
+const USERINFO_ENDPOINT = 'https://www.googleapis.com/oauth2/v2/userinfo';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes - plenty for an admin to complete the Google consent screen.
@@ -18,6 +19,7 @@ interface StoredConnection {
   connected: boolean;
   propertyId: string | null;
   connectedAt: string | null;
+  connectedEmail: string | null;
   encryptedRefreshToken: string | null;
 }
 
@@ -44,6 +46,7 @@ const EMPTY_CONNECTION: StoredConnection = {
   connected: false,
   propertyId: null,
   connectedAt: null,
+  connectedEmail: null,
   encryptedRefreshToken: null,
 };
 
@@ -63,7 +66,7 @@ export class GoogleAnalyticsService {
 
   async status() {
     const connection = await this.connectionRow();
-    return { connected: connection.connected, propertyId: connection.propertyId, connectedAt: connection.connectedAt };
+    return { connected: connection.connected, propertyId: connection.propertyId, connectedAt: connection.connectedAt, connectedEmail: connection.connectedEmail };
   }
 
   connect(): { authUrl: string } {
@@ -110,10 +113,12 @@ export class GoogleAnalyticsService {
         this.logger.error('GA4 token exchange did not return a refresh_token (prompt=consent should always issue one)');
         return failure;
       }
+      const connectedEmail = await this.fetchEmail(payload.access_token);
       const value = {
         connected: true,
         propertyId,
         connectedAt: new Date().toISOString(),
+        connectedEmail,
         encryptedRefreshToken: this.encrypt(payload.refresh_token),
       };
       await this.prisma.platformSetting.upsert({
@@ -124,11 +129,28 @@ export class GoogleAnalyticsService {
       this.accessToken = payload.access_token && payload.expires_in
         ? { token: payload.access_token, expiresAt: Date.now() + payload.expires_in * 1000 }
         : null;
-      await this.audit.record({ action: 'seo_google_analytics_connected', entityType: 'seo_google_analytics', entityId: 'global', metadata: { propertyId } });
+      await this.audit.record({ action: 'seo_google_analytics_connected', entityType: 'seo_google_analytics', entityId: 'global', metadata: { propertyId, connectedEmail } });
       return success;
     } catch (error) {
       this.logger.error(`GA4 callback failed: ${error instanceof Error ? error.message : String(error)}`);
       return failure;
+    }
+  }
+
+  /** Best-effort: a userinfo failure must not block the connection, the email just stays null. */
+  private async fetchEmail(accessToken: string | undefined): Promise<string | null> {
+    if (!accessToken) return null;
+    try {
+      const response = await fetch(USERINFO_ENDPOINT, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!response.ok) {
+        this.logger.warn(`GA4 userinfo lookup failed: ${response.status}`);
+        return null;
+      }
+      const info = (await response.json()) as { email?: string };
+      return info.email ?? null;
+    } catch (error) {
+      this.logger.warn(`GA4 userinfo lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
     }
   }
 
@@ -246,6 +268,7 @@ export class GoogleAnalyticsService {
       connected: Boolean(value.connected),
       propertyId: value.propertyId ?? null,
       connectedAt: value.connectedAt ?? null,
+      connectedEmail: value.connectedEmail ?? null,
       encryptedRefreshToken: value.encryptedRefreshToken ?? null,
     };
   }
