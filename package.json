@@ -1,6 +1,6 @@
 {
   "name": "latache-backend-nestjs-prisma",
-  "version": "3.78.0",
+  "version": "3.78.1",
   "description": "Latache API with verified on-site work start/completion proof and OTP gating, hardened local/social authentication, single-User multi-role Customer/Tasker identity, Super-Admin-owned referral/reward policy and backend-enforced Elite perks, disputes, chat/realtime/WebRTC, Redis/BullMQ, provider-backed finance, Prisma/PostgreSQL, Stripe, localization, and database-backed RBAC",
   "private": true,
   "license": "UNLICENSED",
@@ -36,6 +36,7 @@
     "verify": "npm run verify:static && npm run prisma:validate && npm run build && npm run lint && npm test -- --runInBand"
   },
   "dependencies": {
+    "@ip-location-db/geolite2-city-mmdb": "^2.3.2026061719",
     "@nestjs/common": "11.1.28",
     "@nestjs/config": "4.0.4",
     "@nestjs/core": "11.1.28",
@@ -56,10 +57,10 @@
     "compression": "1.8.1",
     "dotenv": "17.2.1",
     "express": "5.2.1",
-    "geoip-lite": "^2.0.3",
     "helmet": "8.3.0",
     "ioredis": "5.11.1",
     "libphonenumber-js": "1.13.10",
+    "maxmind": "^5.1.0",
     "nodemailer": "9.0.4",
     "pg": "8.22.0",
     "prisma": "7.9.1",
@@ -76,7 +77,6 @@
     "@nestjs/testing": "11.1.28",
     "@types/compression": "1.8.1",
     "@types/express": "5.0.3",
-    "@types/geoip-lite": "^1.4.4",
     "@types/jest": "29.5.14",
     "@types/node": "22.17.2",
     "@types/nodemailer": "8.0.1",
