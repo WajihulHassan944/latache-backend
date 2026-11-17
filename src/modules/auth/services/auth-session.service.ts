@@ -1,27 +1,39 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { success, type SuccessEnvelope } from '../auth-response';
 import { AuthSessionsRepository } from '../repositories/auth-sessions.repository';
+import { IpGeolocationService } from './ip-geolocation.service';
 
 @Injectable()
 export class AuthSessionService {
-  constructor(private readonly sessions: AuthSessionsRepository) {}
+  constructor(
+    private readonly sessions: AuthSessionsRepository,
+    private readonly geo: IpGeolocationService,
+  ) {}
 
-  async list(userId: number, currentSessionId?: number): Promise<SuccessEnvelope<{ sessions: unknown[] }>> {
+  async list(
+    userId: number,
+    currentSessionId?: number,
+  ): Promise<SuccessEnvelope<{ sessions: unknown[] }>> {
     const sessions = await this.sessions.listActive(userId);
     return success(
       {
-        sessions: sessions.map((session) => ({
-          id: session.id,
-          device: session.device,
-          deviceName: session.deviceName,
-          isCurrent: session.id === currentSessionId,
-          ipAddress: session.ipAddress,
-          userAgent: session.userAgent,
-          activeRole: session.activeRole,
-          lastUsedAt: session.lastUsedAt,
-          createdAt: session.createdAt,
-          expiresAt: session.expiresAt,
-        })),
+        sessions: sessions.map((session) => {
+          const location = this.geo.resolve(session.ipAddress);
+          return {
+            id: session.id,
+            device: session.device,
+            deviceName: session.deviceName,
+            isCurrent: session.id === currentSessionId,
+            ipAddress: session.ipAddress,
+            userAgent: session.userAgent,
+            activeRole: session.activeRole,
+            lastUsedAt: session.lastUsedAt,
+            createdAt: session.createdAt,
+            expiresAt: session.expiresAt,
+            city: location.city,
+            country: location.country,
+          };
+        }),
       },
       'Active sessions retrieved.',
     );

@@ -1,3 +1,4 @@
+import { IpGeolocationService } from './services/ip-geolocation.service';
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -38,6 +39,7 @@ import { TurnstileService } from './services/turnstile.service';
     AuthPasswordService,
     AuthProfileService,
     AuthSessionService,
+    IpGeolocationService,
     AuthTokenService,
     AuthCodeService,
     AuthLockoutService,

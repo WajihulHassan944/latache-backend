@@ -785,6 +785,8 @@ export class AuthController {
               lastUsedAt: '2026-08-05T08:00:00.000Z',
               deviceName: 'Samsung SM-A546E · Android 14',
               isCurrent: true,
+              city: 'Casablanca',
+              country: 'Morocco',
               createdAt: '2026-08-05T08:00:00.000Z',
               expiresAt: '2026-09-04T08:00:00.000Z',
             },
