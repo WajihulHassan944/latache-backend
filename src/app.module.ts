@@ -18,7 +18,10 @@ import { TaskerDashboardModule } from './modules/tasker-dashboard/tasker-dashboa
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
+import { AdminAlertsModule } from './modules/admin-alerts/admin-alerts.module';
 import { CareersModule } from './modules/careers/careers.module';
+import { ContactModule } from './modules/contact/contact.module';
+import { SystemAdminModule } from './modules/system-admin/system-admin.module';
 import { FinanceReportsModule } from './modules/finance-reports/finance-reports.module';
 import { PaymentGatewaysModule } from './modules/payment-gateways/payment-gateways.module';
 import { TaskerDepositsModule } from './modules/tasker-deposits/tasker-deposits.module';
@@ -92,6 +95,9 @@ import { AddressesModule } from './modules/addresses/addresses.module';
     ConversationsModule,
     InvoicesModule,
     CareersModule,
+    AdminAlertsModule,
+    ContactModule,
+    SystemAdminModule,
     FinanceReportsModule,
     TaskerDepositsModule,
     PaymentGatewaysModule,

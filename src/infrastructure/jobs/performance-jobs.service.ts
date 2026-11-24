@@ -408,6 +408,67 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // ───────── Admin: queue inspection (System health page) ─────────
+
+  /** Counts per state plus the configured schedulers; null when the queue is not running in this process. */
+  async adminOverview() {
+    if (!this.queue) return { available: false as const, queueName: this.queueName };
+    const counts = await this.queue.getJobCounts('wait', 'active', 'delayed', 'failed', 'completed', 'paused');
+    const schedulers = await this.queue.getJobSchedulers(0, 50).catch(() => []);
+    return {
+      available: true as const,
+      queueName: this.queueName,
+      counts,
+      workerEnabled: this.workerEnabled,
+      schedulerEnabled: this.schedulerEnabled,
+      lastError: this.lastError,
+      schedulers: schedulers.map((sch) => ({ name: sch.name ?? sch.key, every: sch.every ?? null, pattern: sch.pattern ?? null, next: sch.next ? new Date(sch.next).toISOString() : null })),
+    };
+  }
+
+  /** Newest failed jobs plus a grouped summary (same job + same reason) of the newest 500. */
+  async adminFailed(limit = 25, offset = 0) {
+    if (!this.queue) return { available: false as const, items: [], groups: [], total: 0 };
+    const [page, sample, total] = await Promise.all([
+      this.queue.getFailed(offset, offset + limit - 1),
+      this.queue.getFailed(0, 499),
+      this.queue.getFailedCount(),
+    ]);
+    const shape = (job: Job) => ({
+      id: String(job.id),
+      name: job.name,
+      reason: (job.failedReason ?? '').replace(/\s+/g, ' ').trim().slice(0, 300),
+      attemptsMade: job.attemptsMade,
+      failedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : null,
+    });
+    const groups = new Map<string, { name: string; reason: string; count: number; lastAt: string | null }>();
+    for (const job of sample) {
+      const row = shape(job);
+      const key = `${row.name}|${row.reason.slice(0, 80)}`;
+      const g = groups.get(key);
+      if (g) {
+        g.count += 1;
+        if (row.failedAt && (!g.lastAt || row.failedAt > g.lastAt)) g.lastAt = row.failedAt;
+      } else groups.set(key, { name: row.name, reason: row.reason, count: 1, lastAt: row.failedAt });
+    }
+    return { available: true as const, total, items: page.map(shape), groups: [...groups.values()].sort((a, b) => b.count - a.count).slice(0, 10) };
+  }
+
+  async adminRetryFailed(jobId: string): Promise<boolean> {
+    if (!this.queue) return false;
+    const job = await this.queue.getJob(jobId);
+    if (!job) return false;
+    await job.retry('failed');
+    return true;
+  }
+
+  /** Removes failed jobs older than `graceMs`. Returns how many were removed. */
+  async adminCleanFailed(graceMs: number): Promise<number> {
+    if (!this.queue) return 0;
+    const removed = await this.queue.clean(graceMs, 10_000, 'failed');
+    return removed.length;
+  }
+
   private downHealth(): QueueHealth {
     return {
       enabled: true,

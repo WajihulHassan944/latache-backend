@@ -13,6 +13,7 @@ import { normalizePagination } from '../../common/utils/pagination.util';
 import { hasPrismaErrorCode } from '../../database/prisma-error.util';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma, type User } from '../../generated/prisma/client';
+import { AdminAlertsService } from '../admin-alerts/admin-alerts.service';
 import { AdminAuditService } from '../admin-audit/admin-audit.service';
 import { TurnstileService } from '../auth/services/turnstile.service';
 import { MailService } from '../mail/mail.service';
@@ -70,6 +71,7 @@ export class CareersService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly turnstile: TurnstileService,
+    private readonly alerts: AdminAlertsService,
     private readonly mail: MailService,
     private readonly audit: AdminAuditService,
   ) {
@@ -201,6 +203,15 @@ export class CareersService {
       if (hasPrismaErrorCode(error, 'P2002')) throw new ConflictException('Please try again.');
       throw error;
     }
+
+    await this.alerts.raise({
+      type: 'careers.application',
+      title: `New application: ${dto.fullName}`,
+      body: job?.title ? `For ${job.title}` : 'General application',
+      link: '/admin/careers',
+      entityType: 'job_application',
+      entityId: created.id,
+    });
 
     try {
       const email = applicationConfirmationEmail({ name: dto.fullName, reference, roleTitle: job?.title ?? null, locale: meta.locale });

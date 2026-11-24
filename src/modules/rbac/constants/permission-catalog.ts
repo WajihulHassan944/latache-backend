@@ -237,6 +237,30 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
+    module: 'contact',
+    label: 'Contact Inbox',
+    permissions: [
+      { key: 'contact.read', label: 'View enquiries', description: 'View messages sent through the public Contact form.' },
+      { key: 'contact.manage', label: 'Manage enquiries', description: 'Reply to, assign, resolve and mark enquiries as spam.' },
+    ],
+  },
+  {
+    module: 'alerts',
+    label: 'Admin Alerts',
+    permissions: [
+      { key: 'alerts.read', label: 'View alerts', description: 'See the alerts center and the notification bell.' },
+    ],
+  },
+  {
+    module: 'system',
+    label: 'System & Audit',
+    permissions: [
+      { key: 'system.read', label: 'View system health', description: 'View service status, background jobs and failed jobs.' },
+      { key: 'system.manage', label: 'Manage background jobs', description: 'Retry or clear failed background jobs.' },
+      { key: 'audit.read', label: 'View audit log', description: 'View the history of admin actions.' },
+    ],
+  },
+  {
     module: 'careers',
     label: 'Careers & Hiring',
     permissions: [
