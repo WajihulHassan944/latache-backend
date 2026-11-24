@@ -17,6 +17,10 @@ import { RbacModule } from './modules/rbac/rbac.module';
 import { TaskerDashboardModule } from './modules/tasker-dashboard/tasker-dashboard.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
+import { InvoicesModule } from './modules/invoices/invoices.module';
+import { FinanceReportsModule } from './modules/finance-reports/finance-reports.module';
+import { PaymentGatewaysModule } from './modules/payment-gateways/payment-gateways.module';
+import { TaskerDepositsModule } from './modules/tasker-deposits/tasker-deposits.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
@@ -85,6 +89,10 @@ import { AddressesModule } from './modules/addresses/addresses.module';
     TaskerFinanceModule,
     NotificationsModule,
     ConversationsModule,
+    InvoicesModule,
+    FinanceReportsModule,
+    TaskerDepositsModule,
+    PaymentGatewaysModule,
     ReviewsModule,
     PaymentsModule,
     FavoritesModule,

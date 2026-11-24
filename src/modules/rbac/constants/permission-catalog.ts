@@ -237,6 +237,18 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
+    module: 'conversations',
+    label: 'Conversation Monitoring',
+    permissions: [
+      {
+        key: 'conversations.read',
+        label: 'View customer-tasker conversations',
+        description:
+          'Read-only access to every customer-tasker chat thread, messages and attachments, for safety, dispute and support review. Every thread opened is recorded in the admin audit log.',
+      },
+    ],
+  },
+  {
     module: 'content',
     label: 'Content',
     permissions: [
@@ -330,6 +342,7 @@ export const SYSTEM_RBAC_ROLES: readonly SystemRbacRoleDefinition[] = [
       'customers.read',
       'taskers.read',
       'bookings.read',
+      'conversations.read',
     ],
     isSystem: true,
   },

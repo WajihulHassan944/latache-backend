@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TaskerDepositsModule } from '../tasker-deposits/tasker-deposits.module';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminAuditModule } from '../admin-audit/admin-audit.module';
@@ -24,6 +25,7 @@ import { PlatformSettingsModule } from '../platform-settings/platform-settings.m
 
 @Module({
   imports: [
+    TaskerDepositsModule,
     AuthModule,
     NotificationsModule,
     AdminAuditModule,

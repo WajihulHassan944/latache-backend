@@ -111,6 +111,22 @@ export class GeneralSettingsDto {
   @IsOptional() @IsBoolean() pushNotificationsEnabled?: boolean;
   @IsOptional() @IsBoolean() liveChatEnabled?: boolean;
   @IsOptional() @IsBoolean() maintenanceMode?: boolean;
+
+  // ---- Invoicing identity (printed on every invoice) ----
+  @ApiPropertyOptional({ example: 'Latache SARL', description: 'Registered company name printed on invoices.' })
+  @IsOptional() @IsString() @Length(0, 160) legalName?: string;
+  @ApiPropertyOptional({ example: '12 Rue Example, Casablanca 20000, Morocco' })
+  @IsOptional() @IsString() @Length(0, 300) legalAddress?: string;
+  @ApiPropertyOptional({ example: '001234567000089', description: "ICE (Identifiant Commun de l'Entreprise)." })
+  @IsOptional() @IsString() @Length(0, 32) iceNumber?: string;
+  @ApiPropertyOptional({ example: '123456', description: 'RC (Registre du Commerce).' })
+  @IsOptional() @IsString() @Length(0, 32) rcNumber?: string;
+  @ApiPropertyOptional({ example: '12345678', description: 'IF (Identifiant Fiscal).' })
+  @IsOptional() @IsString() @Length(0, 32) ifNumber?: string;
+  @ApiPropertyOptional({ example: '34567890', description: 'Taxe professionnelle (Patente).' })
+  @IsOptional() @IsString() @Length(0, 32) patenteNumber?: string;
+  @ApiPropertyOptional({ example: 'Payment received with thanks.', description: 'Free text printed at the bottom of invoices.' })
+  @IsOptional() @IsString() @Length(0, 500) invoiceFooterNote?: string;
   @ApiPropertyOptional({
     type: () => GeneralContentTranslationDto,
     isArray: true,
@@ -385,6 +401,28 @@ export class TaskerFinanceSettingsDto {
   @IsOptional()
   @IsBoolean()
   blockCashBookingsAtDebtLimit?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    default: false,
+    description:
+      'When enabled, a new Tasker must pay the signup security deposit before an admin can approve them and before they can accept bookings.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  signupDepositEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    example: 500,
+    default: 0,
+    description: 'Signup security deposit, in the platform display currency.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1000000)
+  signupDepositAmount?: number;
 }
 
 

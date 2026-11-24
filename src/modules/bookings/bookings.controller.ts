@@ -161,6 +161,18 @@ export class BookingsController {
     return this.payments.completeAcceptancePayment(user.id, params.bookingId, dto);
   }
 
+  @Get(':bookingId/cancellation-quote')
+  @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
+  @Roles(UserRole.Customer)
+  @ApiOperation({
+    summary: 'What the customer gets back if they cancel now',
+    description:
+      'Show before confirming a cancellation. feeApplies=true when cancelling inside the late-cancellation window (bookingRules.cancellationWindowHours / lateCancellationFeePercent); refund = paid - lateCancellationFee. Cash and unpaid bookings never carry a fee.',
+  })
+  cancellationQuote(@CurrentUser() user: User, @Param() params: BookingParamDto) {
+    return this.bookings.cancellationQuote(user.id, params.bookingId);
+  }
+
   @Post(':bookingId/cancel')
   @ApiParam({ name: 'bookingId', required: true, type: Number, description: 'Booking ID.' })
   @ApiOperation({ summary: 'Cancel a booking using the current participant role' })

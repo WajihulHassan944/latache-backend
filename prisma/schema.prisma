@@ -168,6 +168,9 @@ model User {
   extensionRequestsMade        BookingExtensionRequest[]   @relation("BookingExtensionRequestedBy")
   platformSettlements          TaskerPlatformSettlement[]  @relation("TaskerPlatformSettlements")
 
+  taskerDeposit                TaskerDeposit?              @relation("TaskerDepositTasker")
+  invoicesBilled               Invoice[]                   @relation("InvoiceBilledTo")
+
   @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
   @@index([roles], type: Gin, map: "users_roles_gin_idx")
   @@index([role, accountStatus], map: "users_role_status_idx")
@@ -984,6 +987,8 @@ model Booking {
   donationDropoffRequested  Boolean   @default(false)
   totalChargedAmount        Decimal?  @db.Decimal(14, 2)
   referralDiscountAmount    Decimal   @default(0) @db.Decimal(14, 2)
+  /// Late-cancellation fee kept from the prepayment when the customer cancelled inside the policy window.
+  cancellationFeeAmount     Decimal   @default(0) @db.Decimal(14, 2)
   referralDiscountPercent   Decimal   @default(0) @db.Decimal(7, 4)
   paymentFailureReason      String?   @db.VarChar(1000)
   paidAt                    DateTime? @db.Timestamptz(6)
@@ -1004,6 +1009,7 @@ model Booking {
   complaints             TaskComplaint[]
   messages               TaskMessage[]
   conversationCalls      ConversationCall[]
+  invoices               Invoice[]
   reviews                Review[]
   walletLedger           TaskerWalletLedgerEntry[]
   taskerEarning          TaskerEarning?
@@ -1211,6 +1217,11 @@ model CustomerWithdrawal {
   amount            Decimal   @db.Decimal(14, 2)
   currency          String    @db.VarChar(3)
   status            String    @default("pending_review") @db.VarChar(32)
+  /// bank_transfer (RIB/IBAN). The full destination is AES-encrypted; only the masked form is listed.
+  destinationType   String?   @db.VarChar(32)
+  destinationMasked String?   @db.VarChar(120)
+  destinationHolder String?   @db.VarChar(120)
+  encryptedDestination String? @db.Text
   idempotencyKey    String    @db.VarChar(120)
   providerReference String?   @db.VarChar(255)
   failureReason     String?   @db.VarChar(500)
@@ -1295,6 +1306,8 @@ model TaskWorkSession {
   pausedAt              DateTime? @db.Timestamptz(6)
   accumulatedPausedSecs Int       @default(0)
   stoppedAt             DateTime? @db.Timestamptz(6)
+  /// Why the timer stopped when not by the Tasker (e.g. "dispute_filed").
+  stopReason            String?   @db.VarChar(48)
   notes                 String?   @db.Text
   createdAt             DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
@@ -2256,4 +2269,74 @@ model EmailNotificationDelivery {
   @@unique([notificationId], map: "email_notification_deliveries_notification_unique")
   @@index([status, nextAttemptAt, lockedAt, createdAt], map: "email_notification_deliveries_queue_idx")
   @@map("EmailNotificationDeliveries")
+}
+
+/// One-time refundable security deposit a Tasker pays at signup when
+/// taskerFinance.signupDepositEnabled is on. Admin approval and accepting
+/// bookings are blocked until status is paid or waived.
+model TaskerDeposit {
+  id                String    @id @default(cuid()) @db.VarChar(40)
+  taskerId          Int       @unique(map: "TaskerDeposits_taskerId_key")
+  amount            Decimal   @db.Decimal(14, 2)
+  currency          String    @db.VarChar(3)
+  /// pending | paid | waived | refunded
+  status            String    @default("pending") @db.VarChar(24)
+  /// cmi | wallet | manual
+  paymentMethod     String?   @db.VarChar(24)
+  providerReference String?   @db.VarChar(255)
+  paidAt            DateTime? @db.Timestamptz(6)
+  waivedAt          DateTime? @db.Timestamptz(6)
+  refundedAt        DateTime? @db.Timestamptz(6)
+  reviewedById      Int?
+  adminNote         String?   @db.VarChar(1000)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  tasker   User      @relation("TaskerDepositTasker", fields: [taskerId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "TaskerDeposits_taskerId_fkey")
+  invoices Invoice[]
+
+  @@index([status, createdAt], map: "tasker_deposits_status_created_idx")
+  @@map("TaskerDeposits")
+}
+
+/// Immutable, sequentially numbered invoice. type=booking is the customer's
+/// receipt for a completed+settled booking; type=tasker_deposit is the Tasker's
+/// deposit receipt. Amounts are snapshotted at issue time.
+model Invoice {
+  id              String    @id @default(cuid()) @db.VarChar(40)
+  number          String    @unique(map: "Invoices_number_key") @db.VarChar(32)
+  type            String    @db.VarChar(24)
+  status          String    @default("issued") @db.VarChar(16)
+  billedToId      Int
+  bookingId       Int?
+  taskerDepositId String?   @db.VarChar(40)
+  currency        String    @db.VarChar(3)
+  subtotal        Decimal   @db.Decimal(14, 2)
+  platformFee     Decimal   @default(0) @db.Decimal(14, 2)
+  taxAmount       Decimal   @default(0) @db.Decimal(14, 2)
+  discountAmount  Decimal   @default(0) @db.Decimal(14, 2)
+  total           Decimal   @db.Decimal(14, 2)
+  paymentMethod   String?   @db.VarChar(24)
+  lines           Json      @db.JsonB
+  /// Snapshot of what was invoiced (service, Tasker, date/time, hours, address).
+  details         Json?     @db.JsonB
+  seller          Json      @db.JsonB
+  buyer           Json      @db.JsonB
+  issuedAt        DateTime  @default(now()) @db.Timestamptz(6)
+  voidedAt        DateTime? @db.Timestamptz(6)
+  /// Set once the PDF was emailed to billedTo; the sweep retries until then (max 5 attempts).
+  emailedAt       DateTime? @db.Timestamptz(6)
+  emailAttempts   Int       @default(0)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+
+  billedTo      User           @relation("InvoiceBilledTo", fields: [billedToId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "Invoices_billedToId_fkey")
+  booking       Booking?       @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "Invoices_bookingId_fkey")
+  taskerDeposit TaskerDeposit? @relation(fields: [taskerDepositId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "Invoices_taskerDepositId_fkey")
+
+  @@unique([type, bookingId], map: "invoices_type_booking_unique")
+  @@unique([type, taskerDepositId], map: "invoices_type_deposit_unique")
+  @@index([billedToId, issuedAt], map: "invoices_billed_to_issued_idx")
+  @@index([issuedAt], map: "invoices_issued_idx")
+  @@index([emailedAt, emailAttempts], map: "invoices_email_pending_idx")
+  @@map("Invoices")
 }

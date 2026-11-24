@@ -741,3 +741,21 @@ The generated Prisma client, `node_modules`, `.env`, `dist`, and coverage output
 ## SEO configuration
 
 SEO is managed through the RBAC-controlled `/api/admin/seo/*` APIs. Configure `SEO_PUBLIC_BASE_URL` to the public website origin when it differs from the API origin. The backend exposes `/api/seo/meta`, `/api/seo/robots.txt`, and `/api/seo/sitemap.xml`; the frontend should consume route metadata and apply the resolved canonical, robots, Open Graph, Twitter, alternate-language, and JSON-LD values to rendered pages.
+
+## Finance operations (v3.80 - v3.81)
+
+Production checklist:
+
+```env
+TASKER_PAYOUT_EXECUTION_MODE=manual              # Tasker withdrawals queue for admin bank transfers
+CUSTOMER_WALLET_WITHDRAWAL_EXECUTION_MODE=manual # customer wallet -> bank withdrawals
+PAYOUT_DATA_ENCRYPTION_KEY=<64 hex>              # encrypts IBAN/RIB details at rest
+CMI_MODE=test|production                         # simulator is local-only
+CMI_CLIENT_ID=... CMI_STORE_KEY=...              # from the merchant's bank (CMI)
+CMI_GATEWAY_URL=...                              # required in production, from the bank onboarding pack
+CMI_RETURN_URL=https://<frontend>/payment/return
+```
+
+Admin settings to fill: commission rate (Settings -> Commission), `bookingRules.cancellationWindowHours` + `lateCancellationFeePercent`, `taskerFinance.signupDepositEnabled` + `signupDepositAmount`, and the invoicing identity in `general` (`legalName`, `legalAddress`, `iceNumber`, `rcNumber`, `ifNumber`, `patenteNumber`). CMI settles in MAD, so switch the platform currency to MAD before taking CMI payments.
+
+Admin endpoints: `/admin/finance/overview`, `/admin/finance/exports/:dataset` (transactions, invoices, platform-fees, tasker-earnings, tasker-payouts, customer-withdrawals, tasker-deposits), `/admin/finance/customer-withdrawals`, `/admin/finance/payouts/...` (Tasker payouts), `/admin/invoices`, `/admin/tasker-deposits`, `/admin/conversations`.

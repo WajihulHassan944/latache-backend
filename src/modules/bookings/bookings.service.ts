@@ -580,11 +580,14 @@ export class BookingsService {
         },
         include: BOOKING_INCLUDE,
       });
-      // Money already captured at acceptance goes back to the customer.
+      // Money already captured at acceptance goes back to the customer, minus a
+      // late-cancellation fee when cancelling inside the policy window.
+      const quote = await this.cancellationQuoteFor(booking, transaction);
       refundOutcome = await this.payments.refundAcceptanceCaptureOnCancel(
         bookingId,
         `Customer cancelled booking: ${dto.reason}`,
         transaction,
+        { cancellationFee: quote.fee },
       );
       await this.notifications.create(
         booking.taskerId,
@@ -614,6 +617,40 @@ export class BookingsService {
       return row;
     });
     return this.serializeAfterCancellationRefund(updated, customerId, refundOutcome, locale);
+  }
+
+  /** What the customer would get back if they cancelled now (for the confirm dialog). */
+  async cancellationQuote(customerId: number, bookingId: number) {
+    const booking = await this.prisma.booking.findFirst({ where: { id: bookingId, customerId } });
+    if (!booking) throw new NotFoundException('Booking not found');
+    const quote = await this.cancellationQuoteFor(booking);
+    return {
+      bookingId: String(bookingId),
+      cancellable: !['in_progress', 'awaiting_customer_approval', 'completed', 'cancelled'].includes(booking.status),
+      currency: booking.paymentCurrency,
+      paid: quote.paid,
+      lateCancellationFee: quote.fee,
+      refund: Math.round((quote.paid - quote.fee) * 100) / 100,
+      feeApplies: quote.fee > 0,
+      policy: quote.policy,
+      startsAt: quote.startsAt.toISOString(),
+      freeCancellationUntil: quote.freeUntil?.toISOString() ?? null,
+    };
+  }
+
+  private async cancellationQuoteFor(
+    booking: { bookingDate: Date; startTime: string; capturedAt: Date | null; capturedAmount: Prisma.Decimal | null },
+    transaction?: Prisma.TransactionClient,
+  ) {
+    const policy = await this.platformSettings.lateCancellationPolicy(transaction);
+    const [hours, minutes] = booking.startTime.split(':').map(Number);
+    // Same UTC slot convention as the rest of the booking engine (isPastSlotStart).
+    const startsAt = new Date(booking.bookingDate.getTime() + ((hours || 0) * 60 + (minutes || 0)) * 60_000);
+    const paid = booking.capturedAt && booking.capturedAmount !== null ? Number(booking.capturedAmount) : 0;
+    const freeUntil = policy.enabled ? new Date(startsAt.getTime() - policy.windowHours * 3_600_000) : null;
+    const late = Boolean(freeUntil && Date.now() >= freeUntil.getTime());
+    const fee = late && paid > 0 ? Math.round(paid * policy.feePercent) / 100 : 0;
+    return { paid, fee: Math.min(fee, paid), policy, startsAt, freeUntil };
   }
 
   /**
@@ -2129,6 +2166,50 @@ export class BookingsService {
     };
   }
 
+  /**
+   * Filing a dispute (by either party) freezes the billable work timer at the
+   * filing moment. The session is stopped with stopReason=dispute_filed, so it
+   * can never be resumed (only a paused timer can resume) and billing is
+   * computed up to now. Returns true when a running/paused timer was stopped.
+   */
+  private async stopWorkTimerForDispute(
+    bookingId: number,
+    now: Date,
+    transaction: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const session = await transaction.taskWorkSession.findUnique({ where: { bookingId } });
+    if (!session || !['running', 'paused'].includes(session.status)) return false;
+    const pausedDelta =
+      session.status === 'paused' && session.pausedAt
+        ? Math.max(0, Math.floor((now.getTime() - session.pausedAt.getTime()) / 1000))
+        : 0;
+    const stopped = await transaction.taskWorkSession.update({
+      where: { bookingId },
+      data: {
+        status: 'stopped',
+        pausedAt: null,
+        stoppedAt: now,
+        stopReason: 'dispute_filed',
+        accumulatedPausedSecs: { increment: pausedDelta },
+      },
+    });
+    await this.realtime.enqueueBooking(
+      bookingId,
+      'booking:timer',
+      {
+        bookingId: String(bookingId),
+        status: stopped.status,
+        startedAt: stopped.startedAt.toISOString(),
+        pausedAt: null,
+        stoppedAt: now.toISOString(),
+        accumulatedPausedSecs: stopped.accumulatedPausedSecs,
+        stopReason: 'dispute_filed',
+      },
+      transaction,
+    );
+    return true;
+  }
+
   async listUserDisputes(user: User, query: ListParticipantDisputesQueryDto, locale: string) {
     const { page, limit, offset } = normalizePagination(query.page, query.limit, 30);
     const where: Prisma.TaskComplaintWhereInput = {
@@ -2359,13 +2440,17 @@ export class BookingsService {
         if (!isNoShowDispute) {
           const completionAnchor =
             booking.taskCompletedAt ?? booking.completionApprovedAt ?? booking.completionSubmittedAt;
-          if (!completionAnchor) {
+          // Either party may also dispute while the job is still being worked on;
+          // filing then freezes the billable timer (see stopWorkTimerForDispute).
+          const workInProgress = booking.status === 'in_progress';
+          if (!completionAnchor && !workInProgress) {
             throw new ConflictException({
               code: 'DISPUTE_NOT_YET_FILEABLE',
-              message: 'A booking dispute can be filed only after service completion has been recorded.',
+              message:
+                'A booking dispute can be filed only while work is in progress or after service completion has been recorded.',
             });
           }
-          filingDeadlineAt = this.disputes.filingDeadline(completionAnchor, policy);
+          filingDeadlineAt = completionAnchor ? this.disputes.filingDeadline(completionAnchor, policy) : null;
           if (filingDeadlineAt && filingDeadlineAt.getTime() < Date.now()) {
             throw new ConflictException({
               code: 'DISPUTE_FILING_WINDOW_CLOSED',
@@ -2447,6 +2532,8 @@ export class BookingsService {
           });
         }
 
+        const timerStopped = await this.stopWorkTimerForDispute(bookingId, now, transaction);
+
         let cancelledBooking: {
           status: string;
           cancelledByRole: string | null;
@@ -2516,6 +2603,7 @@ export class BookingsService {
               assignedAdminId,
               clientRequestKey: normalizedKey,
               filingDeadlineAt: filingDeadlineAt?.toISOString() ?? null,
+              workTimerStopped: timerStopped,
             },
           },
           transaction,
@@ -2525,7 +2613,7 @@ export class BookingsService {
           cancelledBooking?.status ?? booking.status,
           isNoShowDispute ? 'tasker_no_show_cancelled' : 'dispute_opened',
           transaction,
-          { disputeId: complaint.id, priority },
+          { disputeId: complaint.id, priority, workTimerStopped: timerStopped },
         );
         return { complaint, replay: false, cancelledBooking };
       });

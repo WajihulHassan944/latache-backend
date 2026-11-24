@@ -1,3 +1,5 @@
+import { invoiceEmailTemplate } from './invoice-email.template';
+
 import {
   Inject,
   Injectable,
@@ -19,6 +21,13 @@ import {
   payoutPinResetOtpTemplate,
   verificationEmailTemplate,
 } from './email-templates';
+
+export interface MailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+}
+
 
 @Injectable()
 export class MailService implements OnModuleInit, OnModuleDestroy {
@@ -169,11 +178,32 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async sendInvoiceEmail(params: {
+    to: string;
+    name: string;
+    number: string;
+    kind: 'booking' | 'tasker_deposit' | 'late_cancellation';
+    bookingId: string | null;
+    total: string;
+    locale?: string;
+    pdf: Buffer;
+  }): Promise<void> {
+    const rendered = invoiceEmailTemplate(params);
+    await this.send({
+      to: params.to,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+      attachments: [{ filename: `${params.number}.pdf`, content: params.pdf, contentType: 'application/pdf' }],
+    });
+  }
+
   private async send(params: {
     to: string;
     subject: string;
     html: string;
     text: string;
+    attachments?: MailAttachment[];
   }): Promise<void> {
     try {
       if (this.isResendEnabled()) {
@@ -227,6 +257,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     subject: string;
     html: string;
     text: string;
+    attachments?: MailAttachment[];
   }): Promise<void> {
     const apiKey = this.config.getOrThrow<string>('mail.resendApiKey');
     const from = this.config.get<string>('mail.resendFrom') ?? this.config.getOrThrow<string>('mail.from');
@@ -244,6 +275,9 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
         subject: params.subject,
         html: params.html,
         text: params.text,
+        ...(params.attachments?.length
+          ? { attachments: params.attachments.map((file) => ({ filename: file.filename, content: file.content.toString('base64') })) }
+          : {}),
       }),
     });
 
@@ -276,6 +310,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     subject: string;
     html: string;
     text: string;
+    attachments?: MailAttachment[];
   }): Promise<void> {
     const apiKey = this.config.getOrThrow<string>('mail.brevoApiKey');
     const from = this.config.get<string>('mail.brevoFrom') ?? this.config.getOrThrow<string>('mail.from');
@@ -294,6 +329,9 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
         subject: params.subject,
         htmlContent: params.html,
         textContent: params.text,
+        ...(params.attachments?.length
+          ? { attachment: params.attachments.map((file) => ({ name: file.filename, content: file.content.toString('base64') })) }
+          : {}),
       }),
     });
 

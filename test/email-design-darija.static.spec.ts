@@ -17,7 +17,9 @@ describe('premium email design and Darija architecture', () => {
     expect(layout).not.toContain('Get the Latache App');
     expect(layout).not.toContain('App Store');
     expect(layout).not.toContain('Google Play');
-    expect(mail).not.toContain('attachments:');
+    // Artwork stays hosted (never inline/CID); the only attachment is the invoice PDF.
+    expect(mail).not.toContain('cid:');
+    expect(mail.match(/contentType: '[^']+'/g) ?? []).toEqual(["contentType: 'application/pdf'"]);
   });
 
   it('enables ary, fr, and es centrally without introducing a new API resource', () => {

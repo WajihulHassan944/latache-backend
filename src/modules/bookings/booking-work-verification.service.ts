@@ -229,22 +229,27 @@ export class BookingWorkVerificationService {
         throw new ConflictException('Completed-work proof is immutable once submitted');
       }
       const session = await transaction.taskWorkSession.findUnique({ where: { bookingId } });
-      if (!session || ![TASK_TIMER_STATUS.Running, TASK_TIMER_STATUS.Paused].includes(session.status as never)) {
+      // A timer already frozen by a dispute filing keeps its stoppedAt: billing
+      // stays capped at the filing moment.
+      const frozenByDispute = session?.status === TASK_TIMER_STATUS.Stopped && session.stopReason === 'dispute_filed';
+      if (!session || (!frozenByDispute && ![TASK_TIMER_STATUS.Running, TASK_TIMER_STATUS.Paused].includes(session.status as never))) {
         throw new ConflictException('An active task timer is required before submitting completed-work proof');
       }
       const now = new Date();
-      const pausedDelta = session.status === TASK_TIMER_STATUS.Paused && session.pausedAt
-        ? Math.max(0, Math.floor((now.getTime() - session.pausedAt.getTime()) / 1000))
-        : 0;
-      await transaction.taskWorkSession.update({
-        where: { bookingId },
-        data: {
-          status: TASK_TIMER_STATUS.Stopped,
-          pausedAt: null,
-          stoppedAt: now,
-          accumulatedPausedSecs: { increment: pausedDelta },
-        },
-      });
+      if (!frozenByDispute) {
+        const pausedDelta = session.status === TASK_TIMER_STATUS.Paused && session.pausedAt
+          ? Math.max(0, Math.floor((now.getTime() - session.pausedAt.getTime()) / 1000))
+          : 0;
+        await transaction.taskWorkSession.update({
+          where: { bookingId },
+          data: {
+            status: TASK_TIMER_STATUS.Stopped,
+            pausedAt: null,
+            stoppedAt: now,
+            accumulatedPausedSecs: { increment: pausedDelta },
+          },
+        });
+      }
       await transaction.bookingWorkProof.create({
         data: {
           bookingId,

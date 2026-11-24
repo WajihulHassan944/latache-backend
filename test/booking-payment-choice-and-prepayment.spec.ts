@@ -18,7 +18,7 @@ describe('acceptance prepayment equals the quoted estimate', () => {
     const config = { get: (_key: string, fallback: unknown) => fallback } as unknown as ConfigService;
     const service = new PaymentsService(
       {} as PrismaService, {} as never, config, {} as never, platformSettings as never,
-      {} as never, {} as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
     );
     return { service, platformSettings };
   };

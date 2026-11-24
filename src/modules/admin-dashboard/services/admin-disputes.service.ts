@@ -165,8 +165,17 @@ export class AdminDisputesService {
       this.prisma.taskComplaint.count({ where }),
     ]);
 
+    const filerCounts = await this.prisma.taskComplaint.groupBy({
+      by: ['filedByRole'],
+      where: this.listWhere({ ...query, filedByRole: 'all' } as AdminDisputesQueryDto),
+      _count: { _all: true },
+    });
     return {
       summary,
+      filedByCounts: {
+        customer: filerCounts.find((row) => row.filedByRole === 'customer')?._count._all ?? 0,
+        tasker: filerCounts.find((row) => row.filedByRole === 'tasker')?._count._all ?? 0,
+      },
       view: query.view ?? 'open',
       items: rows.map((complaint) => this.listItem(complaint)),
       pagination: { page, limit, totalItems, totalPages: Math.ceil(totalItems / limit) },
@@ -1700,6 +1709,15 @@ export class AdminDisputesService {
       ...(createdAt ? { createdAt } : {}),
       ...(query.priority && query.priority !== 'all' ? { priority: query.priority } : {}),
       ...(query.assignedAdminId ? { assignedAdminId: query.assignedAdminId } : {}),
+      ...(query.filedByRole && query.filedByRole !== 'all' ? { filedByRole: query.filedByRole } : {}),
+      ...(query.customerId || query.taskerId
+        ? {
+            booking: {
+              ...(query.customerId ? { customerId: query.customerId } : {}),
+              ...(query.taskerId ? { taskerId: query.taskerId } : {}),
+            },
+          }
+        : {}),
       ...(search
         ? {
             OR: [

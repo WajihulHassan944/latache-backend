@@ -104,6 +104,8 @@ export interface TaskTimerView {
   accumulatedPausedSeconds: number;
   elapsedSeconds: number;
   notes: string;
+  /** Set when the timer was stopped by the system rather than the Tasker, e.g. "dispute_filed". */
+  stopReason: string | null;
 }
 
 export interface NavigationView {

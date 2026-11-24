@@ -1,3 +1,5 @@
+import { maskBankAccount } from '../../common/utils/bank-account.util';
+import { PayoutDataSecurityService } from '../tasker-dashboard/services/payout-data-security.service';
 import {
   BadRequestException,
   ConflictException,
@@ -114,6 +116,7 @@ export class PaymentsService {
     private readonly disputes: DisputeLifecycleService,
     private readonly realtime: RealtimeOutboxService,
     private readonly platformSettlements: PlatformPayableSettlementsService,
+    private readonly payoutSecurity: PayoutDataSecurityService,
   ) {
     this.minimumBillableMinutes = config.get<number>('payments.minimumBillableMinutes', 120);
     this.minimumWalletTopup = config.get<number>('payments.minimumWalletTopup', 5);
@@ -455,6 +458,7 @@ export class PaymentsService {
     customerId: number,
     amountInput: number,
     idempotencyKey: string,
+    destination?: { accountHolderName: string; iban: string; bankName?: string },
   ): Promise<CustomerWithdrawalView> {
     if (this.walletWithdrawalExecutionMode() !== WALLET_WITHDRAWAL_EXECUTION_MODE.Manual) {
       throw new ServiceUnavailableException({
@@ -477,6 +481,15 @@ export class PaymentsService {
       );
     }
     const scopedKey = idempotencyKey.trim();
+    if (!destination) {
+      throw new BadRequestException('Bank details (accountHolderName, iban) are required to withdraw');
+    }
+    const encryptedDestination = this.payoutSecurity.encrypt({
+      type: 'bank_transfer',
+      accountHolderName: destination.accountHolderName,
+      iban: destination.iban,
+      ...(destination.bankName ? { bankName: destination.bankName } : {}),
+    });
 
     const withdrawal = await this.prisma.$transaction(async (transaction) => {
       const wallet = await this.ensureCustomerWallet(customerId, transaction);
@@ -510,6 +523,10 @@ export class PaymentsService {
           currency: wallet.currency,
           status: CUSTOMER_WITHDRAWAL_STATUS.PendingReview,
           idempotencyKey: scopedKey,
+          destinationType: 'bank_transfer',
+          destinationMasked: `${destination.bankName ? `${destination.bankName} ` : ''}${maskBankAccount(destination.iban)}`,
+          destinationHolder: destination.accountHolderName,
+          encryptedDestination,
         },
       });
       await transaction.customerWallet.update({
@@ -548,6 +565,157 @@ export class PaymentsService {
       return created;
     });
     return this.serializeWithdrawal(withdrawal);
+  }
+
+  async listWalletWithdrawals(customerId: number, page = 1, limit = 20) {
+    const take = Math.min(100, Math.max(1, limit));
+    const skip = (Math.max(1, page) - 1) * take;
+    const [rows, totalItems] = await Promise.all([
+      this.prisma.customerWithdrawal.findMany({ where: { customerId }, orderBy: { requestedAt: 'desc' }, skip, take }),
+      this.prisma.customerWithdrawal.count({ where: { customerId } }),
+    ]);
+    return {
+      page: Math.max(1, page),
+      limit: take,
+      totalItems,
+      totalPages: Math.ceil(totalItems / take),
+      items: rows.map((row) => ({ ...this.serializeWithdrawal(row), destination: row.destinationMasked })),
+    };
+  }
+
+  // ---------- Admin: customer withdrawal queue (manual bank transfers) ----------
+
+  async adminListCustomerWithdrawals(query: { status?: string; page?: number; limit?: number }) {
+    const take = Math.min(100, Math.max(1, query.limit ?? 30));
+    const page = Math.max(1, query.page ?? 1);
+    const where: Prisma.CustomerWithdrawalWhereInput = query.status ? { status: query.status } : {};
+    const [rows, totalItems, pending] = await Promise.all([
+      this.prisma.customerWithdrawal.findMany({
+        where,
+        include: { customer: { select: { id: true, firstName: true, lastName: true, email: true } } },
+        orderBy: { requestedAt: 'asc' },
+        skip: (page - 1) * take,
+        take,
+      }),
+      this.prisma.customerWithdrawal.count({ where }),
+      this.prisma.customerWithdrawal.groupBy({
+        by: ['status', 'currency'],
+        where: { status: { in: [CUSTOMER_WITHDRAWAL_STATUS.PendingReview, CUSTOMER_WITHDRAWAL_STATUS.Processing] } },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+    ]);
+    return {
+      page,
+      limit: take,
+      totalItems,
+      totalPages: Math.ceil(totalItems / take),
+      queue: pending.map((row) => ({ status: row.status, currency: row.currency, count: row._count._all, amount: Number(row._sum.amount ?? 0) })),
+      items: rows.map((row) => ({
+        ...this.serializeWithdrawal(row),
+        customer: { id: String(row.customer.id), name: `${row.customer.firstName ?? ''} ${row.customer.lastName ?? ''}`.trim(), email: row.customer.email },
+        destination: row.destinationMasked,
+        accountHolderName: row.destinationHolder,
+        providerReference: row.providerReference,
+        adminNote: row.adminNote,
+        reviewedAt: row.reviewedAt?.toISOString() ?? null,
+      })),
+    };
+  }
+
+  /** Full bank details for executing the transfer. Every reveal is audited by the caller. */
+  async adminRevealCustomerWithdrawalDestination(id: string) {
+    const row = await this.prisma.customerWithdrawal.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('Withdrawal not found');
+    if (!row.encryptedDestination) throw new ConflictException('This withdrawal has no stored bank details');
+    return { id, customerId: String(row.customerId), amount: Number(row.amount), currency: row.currency, destination: this.payoutSecurity.decrypt(row.encryptedDestination) };
+  }
+
+  /**
+   * approve: pending_review -> processing (ops will transfer).
+   * mark_paid: processing -> paid (reference required); the hold becomes a final debit.
+   * reject / mark_failed: the reserved amount goes back to the wallet.
+   */
+  async adminCustomerWithdrawalAction(
+    actorId: number,
+    id: string,
+    dto: { action: 'approve' | 'mark_paid' | 'reject' | 'mark_failed'; providerReference?: string; note?: string },
+  ) {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "CustomerWithdrawals" WHERE "id" = ${id} FOR UPDATE`;
+      const row = await transaction.customerWithdrawal.findUnique({ where: { id } });
+      if (!row) throw new NotFoundException('Withdrawal not found');
+      const amount = roundMoney(Number(row.amount));
+      const now = new Date();
+      const notify = (type: string, title: string, body: string) =>
+        this.notifications.create(row.customerId, { category: 'wallet', type, title, body, entityType: 'withdrawal', entityId: id, audienceRole: UserRole.Customer }, transaction);
+
+      if (dto.action === 'approve') {
+        if (row.status !== CUSTOMER_WITHDRAWAL_STATUS.PendingReview) throw new ConflictException('Only pending-review withdrawals can be approved');
+        const updated = await transaction.customerWithdrawal.update({
+          where: { id },
+          data: { status: CUSTOMER_WITHDRAWAL_STATUS.Processing, reviewedById: actorId, reviewedAt: now, adminNote: dto.note ?? null },
+        });
+        await notify('withdrawal_approved', 'Withdrawal approved', `Your ${row.currency} ${amount.toFixed(2)} withdrawal is approved and the bank transfer is being sent.`);
+        return this.serializeWithdrawal(updated);
+      }
+      if (dto.action === 'mark_paid') {
+        if (row.status !== CUSTOMER_WITHDRAWAL_STATUS.Processing) throw new ConflictException('Approve the withdrawal before marking it paid');
+        if (!dto.providerReference?.trim()) throw new BadRequestException('providerReference (bank transfer reference) is required');
+        const updated = await transaction.customerWithdrawal.update({
+          where: { id },
+          data: { status: CUSTOMER_WITHDRAWAL_STATUS.Paid, providerReference: dto.providerReference.trim(), processedAt: now },
+        });
+        await transaction.customerWalletLedgerEntry.updateMany({
+          where: { withdrawalId: id, kind: CUSTOMER_WALLET_ENTRY_KIND.WithdrawalHold },
+          data: { status: 'settled', providerReference: dto.providerReference.trim() },
+        });
+        await notify('withdrawal_paid', 'Withdrawal sent', `${row.currency} ${amount.toFixed(2)} was transferred to your bank account (ref ${dto.providerReference.trim()}).`);
+        return this.serializeWithdrawal(updated);
+      }
+      // reject / mark_failed: give the money back to the wallet
+      const allowed: string[] =
+        dto.action === 'reject'
+          ? [CUSTOMER_WITHDRAWAL_STATUS.PendingReview, CUSTOMER_WITHDRAWAL_STATUS.Processing]
+          : [CUSTOMER_WITHDRAWAL_STATUS.Processing];
+      if (!allowed.includes(row.status)) throw new ConflictException(`Cannot ${dto.action} a ${row.status} withdrawal`);
+      if (!dto.note?.trim()) throw new BadRequestException('note is required to explain the outcome to the customer');
+      await transaction.$queryRaw`SELECT "customerId" FROM "CustomerWallets" WHERE "customerId" = ${row.customerId} FOR UPDATE`;
+      await transaction.customerWallet.update({ where: { customerId: row.customerId }, data: { availableBalance: { increment: moneyString(amount) } } });
+      await transaction.customerWalletLedgerEntry.updateMany({
+        where: { withdrawalId: id, kind: CUSTOMER_WALLET_ENTRY_KIND.WithdrawalHold },
+        data: { status: 'released' },
+      });
+      await transaction.customerWalletLedgerEntry.create({
+        data: {
+          customerId: row.customerId,
+          withdrawalId: id,
+          kind: CUSTOMER_WALLET_ENTRY_KIND.WithdrawalRelease,
+          status: 'settled',
+          amount: moneyString(amount),
+          balanceDelta: moneyString(amount),
+          currency: row.currency,
+          description: dto.action === 'reject' ? 'Withdrawal rejected - funds returned' : 'Withdrawal failed - funds returned',
+          idempotencyKey: `withdrawal:${id}:release`,
+        },
+      });
+      const updated = await transaction.customerWithdrawal.update({
+        where: { id },
+        data: {
+          status: dto.action === 'reject' ? CUSTOMER_WITHDRAWAL_STATUS.Rejected : CUSTOMER_WITHDRAWAL_STATUS.Failed,
+          failureReason: dto.note.trim().slice(0, 500),
+          reviewedById: actorId,
+          reviewedAt: now,
+          processedAt: now,
+        },
+      });
+      await notify(
+        dto.action === 'reject' ? 'withdrawal_rejected' : 'withdrawal_failed',
+        dto.action === 'reject' ? 'Withdrawal rejected' : 'Withdrawal failed',
+        `Your ${row.currency} ${amount.toFixed(2)} withdrawal was ${dto.action === 'reject' ? 'rejected' : 'not completed'} and the money is back in your wallet. ${dto.note.trim()}`,
+      );
+      return this.serializeWithdrawal(updated);
+    });
   }
 
   private walletWithdrawalExecutionMode(): string {
@@ -843,17 +1011,32 @@ export class PaymentsService {
     bookingId: number,
     reason: string,
     transaction: Prisma.TransactionClient,
+    options: { cancellationFee?: number } = {},
   ): Promise<'none' | 'wallet_refunded' | 'card_refund_pending'> {
     const booking = await transaction.booking.findUniqueOrThrow({ where: { id: bookingId } });
     if (!booking.capturedAt || booking.capturedAmount === null) return 'none';
     if (
       booking.paymentStatus === PAYMENT_STATUS.Refunded ||
-      booking.paymentStatus === PAYMENT_STATUS.RefundPending
+      booking.paymentStatus === PAYMENT_STATUS.RefundPending ||
+      booking.paymentStatus === PAYMENT_STATUS.PartiallyRefunded
     ) {
       return 'none';
     }
-    const amount = roundMoney(Number(booking.capturedAmount));
-    if (amount <= 0) return 'none';
+    const captured = roundMoney(Number(booking.capturedAmount));
+    // A late-cancellation fee (customer cancellations only) is kept; the rest goes back.
+    const fee = roundMoney(Math.min(captured, Math.max(0, options.cancellationFee ?? 0)));
+    if (fee > 0) {
+      await transaction.booking.update({ where: { id: bookingId }, data: { cancellationFeeAmount: moneyString(fee) } });
+    }
+    const amount = roundMoney(captured - fee);
+    if (amount <= 0) {
+      if (fee > 0) {
+        await transaction.booking.update({ where: { id: bookingId }, data: { paymentStatus: PAYMENT_STATUS.Paid } });
+      }
+      return 'none';
+    }
+    const refundedStatus = fee > 0 ? PAYMENT_STATUS.PartiallyRefunded : PAYMENT_STATUS.Refunded;
+    const feeNote = fee > 0 ? ` (a late-cancellation fee of ${booking.paymentCurrency} ${fee.toFixed(2)} was kept)` : '';
     if (booking.paymentSource === PAYMENT_SOURCE.Wallet) {
       const key = `acceptance-refund:${bookingId}`;
       if (await transaction.customerWalletLedgerEntry.findUnique({ where: { idempotencyKey: key } })) return 'none';
@@ -869,8 +1052,8 @@ export class PaymentsService {
       await transaction.paymentTransaction.create({
         data: { customerId: booking.customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.Refund, provider: 'internal_wallet', providerReference: `wallet:acceptance-refund:${bookingId}`, status: 'succeeded', amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: key, failureReason: reason.slice(0, 500) },
       });
-      await transaction.booking.update({ where: { id: bookingId }, data: { paymentStatus: PAYMENT_STATUS.Refunded } });
-      await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `${booking.paymentCurrency} ${amount.toFixed(2)} for cancelled booking #${bookingId} was returned to your Latache wallet.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
+      await transaction.booking.update({ where: { id: bookingId }, data: { paymentStatus: refundedStatus } });
+      await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `${booking.paymentCurrency} ${amount.toFixed(2)} for cancelled booking #${bookingId} was returned to your Latache wallet${feeNote}.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
       return 'wallet_refunded';
     }
     await transaction.booking.update({ where: { id: bookingId }, data: { paymentStatus: PAYMENT_STATUS.RefundPending } });
@@ -886,7 +1069,10 @@ export class PaymentsService {
       this.logger.error(`Booking ${bookingId} is refund_pending but has no Stripe acceptance charge`);
       return 'failed';
     }
-    const amount = roundMoney(Number(booking.capturedAmount));
+    const fee = roundMoney(Number(booking.cancellationFeeAmount ?? 0));
+    const amount = roundMoney(Number(booking.capturedAmount) - fee);
+    const refundedStatus = fee > 0 ? PAYMENT_STATUS.PartiallyRefunded : PAYMENT_STATUS.Refunded;
+    if (amount <= 0) return 'skipped';
     try {
       const refund = await this.stripeProvider.client().refunds.create(
         { payment_intent: capture.providerReference, amount: toMinorUnits(amount), metadata: { kind: 'booking_acceptance_cancel_refund', latacheBookingId: String(bookingId) } },
@@ -901,7 +1087,7 @@ export class PaymentsService {
         });
         const claimed = await transaction.booking.updateMany({
           where: { id: bookingId, paymentStatus: PAYMENT_STATUS.RefundPending },
-          data: { paymentStatus: PAYMENT_STATUS.Refunded },
+          data: { paymentStatus: refundedStatus },
         });
         if (claimed.count === 1) {
           await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `${booking.paymentCurrency} ${amount.toFixed(2)} for cancelled booking #${bookingId} is being refunded to your card.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);

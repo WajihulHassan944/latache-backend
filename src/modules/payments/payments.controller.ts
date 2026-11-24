@@ -143,14 +143,28 @@ export class PaymentsController {
   @ApiOperation({
     summary: 'Request a wallet withdrawal',
     description:
-      'Reserves the requested amount out of the available wallet balance for an auditable pending-review withdrawal. This backend has no configured customer payout destination/provider yet, so the request is rejected with 503 WALLET_WITHDRAWAL_EXECUTION_NOT_CONFIGURED (no funds reserved) unless that has been explicitly configured.',
+      'Reserves the amount from the wallet and queues a bank transfer to the given IBAN / Moroccan RIB (stored encrypted) for admin review. Requires CUSTOMER_WALLET_WITHDRAWAL_EXECUTION_MODE=manual; otherwise 503 WALLET_WITHDRAWAL_EXECUTION_NOT_CONFIGURED and nothing is reserved.',
   })
   requestWithdrawal(
     @CurrentUser() user: User,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: CreateWalletWithdrawalDto,
   ): Promise<CustomerWithdrawalView> {
-    return this.payments.requestWalletWithdrawal(user.id, dto.amount, idempotencyKey ?? '');
+    return this.payments.requestWalletWithdrawal(user.id, dto.amount, idempotencyKey ?? '', {
+      accountHolderName: dto.accountHolderName,
+      iban: dto.iban,
+      bankName: dto.bankName,
+    });
+  }
+
+  @Get('wallet/withdrawals')
+  @ApiOperation({ summary: 'My wallet withdrawal requests and their status (bank details masked)' })
+  listWithdrawals(
+    @CurrentUser() user: User,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.payments.listWalletWithdrawals(user.id, Number(page) || 1, Number(limit) || 20);
   }
 
   @Get('transactions')

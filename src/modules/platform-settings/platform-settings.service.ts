@@ -426,6 +426,9 @@ export class PlatformSettingsService {
         currency,
       ),
       blockCashBookingsAtDebtLimit: Boolean(section.blockCashBookingsAtDebtLimit),
+      signupDepositEnabled: Boolean(section.signupDepositEnabled),
+      signupDepositAmount: this.convertUsdAmount(Number(section.signupDepositAmount ?? 0), currency),
+      currency: currency.code,
     };
   }
 
@@ -491,6 +494,22 @@ export class PlatformSettingsService {
       strikePointsPerWarning: Number(section.strikePointsPerWarning ?? 1),
       suspendAtStrikePoints: Number(section.suspendAtStrikePoints ?? 3),
     };
+  }
+
+  /**
+   * Customer late-cancellation policy: cancelling a prepaid booking less than
+   * windowHours before its start keeps feePercent of the amount paid.
+   * Disabled when either value is 0.
+   */
+  async lateCancellationPolicy(transaction?: Prisma.TransactionClient): Promise<{
+    enabled: boolean;
+    windowHours: number;
+    feePercent: number;
+  }> {
+    const section = await this.section<BookingRulesSettingsDto>('bookingRules', transaction);
+    const windowHours = Number(section.cancellationWindowHours ?? 0);
+    const feePercent = Math.min(100, Math.max(0, Number(section.lateCancellationFeePercent ?? 0)));
+    return { enabled: windowHours > 0 && feePercent > 0, windowHours, feePercent };
   }
 
   async bookingCompletionPolicy(transaction?: Prisma.TransactionClient): Promise<{
@@ -711,6 +730,8 @@ export class PlatformSettingsService {
         ),
         maximumOutstandingPlatformDebt: 0,
         blockCashBookingsAtDebtLimit: false,
+        signupDepositEnabled: false,
+        signupDepositAmount: 0,
       },
       referral: {
         clientReferralEnabled: false,
@@ -892,7 +913,7 @@ export class PlatformSettingsService {
       return [];
     }
     if (key === 'tax') return ['serviceSurchargeAmount'];
-    if (key === 'taskerFinance') return ['maximumOutstandingPlatformDebt'];
+    if (key === 'taskerFinance') return ['maximumOutstandingPlatformDebt', 'signupDepositAmount'];
     if (key === 'referral') {
       return [
         'clientReferralBonus',
@@ -1078,15 +1099,13 @@ export class PlatformSettingsService {
         'Tasker confirmation is required by the current booking lifecycle.',
       );
     }
-    if (Number(dto.bookingRules?.lateCancellationFeePercent ?? 0) > 0) {
-      throw new ConflictException(
-        'Late-cancellation fees cannot be enabled until the cancellation settlement/refund flow supports that charge.',
-      );
-    }
-    if (Number(dto.bookingRules?.cancellationWindowHours ?? 0) > 0) {
-      throw new ConflictException(
-        'A paid cancellation-window policy is not implemented yet. Keep cancellationWindowHours=0 so the setting cannot imply unsupported settlement behavior.',
-      );
+    if (dto.bookingRules && (dto.bookingRules.lateCancellationFeePercent !== undefined || dto.bookingRules.cancellationWindowHours !== undefined)) {
+      const current = await this.section<BookingRulesSettingsDto>('bookingRules');
+      const fee = Number(dto.bookingRules.lateCancellationFeePercent ?? current.lateCancellationFeePercent ?? 0);
+      const window = Number(dto.bookingRules.cancellationWindowHours ?? current.cancellationWindowHours ?? 0);
+      if (fee > 0 && window <= 0) {
+        throw new ConflictException('Set cancellationWindowHours (> 0) together with lateCancellationFeePercent.');
+      }
     }
     if (dto.serviceRadius?.dynamicRadiusAdjustment || dto.serviceRadius?.distanceBasedPricing) {
       throw new ConflictException(

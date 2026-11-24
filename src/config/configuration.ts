@@ -249,6 +249,18 @@ export default () => {
       minimumWalletWithdrawal: asPositiveNumber(process.env.CUSTOMER_WALLET_MIN_WITHDRAWAL, 5),
       walletWithdrawalExecutionMode: process.env.CUSTOMER_WALLET_WITHDRAWAL_EXECUTION_MODE ?? 'disabled',
     },
+    cmi: {
+      /** disabled | simulator (local only) | test (testpayment.cmi.co.ma) | production */
+      mode: (process.env.CMI_MODE ?? 'disabled').trim().toLowerCase(),
+      clientId: process.env.CMI_CLIENT_ID?.trim(),
+      storeKey: process.env.CMI_STORE_KEY?.trim(),
+      gatewayUrl: process.env.CMI_GATEWAY_URL?.trim(),
+      /** ISO 4217 numeric code CMI settles in; Moroccan merchant accounts are MAD (504). */
+      currencyCode: (process.env.CMI_CURRENCY_CODE ?? '504').trim(),
+      /** Frontend page the shopper lands on after paying (status/orderId appended). */
+      returnUrl: process.env.CMI_RETURN_URL?.trim(),
+      language: (process.env.CMI_LANGUAGE ?? 'fr').trim(),
+    },
     taskerPayout: {
       currency: (process.env.TASKER_WALLET_CURRENCY ?? 'USD').trim().toUpperCase(),
       executionMode: process.env.TASKER_PAYOUT_EXECUTION_MODE ?? 'disabled',

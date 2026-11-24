@@ -59,7 +59,7 @@ const make = (row: Record<string, unknown> = booking()) => {
   const notifications = { create: jest.fn() };
   const service = new PaymentsService(
     prisma, {} as never, config, notifications as never, platformSettings as never,
-    {} as never, {} as never, {} as never, realtime as never, {} as never,
+    {} as never, {} as never, {} as never, realtime as never, {} as never, {} as never,
   );
   return { service, prisma, update, realtime };
 };

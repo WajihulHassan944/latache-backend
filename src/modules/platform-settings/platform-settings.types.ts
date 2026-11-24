@@ -49,6 +49,10 @@ export interface TaskerFinancePolicy {
   cashDisputeClearanceDays: number;
   maximumOutstandingPlatformDebt: number;
   blockCashBookingsAtDebtLimit: boolean;
+  signupDepositEnabled: boolean;
+  /** Display-currency amount (converted from the stored USD value). */
+  signupDepositAmount: number;
+  currency: string;
 }
 
 export interface ReferralPolicy {

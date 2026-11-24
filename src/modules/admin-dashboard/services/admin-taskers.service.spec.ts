@@ -65,6 +65,7 @@ describe('AdminTaskersService', () => {
       audit as never,
       accountDeletion as never,
       platformSettings as never,
+      { approvalBlocker: jest.fn().mockResolvedValue(null) } as never,
     );
     return { service, prisma, audit };
   }

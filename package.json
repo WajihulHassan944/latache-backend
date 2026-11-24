@@ -1,6 +1,6 @@
 {
   "name": "latache-backend-nestjs-prisma",
-  "version": "3.79.0",
+  "version": "3.81.0",
   "description": "Latache API with verified on-site work start/completion proof and OTP gating, hardened local/social authentication, single-User multi-role Customer/Tasker identity, Super-Admin-owned referral/reward policy and backend-enforced Elite perks, disputes, chat/realtime/WebRTC, Redis/BullMQ, provider-backed finance, Prisma/PostgreSQL, Stripe, localization, and database-backed RBAC",
   "private": true,
   "license": "UNLICENSED",
@@ -62,6 +62,7 @@
     "libphonenumber-js": "1.13.10",
     "maxmind": "^5.1.0",
     "nodemailer": "9.0.4",
+    "pdfkit": "^0.17.2",
     "pg": "8.22.0",
     "prisma": "7.9.1",
     "reflect-metadata": "0.2.2",
@@ -80,6 +81,7 @@
     "@types/jest": "29.5.14",
     "@types/node": "22.17.2",
     "@types/nodemailer": "8.0.1",
+    "@types/pdfkit": "^0.17.7",
     "@types/pg": "8.20.3",
     "@types/supertest": "6.0.3",
     "eslint": "9.32.0",

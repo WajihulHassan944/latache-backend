@@ -234,3 +234,31 @@ export class ListConversationCallsQueryDto {
   @Max(100)
   limit?: number;
 }
+
+export class AdminListConversationsQueryDto extends ListConversationsQueryDto {
+  @ApiPropertyOptional({ description: 'Only threads with this customer.', example: 3 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  customerId?: number;
+
+  @ApiPropertyOptional({ description: 'Only threads with this tasker.', example: 31 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  taskerId?: number;
+
+  @ApiPropertyOptional({ description: 'Only the thread that contains this booking.', example: 72 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  bookingId?: number;
+
+  @ApiPropertyOptional({ description: 'true hides threads where no message was ever sent.' })
+  @IsOptional()
+  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
+  hasMessages?: boolean;
+}

@@ -1,3 +1,4 @@
+import { TaskerDepositsService } from '../../tasker-deposits/tasker-deposits.service';
 import type { PermanentDeleteMode } from '../../account-deletion/dto/permanent-delete.dto';
 import {
   BadRequestException,
@@ -31,6 +32,7 @@ export class AdminTaskersService {
     private readonly audit: AdminAuditService,
     private readonly accountDeletion: AccountDeletionService,
     private readonly platformSettings: PlatformSettingsService,
+    private readonly deposits: TaskerDepositsService,
   ) {}
 
   permanentlyDelete(actor: User, taskerId: number, reason: string, mode: PermanentDeleteMode = 'safe') {
@@ -360,6 +362,8 @@ export class AdminTaskersService {
       const blocking = Object.entries(checks)
         .filter(([, value]) => value === false)
         .map(([key]) => key);
+      const depositBlocker = await this.deposits.approvalBlocker(taskerId);
+      if (depositBlocker) blocking.push(depositBlocker);
       if (blocking.length > 0) {
         throw new ConflictException(
           `Tasker cannot be approved until these checks pass: ${blocking.join(', ')}`,

@@ -904,6 +904,7 @@ export class TaskerTasksService {
       accumulatedPausedSecs: number;
       stoppedAt: Date | null;
       notes: string | null;
+      stopReason?: string | null;
     } | null,
   ): TaskTimerView {
     if (!session) {
@@ -916,6 +917,7 @@ export class TaskerTasksService {
         accumulatedPausedSeconds: 0,
         elapsedSeconds: 0,
         notes: '',
+        stopReason: null,
       };
     }
     const endpoint = session.stoppedAt ?? session.pausedAt ?? new Date();
@@ -933,6 +935,7 @@ export class TaskerTasksService {
       accumulatedPausedSeconds: session.accumulatedPausedSecs,
       elapsedSeconds: elapsed,
       notes: session.notes ?? '',
+      stopReason: session.stopReason ?? null,
     };
   }
 

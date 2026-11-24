@@ -237,10 +237,14 @@ export async function purgeMarketplaceRoleData(
     : { count: 0 };
 
   // ---- Booking-scoped records with RESTRICT foreign keys ----
+  // Invoices for these bookings (either party's) and any invoice billed to this user,
+  // plus a Tasker's signup deposit, all RESTRICT the rows deleted below.
+  await tx.invoice.deleteMany({ where: { OR: [{ bookingId: inBookings }, { billedToId: userId }] } });
+  if (!isCustomer) await tx.taskerDeposit.deleteMany({ where: { taskerId: userId } });
+  // PaymentTransaction.customerId is the paying user: a Tasker's own CMI deposit
+  // payments are stored under their id too.
   const paymentsDeleted = await tx.paymentTransaction.deleteMany({
-    where: isCustomer
-      ? { OR: [{ bookingId: inBookings }, { customerId: userId }] }
-      : { bookingId: inBookings },
+    where: { OR: [{ bookingId: inBookings }, { customerId: userId }] },
   });
   await tx.disputeCashRefund.deleteMany({ where: { complaint: { bookingId: inBookings } } });
   const disputesDeleted = await tx.taskComplaint.deleteMany({ where: { bookingId: inBookings } });

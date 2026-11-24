@@ -54,6 +54,29 @@ export class AdminDisputesQueryDto extends AdminPaginationDto {
   priority?: 'all' | (typeof DISPUTE_PRIORITIES)[number] = 'all';
 
   @ApiPropertyOptional({
+    enum: ['all', 'customer', 'tasker'],
+    default: 'all',
+    description: 'Who filed the dispute. tasker = disputes Taskers raised against customers (e.g. customer_no_show).',
+  })
+  @IsOptional()
+  @IsIn(['all', 'customer', 'tasker'])
+  filedByRole?: 'all' | 'customer' | 'tasker' = 'all';
+
+  @ApiPropertyOptional({ type: Number, minimum: 1, description: 'Disputes on bookings of this customer (either filer).' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  customerId?: number;
+
+  @ApiPropertyOptional({ type: Number, minimum: 1, description: 'Disputes on bookings of this tasker (either filer).' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  taskerId?: number;
+
+  @ApiPropertyOptional({
     type: Number,
     minimum: 1,
     description: 'Filter cases assigned to a specific administrator.',

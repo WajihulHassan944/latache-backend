@@ -1,3 +1,4 @@
+import { IsBankAccount, normalizeBankAccount } from '../../common/utils/bank-account.util';
 import { Transform, Type } from 'class-transformer';
 import { IsIn, IsInt, IsNumber, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -47,6 +48,69 @@ export class CreateWalletWithdrawalDto {
   @Min(1)
   @Max(100000)
   amount!: number;
+
+  @ApiProperty({ example: 'Sarah Bennani', description: 'Name on the bank account.' })
+  @Transform(trim)
+  @IsString()
+  @Length(2, 120)
+  accountHolderName!: string;
+
+  @ApiProperty({
+    example: '011780000012345678901234',
+    description: 'IBAN, or a 24-digit Moroccan RIB (converted to its MA IBAN). Stored encrypted.',
+  })
+  @Transform(({ value }: { value: unknown }) => normalizeBankAccount(value))
+  @IsBankAccount()
+  iban!: string;
+
+  @ApiPropertyOptional({ example: 'Attijariwafa Bank' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(2, 120)
+  bankName?: string;
+}
+
+export class AdminCustomerWithdrawalsQueryDto {
+  @ApiPropertyOptional({ enum: ['pending_review', 'processing', 'paid', 'failed', 'rejected', 'cancelled'] })
+  @IsOptional()
+  @IsIn(['pending_review', 'processing', 'paid', 'failed', 'rejected', 'cancelled'])
+  status?: string;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ default: 30 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+export class AdminCustomerWithdrawalActionDto {
+  @ApiProperty({ enum: ['approve', 'mark_paid', 'reject', 'mark_failed'] })
+  @IsIn(['approve', 'mark_paid', 'reject', 'mark_failed'])
+  action!: 'approve' | 'mark_paid' | 'reject' | 'mark_failed';
+
+  @ApiPropertyOptional({ description: 'Bank transfer reference; required for mark_paid.' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(2, 255)
+  providerReference?: string;
+
+  @ApiPropertyOptional({ description: 'Required for reject / mark_failed (shown to the customer).' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(2, 500)
+  note?: string;
 }
 
 export class RetryBookingPaymentDto {

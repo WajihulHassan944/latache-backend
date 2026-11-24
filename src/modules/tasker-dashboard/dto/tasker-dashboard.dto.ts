@@ -1,3 +1,4 @@
+import { IsBankAccount, normalizeBankAccount } from '../../../common/utils/bank-account.util';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -548,12 +549,13 @@ export class CreatePayoutMethodDto {
   @Length(2, 120)
   bankName?: string;
 
-  @ApiPropertyOptional({ example: 'GB82WEST12345698765432' })
+  @ApiPropertyOptional({
+    example: '011780000012345678901234',
+    description: 'IBAN, or a 24-digit Moroccan RIB (converted to its MA IBAN). Checksum-validated.',
+  })
   @ValidateIf((object: CreatePayoutMethodDto) => object.type === PAYOUT_METHOD_TYPE.BankTransfer)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.replace(/\s+/g, '').toUpperCase() : value,
-  )
-  @Matches(/^[A-Z]{2}[0-9A-Z]{13,32}$/)
+  @Transform(({ value }: { value: unknown }) => normalizeBankAccount(value))
+  @IsBankAccount()
   iban?: string;
 
   @ApiPropertyOptional({ example: '+212' })
