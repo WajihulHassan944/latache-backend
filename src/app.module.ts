@@ -19,6 +19,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { AdminAlertsModule } from './modules/admin-alerts/admin-alerts.module';
+import { BroadcastsModule } from './modules/broadcasts/broadcasts.module';
 import { CareersModule } from './modules/careers/careers.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { SystemAdminModule } from './modules/system-admin/system-admin.module';
@@ -97,6 +98,7 @@ import { AddressesModule } from './modules/addresses/addresses.module';
     CareersModule,
     AdminAlertsModule,
     ContactModule,
+    BroadcastsModule,
     SystemAdminModule,
     FinanceReportsModule,
     TaskerDepositsModule,

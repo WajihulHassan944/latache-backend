@@ -261,6 +261,14 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
+    module: 'broadcasts',
+    label: 'Announcements',
+    permissions: [
+      { key: 'broadcasts.read', label: 'View announcements', description: 'View announcement history and audience sizes.' },
+      { key: 'broadcasts.manage', label: 'Send announcements', description: 'Create and send announcements to customers and Taskers.' },
+    ],
+  },
+  {
     module: 'careers',
     label: 'Careers & Hiring',
     permissions: [

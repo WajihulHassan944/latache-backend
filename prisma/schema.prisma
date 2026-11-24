@@ -2504,3 +2504,26 @@ model AdminAlertRead {
   @@id([alertId, userId])
   @@index([userId], map: "admin_alert_read_user_idx")
 }
+
+// ───────── Admin phase 2: announcements (broadcasts) ─────────
+
+/// A one-off announcement an admin sends to a whole audience as an in-app
+/// notification + push. Sent in the background in small batches.
+model Broadcast {
+  id             String    @id @default(cuid()) @db.VarChar(40)
+  title          String    @db.VarChar(120)
+  body           String    @db.VarChar(500)
+  audience       String    @db.VarChar(16) // customers | taskers | everyone
+  status         String    @default("draft") @db.VarChar(12) // draft | sending | sent | failed
+  recipientCount Int       @default(0)
+  sentCount      Int       @default(0)
+  failedCount    Int       @default(0)
+  createdById    Int?
+  lastError      String?   @db.VarChar(500)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  sentAt         DateTime? @db.Timestamptz(6)
+  completedAt    DateTime? @db.Timestamptz(6)
+
+  @@index([createdAt], map: "broadcast_created_idx")
+  @@index([status], map: "broadcast_status_idx")
+}
