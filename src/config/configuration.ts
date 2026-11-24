@@ -317,6 +317,7 @@ export default () => {
       resendFrom: process.env.RESEND_FROM?.trim(),
       brevoApiKey: process.env.BREVO_API_KEY?.trim(),
       brevoFrom: process.env.BREVO_FROM?.trim(),
+      replyTo: process.env.MAIL_REPLY_TO?.trim() || undefined,
       host: process.env.SMTP_HOST,
       port: asPositiveInteger(process.env.SMTP_PORT, 587),
       secure: asBoolean(process.env.SMTP_SECURE, false),

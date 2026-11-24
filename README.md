@@ -435,7 +435,10 @@ Set:
 MAIL_PROVIDER=brevo
 BREVO_API_KEY=xkeysib-xxxxxxxxxxxxxxxxx
 BREVO_FROM=Latache <no-reply@your-verified-domain.com>
+MAIL_REPLY_TO=Latache <info@your-verified-domain.com>
 ```
+
+`MAIL_REPLY_TO` is optional and applies to every provider: when set, replies to platform emails go to that mailbox (e.g. the Microsoft 365 `info@` inbox) instead of the `no-reply@` sender. Production uses `BREVO_FROM=Latache <no-reply@xn--latche-yta.com>` (domain authenticated in Brevo with DKIM `brevo1/brevo2._domainkey` + DMARC) and `MAIL_REPLY_TO=Latache <info@xn--latche-yta.com>`. Never send from a `@gmail.com` address through Brevo — Gmail's DMARC fails for third-party senders and mail lands in spam.
 
 For production, create a Brevo account, add and verify the domain you will send from (Senders, Domains & Dedicated IPs → Domains), and add the SPF/DKIM records exactly as Brevo provides. Create an API key under SMTP & API → API Keys with transactional-email send permission.
 

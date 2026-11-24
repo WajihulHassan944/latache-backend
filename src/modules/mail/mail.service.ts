@@ -187,6 +187,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
 
       const delivery = await this.transporter.sendMail({
         from: this.config.getOrThrow<string>('mail.from'),
+        ...(this.replyTo() ? { replyTo: this.replyTo() } : {}),
         ...params,
       });
       const requestedRecipient = this.normalizeRecipient(params.to);
@@ -238,6 +239,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
       },
       body: JSON.stringify({
         from,
+        ...(this.replyTo() ? { reply_to: this.replyTo() } : {}),
         to: [params.to],
         subject: params.subject,
         html: params.html,
@@ -287,6 +289,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
       },
       body: JSON.stringify({
         sender: this.parseMailbox(from),
+        ...(this.replyTo() ? { replyTo: this.parseMailbox(this.replyTo() as string) } : {}),
         to: [{ email: params.to }],
         subject: params.subject,
         htmlContent: params.html,
@@ -309,6 +312,10 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
         messageId: payload.messageId ?? 'unknown',
       }),
     );
+  }
+
+  private replyTo(): string | undefined {
+    return this.config.get<string>('mail.replyTo') || undefined;
   }
 
   private parseMailbox(value: string): { name?: string; email: string } {

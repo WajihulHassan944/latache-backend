@@ -821,6 +821,9 @@ export const validateEnvironment = (environment: Environment): Environment => {
   if (present(environment.BREVO_FROM) && !EMAIL_FROM_PATTERN.test(environment.BREVO_FROM as string)) {
     errors.push('BREVO_FROM must be an email address or a Name <email> mailbox');
   }
+  if (present(environment.MAIL_REPLY_TO) && !EMAIL_FROM_PATTERN.test(environment.MAIL_REPLY_TO as string)) {
+    errors.push('MAIL_REPLY_TO must be an email address or a Name <email> mailbox');
+  }
 
   if (present(environment.APP_BASE_URL) && !isHttpUrl(environment.APP_BASE_URL as string)) {
     errors.push('APP_BASE_URL must be a valid http(s) URL');
