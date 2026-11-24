@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsISO8601, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
@@ -9,6 +9,9 @@ import type { User } from '../../generated/prisma/client';
 import { PerformanceJobsService } from '../../infrastructure/jobs/performance-jobs.service';
 import { AdminAuditService } from '../admin-audit/admin-audit.service';
 import { AdminAuthGuard } from '../auth/guards/admin-auth.guard';
+import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { AdminSearchService } from './admin-search.service';
 import { SystemAdminService } from './system-admin.service';
 
 class FailedQueryDto {
@@ -18,6 +21,10 @@ class FailedQueryDto {
 
 class CleanFailedDto {
   @IsInt() @Type(() => Number) @Min(0) @Max(365) olderThanDays!: number;
+}
+
+class SearchQueryDto {
+  @IsString() @MaxLength(80) q!: string;
 }
 
 class AuditQueryDto {
@@ -40,7 +47,16 @@ export class SystemAdminController {
     private readonly jobs: PerformanceJobsService,
     private readonly audit: AdminAuditService,
     private readonly system: SystemAdminService,
+    private readonly search: AdminSearchService,
   ) {}
+
+  @Get('search')
+  @ApiOperation({ summary: 'Global admin search (Ctrl+K): only returns record types the admin may read' })
+  globalSearch(@Query() query: SearchQueryDto, @Req() request: AuthenticatedRequest) {
+    const isSuper = request.auth.role === UserRole.SuperAdmin;
+    const available = new Set(request.user.permissions);
+    return this.search.search(query.q, { can: (permission) => isSuper || available.has(permission) });
+  }
 
   @Get('health')
   @Permissions('system.read')
