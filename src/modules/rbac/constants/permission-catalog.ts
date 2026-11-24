@@ -237,6 +237,23 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
+    module: 'careers',
+    label: 'Careers & Hiring',
+    permissions: [
+      {
+        key: 'careers.read',
+        label: 'View careers',
+        description: 'View job postings, applications, CVs and hiring analytics.',
+      },
+      {
+        key: 'careers.manage',
+        label: 'Manage careers',
+        description:
+          'Create and publish jobs, move candidates through the pipeline, add notes and email candidates.',
+      },
+    ],
+  },
+  {
     module: 'conversations',
     label: 'Conversation Monitoring',
     permissions: [

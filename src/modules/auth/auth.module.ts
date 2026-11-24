@@ -68,6 +68,7 @@ import { TurnstileService } from './services/turnstile.service';
     PermissionsGuard,
     AuthSessionsRepository,
     AuthRoleService,
+    TurnstileService,
     JwtModule,
     UsersModule,
   ],

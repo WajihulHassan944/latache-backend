@@ -178,6 +178,11 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /** Pre-rendered branded email (Careers confirmations, candidate templates, ...). */
+  async sendRenderedEmail(params: { to: string; subject: string; html: string; text: string }): Promise<void> {
+    await this.send(params);
+  }
+
   async sendInvoiceEmail(params: {
     to: string;
     name: string;

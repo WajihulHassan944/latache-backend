@@ -170,6 +170,7 @@ model User {
 
   taskerDeposit                TaskerDeposit?              @relation("TaskerDepositTasker")
   invoicesBilled               Invoice[]                   @relation("InvoiceBilledTo")
+  careerNotes                  ApplicationNote[]           @relation("ApplicationNoteAuthor")
 
   @@index([role, onboardingStatus], map: "users_role_onboarding_idx")
   @@index([roles], type: Gin, map: "users_roles_gin_idx")
@@ -2339,4 +2340,95 @@ model Invoice {
   @@index([issuedAt], map: "invoices_issued_idx")
   @@index([emailedAt, emailAttempts], map: "invoices_email_pending_idx")
   @@map("Invoices")
+}
+
+/// A role on the public Careers page. Draft jobs are invisible to the public;
+/// open jobs are listed; closed jobs keep their page (shows "filled") but accept no applications.
+model JobPosting {
+  id               String    @id @default(cuid()) @db.VarChar(40)
+  slug             String    @unique(map: "JobPostings_slug_key") @db.VarChar(120)
+  title            String    @db.VarChar(160)
+  department       String    @db.VarChar(80)
+  city             String    @db.VarChar(80)
+  /// onsite | hybrid | remote
+  workMode         String    @default("onsite") @db.VarChar(16)
+  /// full_time | part_time | contract | internship
+  employmentType   String    @default("full_time") @db.VarChar(24)
+  /// junior | mid | senior | lead
+  seniority        String    @default("mid") @db.VarChar(16)
+  summary          String    @db.VarChar(500)
+  responsibilities String[]  @default([])
+  requirements     String[]  @default([])
+  niceToHave       String[]  @default([])
+  benefits         String[]  @default([])
+  salaryMin        Decimal?  @db.Decimal(12, 2)
+  salaryMax        Decimal?  @db.Decimal(12, 2)
+  salaryCurrency   String    @default("MAD") @db.VarChar(3)
+  showSalary       Boolean   @default(false)
+  /// draft | open | closed
+  status           String    @default("draft") @db.VarChar(16)
+  featured         Boolean   @default(false)
+  urgent           Boolean   @default(false)
+  publishedAt      DateTime? @db.Timestamptz(6)
+  closedAt         DateTime? @db.Timestamptz(6)
+  createdById      Int?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  applications JobApplication[]
+
+  @@index([status, publishedAt], map: "job_postings_status_published_idx")
+  @@index([department, status], map: "job_postings_department_status_idx")
+  @@map("JobPostings")
+}
+
+/// A candidate's application. jobId is null for a general application (talent pool).
+/// The CV lives in Cloudinary as a private (authenticated) raw asset.
+model JobApplication {
+  id             String    @id @default(cuid()) @db.VarChar(40)
+  reference      String    @unique(map: "JobApplications_reference_key") @db.VarChar(20)
+  jobId          String?   @db.VarChar(40)
+  fullName       String    @db.VarChar(160)
+  email          String    @db.VarChar(255)
+  phone          String    @db.VarChar(40)
+  city           String    @db.VarChar(80)
+  linkedinUrl    String?   @db.VarChar(300)
+  portfolioUrl   String?   @db.VarChar(300)
+  coverNote      String    @db.Text
+  source         String?   @db.VarChar(40)
+  locale         String?   @db.VarChar(10)
+  cvPublicId     String    @db.VarChar(300)
+  cvFileName     String    @db.VarChar(200)
+  cvMimeType     String    @db.VarChar(100)
+  cvBytes        Int
+  consentAt      DateTime  @db.Timestamptz(6)
+  /// new | screening | interview | offer | hired | rejected
+  stage          String    @default("new") @db.VarChar(16)
+  rating         Int?
+  stageChangedAt DateTime  @default(now()) @db.Timestamptz(6)
+  hiredAt        DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  job   JobPosting?       @relation(fields: [jobId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "JobApplications_jobId_fkey")
+  notes ApplicationNote[]
+
+  @@index([jobId, stage], map: "job_applications_job_stage_idx")
+  @@index([stage, createdAt], map: "job_applications_stage_created_idx")
+  @@index([email, jobId], map: "job_applications_email_job_idx")
+  @@map("JobApplications")
+}
+
+model ApplicationNote {
+  id            String   @id @default(cuid()) @db.VarChar(40)
+  applicationId String   @db.VarChar(40)
+  authorId      Int
+  body          String   @db.Text
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  application JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ApplicationNotes_applicationId_fkey")
+  author      User           @relation("ApplicationNoteAuthor", fields: [authorId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "ApplicationNotes_authorId_fkey")
+
+  @@index([applicationId, createdAt], map: "application_notes_application_created_idx")
+  @@map("ApplicationNotes")
 }

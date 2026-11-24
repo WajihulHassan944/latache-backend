@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const VERIFY_TIMEOUT_MS = 5_000;
 
-export type TurnstileAction = 'login' | 'signup' | 'forgot-password' | 'resend-verification';
+export type TurnstileAction = 'login' | 'signup' | 'forgot-password' | 'resend-verification' | 'careers-apply';
 
 interface TurnstileVerifyResponse {
   success: boolean;
