@@ -10,7 +10,7 @@ import { DEFAULT_INVOICE_SELLER, presentableWebsite } from './invoice-defaults';
 import { PAYMENT_STATUS } from '../payments/payments.constants';
 import { PAYMENT_LABELS, formatDate, formatMoney, renderInvoicePdf } from './invoice-pdf.renderer';
 
-export const INVOICE_TYPE = { Booking: 'booking', TaskerDeposit: 'tasker_deposit' } as const;
+export const INVOICE_TYPE = { Booking: 'booking', TaskerDeposit: 'tasker_deposit', CreditNote: 'credit_note' } as const;
 
 /** A booking gets its invoice once the job is completed and the money is settled. */
 const INVOICEABLE_PAYMENT_STATUSES = [
@@ -196,6 +196,52 @@ export class InvoicesService {
     );
   }
 
+  /**
+   * Credit note for money refunded on an invoiced booking (dispute refunds). One per booking, for the
+   * total refunded so far; idempotent. Not emailed automatically - it is available in the invoice list.
+   */
+  async issueCreditNote(bookingId: number): Promise<InvoiceRow | null> {
+    const existing = await this.prisma.invoice.findUnique({
+      where: { type_bookingId: { type: INVOICE_TYPE.CreditNote, bookingId } },
+    });
+    if (existing) return existing;
+    const original = await this.prisma.invoice.findUnique({
+      where: { type_bookingId: { type: INVOICE_TYPE.Booking, bookingId } },
+    });
+    if (!original) return null;
+    const resolutions = await this.prisma.disputeResolution.findMany({
+      where: { status: 'applied', refundAmount: { gt: 0 }, refundTransactionId: { not: null }, complaint: { bookingId } },
+      select: { refundAmount: true },
+    });
+    const refunded = money(resolutions.reduce((sum, row) => sum + num(row.refundAmount), 0));
+    if (refunded <= 0) return null;
+    const credited = Math.min(refunded, num(original.total));
+    const originalDetails = (original.details ?? {}) as Record<string, unknown>;
+    return this.create(
+      {
+        type: INVOICE_TYPE.CreditNote,
+        numberPrefix: 'CN',
+        billedToId: original.billedToId,
+        bookingId,
+        currency: original.currency,
+        subtotal: credited,
+        platformFee: 0,
+        taxAmount: 0,
+        discountAmount: 0,
+        total: credited,
+        paymentMethod: original.paymentMethod,
+        lines: [this.line('refund', `Refund against invoice ${original.number}`, credited)],
+        details: { ...originalDetails, kind: 'credit_note', originalInvoiceNumber: original.number },
+        buyer: original.buyer as Record<string, unknown>,
+        issuedAt: new Date(),
+      },
+      { type: INVOICE_TYPE.CreditNote, bookingId },
+    ).then(async (row) => {
+      // No email template for credit notes yet: mark as delivered so the email sweep skips it.
+      return this.prisma.invoice.update({ where: { id: row.id }, data: { emailedAt: new Date() } });
+    });
+  }
+
   private async issueCancellationFeeInvoice(
     booking: Prisma.BookingGetPayload<{
       include: {
@@ -292,6 +338,22 @@ export class InvoicesService {
       take: limit,
     });
     let issued = 0;
+    const refunded = await this.prisma.booking.findMany({
+      where: {
+        ...filter,
+        paymentStatus: { in: [PAYMENT_STATUS.PartiallyRefunded, PAYMENT_STATUS.Refunded] },
+        invoices: { some: { type: INVOICE_TYPE.Booking }, none: { type: INVOICE_TYPE.CreditNote } },
+      },
+      select: { id: true },
+      take: limit,
+    });
+    for (const row of refunded) {
+      try {
+        if (await this.issueCreditNote(row.id)) issued += 1;
+      } catch (error) {
+        this.logger.error(`Credit note for booking ${row.id} failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     for (const row of due) {
       try {
         if (await this.issueBookingInvoice(row.id)) issued += 1;
@@ -533,6 +595,7 @@ ${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>${bookingRef(
       details?: Record<string, unknown>;
       buyer: Record<string, unknown>;
       issuedAt: Date;
+      numberPrefix?: string;
     },
     unique: { type: string; bookingId?: number; taskerDepositId?: string },
     transaction?: Prisma.TransactionClient,
@@ -541,11 +604,12 @@ ${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>${bookingRef(
     const seller = await this.seller();
     const [sequence] = await client.$queryRaw<Array<{ value: bigint }>>`SELECT nextval('invoice_number_seq') AS value`;
     const value = sequence?.value ?? BigInt(Date.now());
-    const number = `INV-${data.issuedAt.getUTCFullYear()}-${String(value).padStart(6, '0')}`;
+    const { numberPrefix = 'INV', ...invoiceData } = data;
+    const number = `${numberPrefix}-${data.issuedAt.getUTCFullYear()}-${String(value).padStart(6, '0')}`;
     try {
       return await client.invoice.create({
         data: {
-          ...data,
+          ...invoiceData,
           number,
           subtotal: money(data.subtotal).toFixed(2),
           platformFee: money(data.platformFee).toFixed(2),

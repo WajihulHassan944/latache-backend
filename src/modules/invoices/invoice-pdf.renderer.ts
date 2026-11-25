@@ -202,8 +202,9 @@ export function renderInvoicePdf(invoice: InvoiceDocument): Promise<Buffer> {
     const details = invoice.details ?? {};
     const money = (value: number) => formatMoney(value, invoice.currency);
     const voided = invoice.status === 'void';
+    const isCredit = invoice.type === 'credit_note';
 
-    drawBrandHeader(doc, { title: 'Invoice', subtitle: 'FACTURE', rightTop: invoice.number, rightBottom: `Issued ${formatDate(invoice.issuedAt)}` });
+    drawBrandHeader(doc, { title: isCredit ? 'Credit note' : 'Invoice', subtitle: isCredit ? 'AVOIR' : 'FACTURE', rightTop: invoice.number, rightBottom: `Issued ${formatDate(invoice.issuedAt)}` });
 
     // ---- Seller (logo + identity) | invoice meta card ----
     let y = HEADER_HEIGHT + 8;
@@ -338,14 +339,16 @@ export function renderInvoicePdf(invoice: InvoiceDocument): Promise<Buffer> {
     totalRow('Tax / TVA', money(taxLine));
     y += 3;
     doc.roundedRect(totalsX, y, totalsW, 32, 8).fill(T.brown);
-    doc.fillColor(T.gold).font('Helvetica-Bold').fontSize(8).text('TOTAL PAID', totalsX + 14, y + 12, { characterSpacing: 1.5 });
+    doc.fillColor(T.gold).font('Helvetica-Bold').fontSize(8).text(isCredit ? 'TOTAL CREDITED' : 'TOTAL PAID', totalsX + 14, y + 12, { characterSpacing: 1.5 });
     doc.fillColor('#FFFFFF').font('Times-Bold').fontSize(16).text(money(invoice.total), totalsX + 90, y + 8, { width: totalsW - 104, align: 'right' });
     y += 40;
     totalRow('Balance due', money(0), true);
 
     const notesW = CONTENT_WIDTH - totalsW - 24;
     const notes =
-      details.kind === 'late_cancellation'
+      isCredit
+        ? `This credit note reverses part or all of invoice ${String(details.originalInvoiceNumber ?? '')} for booking ${bookingRef(invoice.bookingId)}. The amount is returned to your original payment method or wallet.`
+        : details.kind === 'late_cancellation'
         ? 'This booking was cancelled inside the late-cancellation window. The fee above was kept under the cancellation policy and the rest of your payment was refunded.'
         : invoice.type === 'tasker_deposit'
         ? 'This deposit is held as a refundable security deposit for your Latache Tasker account and is returned according to the Tasker terms.'
