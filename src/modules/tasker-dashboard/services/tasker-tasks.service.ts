@@ -810,20 +810,31 @@ export class TaskerTasksService {
     pendingTasks: number;
     taskCompletionPercent: number;
   }> {
-    const [completed, terminal, pending] = await Promise.all([
+    const [completed, terminal, pending, cancelledTotal] = await Promise.all([
       this.prisma.booking.count({
         where: { taskerId, status: TASKER_BOOKING_STATUS.Completed },
       }),
+      // The completion rate only counts work the Tasker was responsible for: a customer
+      // cancelling (or a request expiring) is not a Tasker failure.
       this.prisma.booking.count({
-        where: { taskerId, status: { in: [...TASKER_HISTORY_STATUSES] } },
+        where: {
+          taskerId,
+          OR: [
+            { status: TASKER_BOOKING_STATUS.Completed },
+            { status: TASKER_BOOKING_STATUS.Cancelled, cancelledByRole: 'tasker' },
+          ],
+        },
       }),
       this.prisma.booking.count({
         where: { taskerId, status: { notIn: [...TASKER_HISTORY_STATUSES] } },
       }),
+      this.prisma.booking.count({
+        where: { taskerId, status: TASKER_BOOKING_STATUS.Cancelled },
+      }),
     ]);
     return {
       completedTasks: completed,
-      cancelledTasks: terminal - completed,
+      cancelledTasks: cancelledTotal,
       pendingTasks: pending,
       taskCompletionPercent: terminal === 0 ? 0 : Math.round((completed / terminal) * 100),
     };

@@ -46,6 +46,7 @@ export class TaskerDashboardService {
       payoutMethodCount,
       skillCount,
       totalEarnings,
+      cashEarnings,
       yearEntries,
     ] = await Promise.all([
       this.wallet.summary(taskerId),
@@ -61,6 +62,11 @@ export class TaskerDashboardService {
       this.prisma.taskerWalletLedgerEntry.aggregate({
         where: { taskerId, kind: EARNING_LEDGER_KIND.EarningRelease, status: 'settled' },
         _sum: { amount: true },
+      }),
+      // Cash jobs never touch the wallet: the Tasker keeps the service amount and owes the platform fee.
+      this.prisma.booking.aggregate({
+        where: { taskerId, status: 'completed', paymentStatus: 'cash_confirmed' },
+        _sum: { serviceAmount: true, tipAmount: true },
       }),
       this.prisma.taskerWalletLedgerEntry.findMany({
         where: {
@@ -117,7 +123,13 @@ export class TaskerDashboardService {
       wallet,
       metrics: {
         totalEarnings: {
-          amount: Number(totalEarnings._sum.amount ?? 0),
+          amount: Number(
+            (
+              Number(totalEarnings._sum.amount ?? 0) +
+              Number(cashEarnings._sum.serviceAmount ?? 0) +
+              Number(cashEarnings._sum.tipAmount ?? 0)
+            ).toFixed(2),
+          ),
           currency: wallet.availableBalance.currency,
         },
         averageRatingReceived: averageReceived,

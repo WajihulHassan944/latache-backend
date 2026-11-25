@@ -1490,7 +1490,9 @@ export class AdminDisputesService {
       satisfactionAggregate,
       satisfiedResponses,
     ] = await Promise.all([
-      this.prisma.taskComplaint.count({ where: { createdAt: { gte: today, lt: tomorrow } } }),
+      this.prisma.taskComplaint.count({
+        where: { createdAt: { gte: today, lt: tomorrow }, status: { in: [...ACTIVE_DISPUTE_STATUSES] } },
+      }),
       this.prisma.taskComplaint.count({
         where: {
           status: { in: [...ACTIVE_DISPUTE_STATUSES] },

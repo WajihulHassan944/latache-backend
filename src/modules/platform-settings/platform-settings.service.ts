@@ -1043,7 +1043,7 @@ export class PlatformSettingsService {
     }
     if (dto.referral) {
       const current = await this.section<ReferralSettingsDto>('referral');
-      const referral = { ...current, ...dto.referral };
+      const referral = { ...current, ...this.stripUndefinedValues(dto.referral as unknown as Record<string, unknown>) } as ReferralSettingsDto;
       if (referral.bonusStackingEnabled) {
         throw new ConflictException(
           'Referral bonus stacking requires a promotion engine and cannot be enabled yet.',

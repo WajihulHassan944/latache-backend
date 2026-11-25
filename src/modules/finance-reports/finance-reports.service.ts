@@ -187,6 +187,13 @@ export class FinanceReportsService {
     }
     for (const [currency, values] of byCurrency) {
       values.platformRevenue = r2((values.platformFeesEarned ?? 0) + (values.lateCancellationFeesEarned ?? 0));
+      // What Latache holds on behalf of others right now (all liabilities): customer wallets, Tasker balances, deposits.
+      values.fundsHeldByLatache = r2(
+        (values.customerWalletBalances ?? 0) +
+          (values.owedToTaskersAvailable ?? 0) +
+          (values.owedToTaskersPending ?? 0) +
+          (values.taskerDepositsHeld ?? 0),
+      );
     }
 
     return {
@@ -205,6 +212,7 @@ export class FinanceReportsService {
       ],
       definitions: {
         platformRevenue: 'Platform fees on completed bookings + late-cancellation fees kept.',
+        fundsHeldByLatache: 'Customer wallet balances + Tasker balances (available and clearing) + deposits held. This is money owed to others, not Latache income.',
         owedToTaskersAvailable: 'Tasker wallet balances that can be withdrawn now (a liability).',
         owedToTaskersPending: 'Tasker earnings still in the clearance period (a liability).',
         customerWalletBalances: 'Money customers hold in their Latache wallet (a liability).',

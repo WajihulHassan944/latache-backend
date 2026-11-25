@@ -4,6 +4,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { PAYMENT_STATUS } from '../../payments/payments.constants';
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
+import { PLATFORM_CURRENCY_PRESETS } from '../../platform-settings/platform-currency.presets';
 import { ResponseLocalizationService } from '../../localization/response-localization.service';
 import type { AdminActivityQueryDto, AdminDateRangeQueryDto } from '../dto';
 import {
@@ -96,10 +97,7 @@ export class AdminAnalyticsService {
       revenueSeries,
       currency,
     ] = await Promise.all([
-      this.prisma.booking.aggregate({
-        where: { paymentStatus: PAYMENT_STATUS.Paid, ...(paidAt ? { paidAt } : {}) },
-        _sum: { totalChargedAmount: true, platformFeeAmount: true },
-      }),
+      this.settledTotals(range),
       this.prisma.user.count({ where: { roles: { has: UserRole.Customer }, deletedAt: null } }),
       this.prisma.user.count({ where: { roles: { has: UserRole.Tasker }, deletedAt: null } }),
       this.prisma.booking.count({ where: { status: { in: activeBookingStatuses } } }),
@@ -149,8 +147,8 @@ export class AdminAnalyticsService {
       range: this.rangeView(range),
       currency: currency.code,
       metrics: {
-        grossRevenue: money(revenue._sum.totalChargedAmount),
-        platformFees: money(revenue._sum.platformFeeAmount),
+        grossRevenue: revenue.gross,
+        platformFees: revenue.fees,
         totalCustomers,
         totalTaskers,
         activeBookings,
@@ -188,21 +186,9 @@ export class AdminAnalyticsService {
   async revenue(query: AdminDateRangeQueryDto) {
     const range = resolveAdminDateRange(query);
     const paidAt = dateFilter(range);
-    const where = { paymentStatus: PAYMENT_STATUS.Paid, ...(paidAt ? { paidAt } : {}) };
 
-    const [aggregate, paidCount, series, byService, currency] = await Promise.all([
-      this.prisma.booking.aggregate({
-        where,
-        _sum: {
-          totalChargedAmount: true,
-          platformFeeAmount: true,
-          serviceAmount: true,
-          tipAmount: true,
-          donationAmount: true,
-        },
-        _avg: { totalChargedAmount: true },
-      }),
-      this.prisma.booking.count({ where }),
+    const [totals, series, byService, currency] = await Promise.all([
+      this.settledTotals(range),
       this.revenueSeries(range),
       this.revenueByService(range),
       this.platformSettings.currencyContext(),
@@ -212,16 +198,14 @@ export class AdminAnalyticsService {
       range: this.rangeView(range),
       currency: currency.code,
       metrics: {
-        grossRevenue: money(aggregate._sum.totalChargedAmount),
-        platformFees: money(aggregate._sum.platformFeeAmount),
-        serviceRevenue: money(aggregate._sum.serviceAmount),
-        taskerEarnings: money(
-          Number(aggregate._sum.serviceAmount ?? 0) + Number(aggregate._sum.tipAmount ?? 0),
-        ),
-        tips: money(aggregate._sum.tipAmount),
-        donations: money(aggregate._sum.donationAmount),
-        averageBookingValue: money(aggregate._avg.totalChargedAmount),
-        paidBookings: paidCount,
+        grossRevenue: totals.gross,
+        platformFees: totals.fees,
+        serviceRevenue: totals.service,
+        taskerEarnings: money(totals.service + totals.tips),
+        tips: totals.tips,
+        donations: totals.donations,
+        averageBookingValue: totals.count > 0 ? money(totals.gross / totals.count) : 0,
+        paidBookings: totals.count,
       },
       series,
       byService,
@@ -844,20 +828,75 @@ export class AdminAnalyticsService {
       : Prisma.sql`date_trunc('month', ${column})`;
   }
 
+  /** Same definition as Finance: completed bookings whose money is settled (online or cash), partial refunds included. */
+  private settledCondition(): Prisma.Sql {
+    return Prisma.sql`b."status" = 'completed' AND b."paymentStatus" IN ('paid', 'cash_confirmed', 'partially_refunded')`;
+  }
+
+  /** Folds records written in an older currency (USD era) into the platform currency at the static preset rate. */
+  private async fxSql(): Promise<(column: Prisma.Sql) => Prisma.Sql> {
+    const target = (await this.platformSettings.currencyContext()).code.toUpperCase();
+    const rates = Object.values(PLATFORM_CURRENCY_PRESETS);
+    const rateOf = (code: string) => rates.find((entry) => entry.code === code)?.rateFromUsd ?? 1;
+    const others = [...new Set(rates.map((entry) => entry.code))].filter((code) => code !== target);
+    return (column) => {
+      if (others.length === 0) return column;
+      const cases = others.map(
+        (code) => Prisma.sql`WHEN ${code} THEN (${column}) / ${rateOf(code)} * ${rateOf(target)}`,
+      );
+      return Prisma.sql`(CASE b."paymentCurrency" ${Prisma.join(cases, ' ')} ELSE (${column}) END)`;
+    };
+  }
+
+  private async settledTotals(range: ResolvedAdminDateRange) {
+    const fx = await this.fxSql();
+    const condition = this.sqlDateCondition(Prisma.sql`b."taskCompletedAt"`, range);
+    const rows = await this.prisma.$queryRaw<
+      Array<Record<'gross' | 'fees' | 'service' | 'tips' | 'donations', number | string | Prisma.Decimal | null> & { count: number | bigint }>
+    >(Prisma.sql`
+      SELECT
+        COALESCE(SUM(${fx(Prisma.sql`b."totalChargedAmount"`)}), 0) AS gross,
+        COALESCE(SUM(${fx(Prisma.sql`b."platformFeeAmount"`)}), 0) AS fees,
+        COALESCE(SUM(${fx(Prisma.sql`COALESCE(b."serviceAmount", 0)`)}), 0) AS service,
+        COALESCE(SUM(${fx(Prisma.sql`b."tipAmount"`)}), 0) AS tips,
+        COALESCE(SUM(${fx(Prisma.sql`b."donationAmount"`)}), 0) AS donations,
+        COUNT(*)::int AS count
+      FROM "Bookings" b
+      WHERE ${this.settledCondition()} AND b."taskCompletedAt" IS NOT NULL ${condition}
+    `);
+    const row = rows[0];
+    const lateFees = await this.prisma.$queryRaw<Array<{ fees: number | string | Prisma.Decimal | null }>>(Prisma.sql`
+      SELECT COALESCE(SUM(${fx(Prisma.sql`b."cancellationFeeAmount"`)}), 0) AS fees
+      FROM "Bookings" b
+      WHERE b."status" = 'cancelled' AND b."cancellationFeeAmount" > 0
+        ${this.sqlDateCondition(Prisma.sql`b."cancelledAt"`, range)}
+    `);
+    return {
+      gross: money(row?.gross),
+      fees: money(money(row?.fees) + money(lateFees[0]?.fees)),
+      service: money(row?.service),
+      tips: money(row?.tips),
+      donations: money(row?.donations),
+      count: Number(row?.count ?? 0),
+    };
+  }
+
   private async revenueSeries(range: ResolvedAdminDateRange) {
-    const bucket = this.bucket(Prisma.sql`b."paidAt"`, range);
-    const condition = this.sqlDateCondition(Prisma.sql`b."paidAt"`, range);
+    const fx = await this.fxSql();
+    const when = Prisma.sql`b."taskCompletedAt"`;
+    const bucket = this.bucket(when, range);
+    const condition = this.sqlDateCondition(when, range);
     const rows = await this.prisma.$queryRaw<RevenueSeriesRow[]>(Prisma.sql`
       SELECT
         ${bucket} AS bucket,
-        COALESCE(SUM(b."totalChargedAmount"), 0) AS "grossRevenue",
-        COALESCE(SUM(b."platformFeeAmount"), 0) AS "platformFees",
-        COALESCE(SUM(COALESCE(b."serviceAmount", 0) + b."tipAmount"), 0) AS "taskerEarnings",
-        COALESCE(SUM(b."tipAmount"), 0) AS tips,
-        COALESCE(SUM(b."donationAmount"), 0) AS donations
+        COALESCE(SUM(${fx(Prisma.sql`b."totalChargedAmount"`)}), 0) AS "grossRevenue",
+        COALESCE(SUM(${fx(Prisma.sql`b."platformFeeAmount"`)}), 0) AS "platformFees",
+        COALESCE(SUM(${fx(Prisma.sql`COALESCE(b."serviceAmount", 0) + b."tipAmount"`)}), 0) AS "taskerEarnings",
+        COALESCE(SUM(${fx(Prisma.sql`b."tipAmount"`)}), 0) AS tips,
+        COALESCE(SUM(${fx(Prisma.sql`b."donationAmount"`)}), 0) AS donations
       FROM "Bookings" b
-      WHERE b."paymentStatus" = ${PAYMENT_STATUS.Paid}
-        AND b."paidAt" IS NOT NULL
+      WHERE ${this.settledCondition()}
+        AND b."taskCompletedAt" IS NOT NULL
         ${condition}
       GROUP BY 1
       ORDER BY 1 ASC
@@ -873,19 +912,20 @@ export class AdminAnalyticsService {
   }
 
   private async revenueByService(range: ResolvedAdminDateRange) {
-    const condition = this.sqlDateCondition(Prisma.sql`b."paidAt"`, range);
+    const fx = await this.fxSql();
+    const condition = this.sqlDateCondition(Prisma.sql`b."taskCompletedAt"`, range);
     const rows = await this.prisma.$queryRaw<ServiceAnalyticsRow[]>(Prisma.sql`
       SELECT
         s."id" AS "serviceId",
         s."name",
         s."slug",
         COUNT(*)::int AS bookings,
-        COALESCE(SUM(b."totalChargedAmount"), 0) AS revenue,
-        COALESCE(SUM(b."platformFeeAmount"), 0) AS "platformFees"
+        COALESCE(SUM(${fx(Prisma.sql`b."totalChargedAmount"`)}), 0) AS revenue,
+        COALESCE(SUM(${fx(Prisma.sql`b."platformFeeAmount"`)}), 0) AS "platformFees"
       FROM "Bookings" b
       JOIN "Services" s ON s."id" = b."serviceId"
-      WHERE b."paymentStatus" = ${PAYMENT_STATUS.Paid}
-        AND b."paidAt" IS NOT NULL
+      WHERE ${this.settledCondition()}
+        AND b."taskCompletedAt" IS NOT NULL
         ${condition}
       GROUP BY s."id", s."name", s."slug"
       ORDER BY revenue DESC
