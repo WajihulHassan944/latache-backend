@@ -9,7 +9,7 @@ describe('premium email design and Darija architecture', () => {
     const layout = read('src/modules/mail/email-layout.ts');
     const mail = read('src/modules/mail/mail.service.ts');
     expect(layout).toContain('data-latache-email-shell="v1"');
-    expect(layout).toContain('https://latache-web.vercel.app/images/logo-full.svg');
+    expect(layout).toContain('images/logo-email.png');
     expect(layout).toContain('latache-email-header_hcqhvb.png');
     expect(layout).toContain('latache-security-shield_oioyd1.png');
     expect(layout).toContain('latache-email-footer_abofsj.png');

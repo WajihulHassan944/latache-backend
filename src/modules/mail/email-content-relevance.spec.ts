@@ -67,8 +67,8 @@ describe('email content relevance', () => {
   describe('notification emails only show references that are true', () => {
     it('a booking email shows the booking number', () => {
       const { html, text } = booking();
-      expect(html).toContain('#482');
-      expect(text).toContain('Booking: #482');
+      expect(html).toContain('B-0482');
+      expect(text).toContain('Booking: B-0482');
     });
 
     it.each([

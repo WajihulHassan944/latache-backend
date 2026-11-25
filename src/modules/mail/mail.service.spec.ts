@@ -67,11 +67,11 @@ describe('MailService', () => {
       body: 'Your tasker confirmed the booking.',
     });
     expect(rendered.subject).toBe('Task confirmed');
-    expect(rendered.html).toContain('#482');
+    expect(rendered.html).toContain('B-0482');
     expect(rendered.html).toContain('Your tasker confirmed the booking.');
     expect(rendered.html).toContain('&lt;b&gt;Sara&lt;/b&gt;');
     expect(rendered.html).not.toContain('<b>Sara</b>');
-    expect(rendered.text).toContain('#482');
+    expect(rendered.text).toContain('B-0482');
   });
 
   it('renders an Arabic booking lifecycle email', () => {
