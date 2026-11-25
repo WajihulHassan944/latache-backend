@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { bookingRef } from '../../common/utils/booking-ref.util';
 import {
   dateOnlyFromDate,
   dateOnlyToDate,
@@ -499,15 +500,27 @@ export class BookingsService {
       rows.map((row) => row.service.id),
       locale,
     );
+    // Which of these bookings the viewer has already reviewed (the apps hide "Leave a review" for those).
+    const reviewed = rows.length
+      ? new Set(
+          (
+            await this.prisma.review.findMany({
+              where: { bookingId: { in: rows.map((row) => row.id) }, reviewerId: user.id },
+              select: { bookingId: true },
+            })
+          ).map((review) => review.bookingId),
+        )
+      : new Set<number>();
     return {
       bucket,
       page,
       limit,
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
-      items: rows.map((row) =>
-        this.serialize(row, user.id, nameMap.get(row.service.id) ?? row.service.name ?? ''),
-      ),
+      items: rows.map((row) => ({
+        ...this.serialize(row, user.id, nameMap.get(row.service.id) ?? row.service.name ?? ''),
+        reviewedByMe: reviewed.has(row.id),
+      })),
     };
   }
 
@@ -598,6 +611,20 @@ export class BookingsService {
           body: 'The customer cancelled this booking.',
           entityType: 'booking',
           entityId: String(bookingId),
+        },
+        transaction,
+      );
+      // Confirmation to the customer who cancelled (also emailed), so they have a record.
+      await this.notifications.create(
+        customerId,
+        {
+          category: 'tasks',
+          type: 'booking_cancel_confirmed',
+          title: 'Booking cancelled',
+          body: `You cancelled booking ${bookingRef(bookingId)}. Any refund due is being processed and you will get a separate message when it is sent.`,
+          entityType: 'booking',
+          entityId: String(bookingId),
+          audienceRole: UserRole.Customer,
         },
         transaction,
       );

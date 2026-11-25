@@ -1,3 +1,5 @@
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { bookingRef } from '../../../common/utils/booking-ref.util';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { dateOnlyFromDate, dateOnlyToDate, todayDateOnly } from '../../../common/utils/date.util';
@@ -306,6 +308,19 @@ export class TaskerTasksService {
           body: 'Your tasker cancelled the booking. Support can assist with the next steps.',
           entityType: 'booking',
           entityId: String(bookingId),
+        },
+        transaction,
+      );
+      await this.notifications.create(
+        booking.taskerId,
+        {
+          category: 'tasks',
+          type: 'task_cancel_confirmed',
+          title: 'Task cancelled',
+          body: `You cancelled booking ${bookingRef(bookingId)}. The customer has been told.`,
+          entityType: 'booking',
+          entityId: String(bookingId),
+          audienceRole: UserRole.Tasker,
         },
         transaction,
       );

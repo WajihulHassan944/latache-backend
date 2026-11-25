@@ -1,6 +1,7 @@
 import { escapeHtml } from '../../common/utils/html.util';
 
-export const LATACHE_EMAIL_LOGO_URL = 'https://latache-web.vercel.app/images/logo-full.svg';
+// PNG, not SVG: Gmail and Outlook do not render SVG images. Served by the web app's /public.
+export const LATACHE_EMAIL_LOGO_URL = process.env.EMAIL_LOGO_URL ?? 'https://xn--latche-yta.com/images/logo-email.png';
 
 export const LATACHE_EMAIL_ASSETS = {
   header: {

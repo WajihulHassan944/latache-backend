@@ -668,6 +668,8 @@ interface BookingLifecycleCopy {
   bookingLabel: string;
   greeting: (name: string) => string;
   cta: string;
+  /** Label on the button that opens the booking in the web app. */
+  openLabel: string;
 }
 
 const bookingLifecycleCopy: Record<EmailLocale, BookingLifecycleCopy> = {
@@ -675,26 +677,31 @@ const bookingLifecycleCopy: Record<EmailLocale, BookingLifecycleCopy> = {
     bookingLabel: 'Booking',
     greeting: (name) => `Hello ${name || 'there'},`,
     cta: 'Open the Latache app to see the full details and respond if needed.',
+    openLabel: "Open booking",
   },
   ar: {
     bookingLabel: 'الحجز',
     greeting: (name) => `مرحباً ${name || 'بك'}،`,
     cta: 'افتح تطبيق Latache للاطلاع على كامل التفاصيل والرد إذا لزم الأمر.',
+    openLabel: "افتح الحجز",
   },
   ary: {
     bookingLabel: 'الحجز',
     greeting: (name) => `سلام ${name || 'عليك'}،`,
     cta: 'حل تطبيق Latache باش تشوف التفاصيل كاملة وتجاوب إلا كان خاصك.',
+    openLabel: "حل الحجز",
   },
   fr: {
     bookingLabel: 'Réservation',
     greeting: (name) => `Bonjour ${name || ''},`,
     cta: "Ouvrez l'application Latache pour voir tous les détails et répondre si nécessaire.",
+    openLabel: "Ouvrir la réservation",
   },
   es: {
     bookingLabel: 'Reserva',
     greeting: (name) => `Hola ${name || ''},`,
     cta: 'Abre la app de Latache para ver todos los detalles y responder si es necesario.',
+    openLabel: "Abrir la reserva",
   },
 };
 
@@ -712,9 +719,26 @@ export const bookingLifecycleEmailTemplate = (params: {
   title: string;
   body: string;
   locale?: string;
+  /** Facts about the booking (service, when, where, who, price) shown as a card. Values arrive pre-formatted. */
+  details?: Array<{ label: string; value: string }>;
+  /** Absolute link to the booking in the web app; rendered as a button. */
+  actionUrl?: string;
 }): { subject: string; html: string; text: string } => {
   const locale = normalizeEmailLocale(params.locale);
   const copy = bookingLifecycleCopy[locale];
+  const detailsRows = (params.details ?? [])
+    .filter((row) => row.value)
+    .map(
+      (row) =>
+        `<tr><td style="padding:8px 12px;color:#8c551f;font-weight:bold;vertical-align:top;font-size:14px">${escapeHtml(row.label)}</td><td style="padding:8px 12px;color:#4b2112;font-size:14px">${escapeHtml(row.value)}</td></tr>`,
+    )
+    .join('');
+  const detailsCard = detailsRows
+    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 18px;border:1px solid #efd7ad;border-radius:16px;background:#fffaf0">${detailsRows}</table>`
+    : '';
+  const button = params.actionUrl
+    ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:6px auto 18px"><tr><td style="border-radius:12px;background:#7a2e14"><a href="${escapeHtml(params.actionUrl)}" style="display:inline-block;padding:13px 28px;color:#ffffff;font-weight:bold;font-size:15px;text-decoration:none;border-radius:12px">${escapeHtml(copy.openLabel)}</a></td></tr></table>`
+    : '';
   const name = escapeHtml(params.name);
   const title = escapeHtml(params.title);
   const body = escapeHtml(params.body);
@@ -734,12 +758,13 @@ export const bookingLifecycleEmailTemplate = (params: {
       <p style="margin:20px 0 12px;color:#a66229;font-size:21px;line-height:29px;text-align:center">${copy.greeting(name)}</p>
       ${reference}
       <p style="margin:0 0 16px;color:#563226;font-size:16px;line-height:25px;text-align:${isRtlEmailLocale(locale) ? 'right' : 'left'}">${body}</p>
+      ${detailsCard}${button}
       <p style="margin:0;color:#a66229;font-size:13px;line-height:20px;text-align:center">${escapeHtml(copy.cta)}</p>`,
   });
   return {
     subject: params.title,
     html,
-    text: [params.title, bookingId ? `${copy.bookingLabel}: ${bookingRef(params.entityId)}` : null, params.body, '', copy.cta]
+    text: [params.title, bookingId ? `${copy.bookingLabel}: ${bookingRef(params.entityId)}` : null, params.body, ...(params.details ?? []).filter((row) => row.value).map((row) => `${row.label}: ${row.value}`), params.actionUrl ? `${copy.openLabel}: ${params.actionUrl}` : null, '', copy.cta]
       .filter((line) => line !== null)
       .join('\n'),
   };

@@ -168,6 +168,8 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     title: string;
     body: string;
     locale?: string;
+    details?: Array<{ label: string; value: string }>;
+    actionUrl?: string;
   }): Promise<void> {
     const rendered = bookingLifecycleEmailTemplate(params);
     await this.send({

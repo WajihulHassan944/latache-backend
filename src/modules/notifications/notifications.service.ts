@@ -27,6 +27,10 @@ const VISIBLE_IN_LIST: Prisma.TaskNotificationWhereInput = {
 };
 
 const EMAIL_NOTIFIED_TYPES = new Set<string>([
+  'tasker_application_approved',
+  'tasker_application_rejected',
+  'booking_cancel_confirmed',
+  'task_cancel_confirmed',
   'booking_requested',
   'task_confirmed',
   'booking_payment_required',
@@ -169,6 +173,69 @@ export class NotificationsService {
    * for FCM push and dispute lifecycle email delivery, so a slow/unavailable
    * mail provider never blocks or fails the booking action that triggered it.
    */
+  /**
+   * Who/what/when/where + a link for booking emails, so the message is useful
+   * on its own instead of "open the app". Best effort: any failure just sends
+   * the plain email.
+   */
+  private async bookingEmailContext(
+    recipientId: number,
+    notification: { entityType: string | null; entityId: string | null },
+    locale: string | undefined,
+  ): Promise<{ details?: Array<{ label: string; value: string }>; actionUrl?: string }> {
+    if (notification.entityType !== 'booking' || !notification.entityId || !/^d+$/.test(notification.entityId)) return {};
+    try {
+      const booking = await this.prisma.booking.findUnique({
+        where: { id: Number(notification.entityId) },
+        select: {
+          customerId: true,
+          bookingDate: true,
+          startTime: true,
+          endTime: true,
+          venueAddress: true,
+          apartmentSuite: true,
+          paymentCurrency: true,
+          serviceAmount: true,
+          totalChargedAmount: true,
+          paymentEstimate: true,
+          service: { select: { name: true } },
+          customer: { select: { firstName: true, lastName: true } },
+          tasker: { select: { firstName: true, lastName: true } },
+        },
+      });
+      if (!booking) return {};
+      const l = ['en', 'ar', 'ary', 'fr', 'es'].includes(String(locale)) ? (locale as 'en' | 'ar' | 'ary' | 'fr' | 'es') : 'en';
+      const labels = {
+        en: { service: 'Service', when: 'When', where: 'Where', customer: 'Customer', tasker: 'Tasker', total: 'Total', earn: 'You earn' },
+        fr: { service: 'Service', when: 'Quand', where: 'Où', customer: 'Client', tasker: 'Tasker', total: 'Total', earn: 'Vous gagnez' },
+        es: { service: 'Servicio', when: 'Cuándo', where: 'Dónde', customer: 'Cliente', tasker: 'Tasker', total: 'Total', earn: 'Ganas' },
+        ar: { service: 'الخدمة', when: 'الموعد', where: 'المكان', customer: 'العميل', tasker: 'المنفذ', total: 'الإجمالي', earn: 'ما ستكسبه' },
+        ary: { service: 'الخدمة', when: 'الوقت', where: 'فين', customer: 'الزبون', tasker: 'المهني', total: 'المجموع', earn: 'غادي تربح' },
+      }[l];
+      const isCustomer = recipientId === booking.customerId;
+      const person = (p: { firstName: string | null; lastName: string | null }) => [p.firstName, p.lastName].filter(Boolean).join(' ');
+      const estimate = (booking.paymentEstimate ?? {}) as { total?: number; serviceAmount?: number };
+      const amount = isCustomer
+        ? Number(booking.totalChargedAmount ?? estimate.total ?? 0)
+        : Number(booking.serviceAmount ?? estimate.serviceAmount ?? 0);
+      const date = booking.bookingDate.toISOString().slice(0, 10);
+      const details = [
+        { label: labels.service, value: booking.service.name ?? '' },
+        { label: labels.when, value: `${date}, ${booking.startTime} - ${booking.endTime}` },
+        { label: labels.where, value: [booking.venueAddress, booking.apartmentSuite].filter(Boolean).join(', ') },
+        isCustomer
+          ? { label: labels.tasker, value: person(booking.tasker) }
+          : { label: labels.customer, value: person(booking.customer) },
+        amount > 0 ? { label: isCustomer ? labels.total : labels.earn, value: `${amount.toFixed(2)} ${booking.paymentCurrency}` } : { label: '', value: '' },
+      ];
+      const base = (process.env.WEB_APP_URL ?? 'https://xn--latche-yta.com').replace(/\/+$/, '');
+      return { details, actionUrl: `${base}/${l}/${isCustomer ? 'customer' : 'tasker'}/tasks` };
+    } catch (error) {
+      this.logger.warn(`Could not build booking email context: ${error instanceof Error ? error.message : String(error)}`);
+      return {};
+    }
+  }
+
   async processEmailDeliveries(): Promise<number> {
     const staleSendingBefore = new Date(Date.now() - 10 * 60 * 1000);
     const rows = await this.prisma.emailNotificationDelivery.findMany({
@@ -201,6 +268,7 @@ export class NotificationsService {
         const rendered = this.templates.render(row.notification.templateKey, this.locales.resolve({
           preferredLanguage: row.user.preferredLanguage,
         }).locale, row.notification);
+        const context = await this.bookingEmailContext(row.userId, row.notification, locale);
         await this.mail.sendBookingLifecycleEmail({
           to: row.user.email,
           name: [row.user.firstName, row.user.lastName].filter(Boolean).join(' '),
@@ -209,6 +277,7 @@ export class NotificationsService {
           title: rendered.title,
           body: rendered.body,
           locale,
+          ...context,
         });
         await this.prisma.emailNotificationDelivery.update({
           where: { id: row.id },
