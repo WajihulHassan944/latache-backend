@@ -59,6 +59,7 @@ import type {
   WalletView,
 } from './payments.types';
 import { StripeService } from './stripe.service';
+import { bookingRef } from '../../common/utils/booking-ref.util';
 
 const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 const moneyString = (value: number): string => roundMoney(value).toFixed(2);
@@ -268,19 +269,20 @@ export class PaymentsService {
 
   async wallet(customerId: number): Promise<WalletView> {
     const wallet = await this.ensureCustomerWallet(customerId);
-    const [refunds, spent, escrow, savedCards] = await Promise.all([
-      this.prisma.paymentTransaction.aggregate({
+    const platformCurrency = await this.platformSettings.currencyContext();
+    const [movements, escrow, savedCards] = await Promise.all([
+      // Spend and refunds per currency, so legacy-currency rows can be folded into the platform currency.
+      this.prisma.paymentTransaction.groupBy({
+        by: ['kind', 'currency'],
         where: {
           customerId,
-          kind: PAYMENT_TRANSACTION_KIND.Refund,
-          status: 'succeeded',
-        },
-        _sum: { amount: true },
-      }),
-      this.prisma.paymentTransaction.aggregate({
-        where: {
-          customerId,
-          kind: PAYMENT_TRANSACTION_KIND.BookingCharge,
+          kind: {
+            in: [
+              PAYMENT_TRANSACTION_KIND.Refund,
+              PAYMENT_TRANSACTION_KIND.BookingCharge,
+              PAYMENT_TRANSACTION_KIND.CashCollection,
+            ],
+          },
           status: 'succeeded',
         },
         _sum: { amount: true },
@@ -299,10 +301,24 @@ export class PaymentsService {
       this.isStripeEnabled() ? this.listPaymentMethods(customerId) : Promise.resolve([]),
     ]);
     const defaultCard = savedCards.find((card) => card.isDefault) ?? null;
+    const inPlatformCurrency = (kinds: string[]) =>
+      movements
+        .filter((row) => kinds.includes(row.kind))
+        .reduce(
+          (sum, row) =>
+            sum + this.platformSettings.convertCurrencyAmount(row._sum.amount ?? 0, row.currency, platformCurrency),
+          0,
+        );
+    const refundsTotal = inPlatformCurrency([PAYMENT_TRANSACTION_KIND.Refund]);
+    // Net spend: what was paid (card, wallet or cash handed to the Tasker) minus what came back.
+    const spentTotal = Math.max(
+      0,
+      inPlatformCurrency([PAYMENT_TRANSACTION_KIND.BookingCharge, PAYMENT_TRANSACTION_KIND.CashCollection]) - refundsTotal,
+    );
     return {
       availableBalance: { amount: Number(wallet.availableBalance), currency: wallet.currency },
-      refunds: { amount: Number(refunds._sum.amount ?? 0), currency: wallet.currency },
-      totalSpent: { amount: Number(spent._sum.amount ?? 0), currency: wallet.currency },
+      refunds: { amount: Math.round(refundsTotal * 100) / 100, currency: wallet.currency },
+      totalSpent: { amount: Math.round(spentTotal * 100) / 100, currency: wallet.currency },
       heldInEscrow: { amount: Number(escrow._sum.capturedAmount ?? 0), currency: wallet.currency },
       hasSavedCard: savedCards.length > 0,
       defaultCardId: defaultCard?.id ?? null,
@@ -879,7 +895,7 @@ export class PaymentsService {
           // The customer is in the app paying right now: on-session, so a card that
           // needs 3DS returns requires_action instead of being declined outright.
           off_session: false,
-          description: `Latache booking #${bookingId} acceptance payment`,
+          description: `Latache booking ${bookingRef(bookingId)} acceptance payment`,
           metadata: { kind: ACCEPTANCE_CAPTURE_INTENT_KIND, latacheBookingId: String(bookingId), latacheCustomerId: String(customerId) },
         }, { idempotencyKey: intent ? `${attemptKey}:create` : transactionKey });
       }
@@ -919,7 +935,7 @@ export class PaymentsService {
       }
       const key = `wallet:acceptance:${bookingId}:debit`;
       await transaction.customerWallet.update({ where: { customerId }, data: { availableBalance: { decrement: moneyString(amount) } } });
-      await transaction.customerWalletLedgerEntry.create({ data: { customerId, bookingId, kind: CUSTOMER_WALLET_ENTRY_KIND.BookingDebit, status: 'settled', amount: moneyString(amount), balanceDelta: moneyString(-amount), currency: booking.paymentCurrency, description: `Acceptance payment for booking #${bookingId}`, providerReference: `wallet:acceptance:${bookingId}`, idempotencyKey: key } });
+      await transaction.customerWalletLedgerEntry.create({ data: { customerId, bookingId, kind: CUSTOMER_WALLET_ENTRY_KIND.BookingDebit, status: 'settled', amount: moneyString(amount), balanceDelta: moneyString(-amount), currency: booking.paymentCurrency, description: `Acceptance payment for booking ${bookingRef(bookingId)}`, providerReference: `wallet:acceptance:${bookingId}`, idempotencyKey: key } });
       await transaction.paymentTransaction.create({ data: { customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.BookingCharge, provider: 'internal_wallet', providerReference: `wallet:acceptance:${bookingId}`, status: 'succeeded', amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: `acceptance-capture:${bookingId}` } });
       return this.markAcceptanceCaptured(bookingId, amount, `wallet:acceptance:${bookingId}`, `acceptance-capture:${bookingId}`, transaction);
     });
@@ -944,7 +960,7 @@ export class PaymentsService {
     await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_captured', title: 'Booking confirmed', body: `${booking.paymentCurrency} ${amount.toFixed(2)} was captured and your booking is confirmed.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
     // The Tasker's lists/home card/bell refresh on this notification; without it
     // they only saw the payment if that booking happened to be open.
-    await this.notifications.create(booking.taskerId, { category: 'tasks', type: 'booking_payment_captured', title: 'Customer paid - task confirmed', body: `The customer paid for booking #${bookingId}. The task is confirmed for ${booking.bookingDate.toISOString().slice(0, 10)} at ${booking.startTime}.`, entityType: 'booking', entityId: String(bookingId), templateKey: 'booking_payment_captured_tasker', audienceRole: UserRole.Tasker }, transaction);
+    await this.notifications.create(booking.taskerId, { category: 'tasks', type: 'booking_payment_captured', title: 'Customer paid - task confirmed', body: `The customer paid for booking ${bookingRef(bookingId)}. The task is confirmed for ${booking.bookingDate.toISOString().slice(0, 10)} at ${booking.startTime}.`, entityType: 'booking', entityId: String(bookingId), templateKey: 'booking_payment_captured_tasker', audienceRole: UserRole.Tasker }, transaction);
     await this.enqueuePaymentUpdate(bookingId, 'confirmed', 'acceptance_payment_captured', transaction, { paymentStatus: PAYMENT_STATUS.Ready });
     return { bookingId, status: 'confirmed' as const, capturedAmount: amount, capturedAt: now.toISOString() };
   }
@@ -994,7 +1010,7 @@ export class PaymentsService {
         where: { idempotencyKey: transactionKey },
         data: { status: 'refunded', failureReason: `Paid after booking was cancelled; refund ${refund.id}` },
       });
-      await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `Your payment for booking #${bookingId} arrived after the booking was cancelled, so ${booking.paymentCurrency} ${amount.toFixed(2)} is being refunded to your card.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
+      await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `Your payment for booking ${bookingRef(bookingId)} arrived after the booking was cancelled, so ${booking.paymentCurrency} ${amount.toFixed(2)} is being refunded to your card.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
     }
   }
 
@@ -1047,13 +1063,13 @@ export class PaymentsService {
         data: { availableBalance: { increment: moneyString(amount) } },
       });
       await transaction.customerWalletLedgerEntry.create({
-        data: { customerId: booking.customerId, bookingId, kind: CUSTOMER_WALLET_ENTRY_KIND.Refund, status: 'settled', amount: moneyString(amount), balanceDelta: moneyString(amount), currency: booking.paymentCurrency, description: `Refund for cancelled booking #${bookingId}`, providerReference: `wallet:acceptance-refund:${bookingId}`, idempotencyKey: key },
+        data: { customerId: booking.customerId, bookingId, kind: CUSTOMER_WALLET_ENTRY_KIND.Refund, status: 'settled', amount: moneyString(amount), balanceDelta: moneyString(amount), currency: booking.paymentCurrency, description: `Refund for cancelled booking ${bookingRef(bookingId)}`, providerReference: `wallet:acceptance-refund:${bookingId}`, idempotencyKey: key },
       });
       await transaction.paymentTransaction.create({
         data: { customerId: booking.customerId, bookingId, kind: PAYMENT_TRANSACTION_KIND.Refund, provider: 'internal_wallet', providerReference: `wallet:acceptance-refund:${bookingId}`, status: 'succeeded', amount: moneyString(amount), currency: booking.paymentCurrency, idempotencyKey: key, failureReason: reason.slice(0, 500) },
       });
       await transaction.booking.update({ where: { id: bookingId }, data: { paymentStatus: refundedStatus } });
-      await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `${booking.paymentCurrency} ${amount.toFixed(2)} for cancelled booking #${bookingId} was returned to your Latache wallet${feeNote}.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
+      await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `${booking.paymentCurrency} ${amount.toFixed(2)} for cancelled booking ${bookingRef(bookingId)} was returned to your Latache wallet${feeNote}.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
       return 'wallet_refunded';
     }
     await transaction.booking.update({ where: { id: bookingId }, data: { paymentStatus: PAYMENT_STATUS.RefundPending } });
@@ -1090,7 +1106,7 @@ export class PaymentsService {
           data: { paymentStatus: refundedStatus },
         });
         if (claimed.count === 1) {
-          await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `${booking.paymentCurrency} ${amount.toFixed(2)} for cancelled booking #${bookingId} is being refunded to your card.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
+          await this.notifications.create(booking.customerId, { category: 'payments', type: 'booking_payment_refunded', title: 'Payment refunded', body: `${booking.paymentCurrency} ${amount.toFixed(2)} for cancelled booking ${bookingRef(bookingId)} is being refunded to your card.`, entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
         }
       });
       return 'refunded';
@@ -1403,7 +1419,7 @@ export class PaymentsService {
         data: { availableBalance: { increment: moneyString(value) } },
       });
       await transaction.customerWalletLedgerEntry.create({
-        data: { customerId: booking.customerId, bookingId: booking.id, kind: CUSTOMER_WALLET_ENTRY_KIND.Refund, status: 'settled', amount: moneyString(value), balanceDelta: moneyString(value), currency: booking.paymentCurrency, description: `Unused prepaid time refunded for booking #${booking.id}`, providerReference: `wallet:${key}`, idempotencyKey: key },
+        data: { customerId: booking.customerId, bookingId: booking.id, kind: CUSTOMER_WALLET_ENTRY_KIND.Refund, status: 'settled', amount: moneyString(value), balanceDelta: moneyString(value), currency: booking.paymentCurrency, description: `Unused prepaid time refunded for booking ${bookingRef(booking.id)}`, providerReference: `wallet:${key}`, idempotencyKey: key },
       });
       await transaction.paymentTransaction.create({
         data: { customerId: booking.customerId, bookingId: booking.id, kind: PAYMENT_TRANSACTION_KIND.Refund, provider: 'internal_wallet', providerReference: `wallet:${key}`, status: 'succeeded', amount: moneyString(value), currency: booking.paymentCurrency, idempotencyKey: key },
@@ -1501,7 +1517,7 @@ export class PaymentsService {
       });
       if (claimed.count === 0) throw new ConflictException('Booking payment state changed; reload and try again');
       await this.notifications.create(booking.customerId, { category: 'tasks', type: 'task_confirmed', title: 'Booking confirmed', body: 'Your booking is confirmed. You will pay the Tasker in cash when the task is done.', entityType: 'booking', entityId: String(bookingId), audienceRole: UserRole.Customer }, transaction);
-      await this.notifications.create(booking.taskerId, { category: 'tasks', type: 'booking_payment_captured', title: 'Task confirmed - cash payment', body: `The customer chose to pay cash for booking #${bookingId}. Collect it on site when the task is done.`, entityType: 'booking', entityId: String(bookingId), templateKey: 'booking_cash_selected_tasker', audienceRole: UserRole.Tasker }, transaction);
+      await this.notifications.create(booking.taskerId, { category: 'tasks', type: 'booking_payment_captured', title: 'Task confirmed - cash payment', body: `The customer chose to pay cash for booking ${bookingRef(bookingId)}. Collect it on site when the task is done.`, entityType: 'booking', entityId: String(bookingId), templateKey: 'booking_cash_selected_tasker', audienceRole: UserRole.Tasker }, transaction);
       await this.enqueuePaymentUpdate(bookingId, 'confirmed', 'cash_payment_selected', transaction, { paymentStatus: PAYMENT_STATUS.Ready });
     });
     return { bookingId, status: 'confirmed' as const, paymentSource: PAYMENT_SOURCE.Cash, capturedAmount: 0, capturedAt: null };
@@ -2160,7 +2176,7 @@ export class PaymentsService {
             amount: payment.amount,
             balanceDelta: payment.amount,
             currency: payment.currency,
-            description: `Dispute refund for booking #${booking.id}`,
+            description: `Dispute refund for booking ${bookingRef(booking.id)}`,
             providerReference: `wallet-refund:${resolutionId}`,
             idempotencyKey: ledgerKey,
           },
@@ -2392,7 +2408,7 @@ export class PaymentsService {
         availableDelta: moneyString(-clawback),
         pendingDelta: '0.00',
         currency: booking.paymentCurrency,
-        description: `Proportional refund adjustment for booking #${booking.id}`,
+        description: `Proportional refund adjustment for booking ${bookingRef(booking.id)}`,
         externalReference: refundPayment.id,
         idempotencyKey: `booking:${booking.id}:refund-clawback:${refundPayment.id}`,
       },
@@ -3151,7 +3167,7 @@ export class PaymentsService {
           payment_method: booking.stripePaymentMethodId,
           confirm: true,
           off_session: true,
-          description: `Latache booking #${bookingId}`,
+          description: `Latache booking ${bookingRef(bookingId)}`,
           metadata: {
             kind: PAYMENT_TRANSACTION_KIND.BookingCharge,
             latacheBookingId: String(bookingId),
@@ -3405,7 +3421,7 @@ export class PaymentsService {
             amount: moneyString(totalAmount),
             balanceDelta: moneyString(-totalAmount),
             currency: booking.paymentCurrency,
-            description: `Payment for booking #${bookingId}`,
+            description: `Payment for booking ${bookingRef(bookingId)}`,
             providerReference: `wallet:${bookingId}`,
             idempotencyKey,
           },

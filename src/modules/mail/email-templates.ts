@@ -1,5 +1,6 @@
 import { escapeHtml } from '../../common/utils/html.util';
 import { isRtlEmailLocale, latacheEmailLayout, normalizeEmailLocale, type EmailLocale } from './email-layout';
+import { bookingRef } from '../../common/utils/booking-ref.util';
 
 interface SecurityEmailCopy {
   documentTitle: string;
@@ -722,7 +723,7 @@ export const bookingLifecycleEmailTemplate = (params: {
   const bookingId = params.entityType === 'booking' && params.entityId ? escapeHtml(params.entityId) : null;
   const reference = bookingId
     ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:18px 0;border:1px solid #efd7ad;border-radius:16px;background:#fff5e4;font-size:14px">
-        <tr><td style="padding:10px 12px;color:#8c551f;font-weight:bold">${copy.bookingLabel}</td><td dir="ltr" style="padding:10px 12px;color:#4b2112;text-align:left">#${bookingId}</td></tr>
+        <tr><td style="padding:10px 12px;color:#8c551f;font-weight:bold">${copy.bookingLabel}</td><td dir="ltr" style="padding:10px 12px;color:#4b2112;text-align:left">${bookingRef(bookingId)}</td></tr>
       </table>`
     : '<div style="height:6px;line-height:6px;font-size:0">&nbsp;</div>';
   const html = latacheEmailLayout({
@@ -738,7 +739,7 @@ export const bookingLifecycleEmailTemplate = (params: {
   return {
     subject: params.title,
     html,
-    text: [params.title, bookingId ? `${copy.bookingLabel}: #${params.entityId}` : null, params.body, '', copy.cta]
+    text: [params.title, bookingId ? `${copy.bookingLabel}: ${bookingRef(params.entityId)}` : null, params.body, '', copy.cta]
       .filter((line) => line !== null)
       .join('\n'),
   };

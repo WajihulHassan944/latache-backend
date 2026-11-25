@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { bookingRef } from '../../common/utils/booking-ref.util';
 
 export interface SearchHit {
   type: 'customer' | 'tasker' | 'booking' | 'invoice' | 'enquiry' | 'application' | 'job';
@@ -50,7 +51,7 @@ export class AdminSearchService {
       tasks.push(
         this.prisma.booking
           .findMany({ where: { id: Number(q) }, select: { id: true, status: true }, take: 1 })
-          .then((rows) => rows.map((b) => ({ type: 'booking' as const, id: String(b.id), title: `Booking #${b.id}`, subtitle: b.status, href: '/admin/booking-management' }))),
+          .then((rows) => rows.map((b) => ({ type: 'booking' as const, id: String(b.id), title: `Booking ${bookingRef(b.id)}`, subtitle: b.status, href: '/admin/booking-management' }))),
       );
     }
     if (gate.can('finance.read')) {

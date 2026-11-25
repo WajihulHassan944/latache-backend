@@ -16,6 +16,7 @@ import {
   resolvePreviousAdminDateRange,
   type ResolvedAdminDateRange,
 } from '../admin-dashboard.utils';
+import { bookingRef } from '../../../common/utils/booking-ref.util';
 
 interface NumericRow {
   value: number | string | Prisma.Decimal | null;
@@ -736,7 +737,7 @@ export class AdminAnalyticsService {
           booking.createdAt.getTime() === booking.updatedAt.getTime()
             ? 'booking_created'
             : 'booking_updated',
-        title: `Booking #${booking.id} is ${booking.status.replaceAll('_', ' ')}`,
+        title: `Booking ${bookingRef(booking.id)} is ${booking.status.replaceAll('_', ' ')}`,
         actor: {
           type: 'customer',
           id: String(booking.customer.id),

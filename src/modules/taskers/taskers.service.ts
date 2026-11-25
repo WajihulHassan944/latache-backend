@@ -188,7 +188,7 @@ export class TaskersService {
         data: dto.services.map((service) => ({
           userId,
           serviceId: serviceIdBySlug.get(service.slug) as number,
-          hourlyRate: (canonicalRateBySlug.get(service.slug) as number).toFixed(2),
+          hourlyRate: (canonicalRateBySlug.get(service.slug) as number).toFixed(6),
           yearsOfExperience: dto.yearsOfExperience,
         })),
       });

@@ -1875,9 +1875,11 @@ export class AdminDisputesService {
     const db = transaction ?? this.prisma;
     const booking = await db.booking.findUnique({
       where: { id: bookingId },
-      select: { totalChargedAmount: true },
+      select: { totalChargedAmount: true, paymentSource: true },
     });
     if (!booking?.totalChargedAmount) return 0;
+    // Cash was handed straight to the Tasker; the platform never held it, so there is nothing to refund through the platform.
+    if (booking.paymentSource === 'cash') return 0;
     const refunds = await db.paymentTransaction.aggregate({
       where: {
         bookingId,

@@ -5,6 +5,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { MailService } from '../mail/mail.service';
+import { bookingRef } from '../../common/utils/booking-ref.util';
+import { DEFAULT_INVOICE_SELLER, presentableWebsite } from './invoice-defaults';
 import { PAYMENT_STATUS } from '../payments/payments.constants';
 import { PAYMENT_LABELS, formatDate, formatMoney, renderInvoicePdf } from './invoice-pdf.renderer';
 
@@ -135,12 +137,15 @@ export class InvoicesService {
           )
         : null;
     const serviceLabel = [booking.service.name, booking.serviceOption?.name].filter(Boolean).join(' - ') || 'Service';
+    const hourlyRate = num(booking.hourlyRate);
+    // Billed time = what the service amount actually pays for (never less than the minimum billable time).
+    const billedHours = hourlyRate > 0 && serviceAmount > 0 ? Math.round((serviceAmount / hourlyRate) * 100) / 100 : 0;
     const lines: InvoiceLine[] = [
       {
         code: 'service',
-        description: `${serviceLabel} service`,
-        quantity: 1,
-        unitAmount: serviceAmount,
+        description: `${serviceLabel} service${billedHours ? ` - ${billedHours} h billed` : ''}`,
+        quantity: billedHours || 1,
+        unitAmount: billedHours ? money(serviceAmount / billedHours) : serviceAmount,
         amount: serviceAmount,
       },
     ];
@@ -170,9 +175,13 @@ export class InvoicesService {
           service: serviceLabel,
           tasker: this.fullName(booking.tasker),
           date: booking.bookingDate.toISOString().slice(0, 10),
+          // The day the work was actually done (the scheduled slot can be days earlier or later).
+          serviceDate: (booking.taskCompletedAt ?? booking.paidAt ?? booking.bookingDate).toISOString().slice(0, 10),
           startTime: booking.startTime,
           endTime: booking.endTime,
           hoursWorked: hours === null ? null : Math.round(hours * 100) / 100,
+          billedHours: billedHours || null,
+          hourlyRate: hourlyRate || null,
           location: [booking.venueAddress, booking.apartmentSuite, booking.locationCity].filter(Boolean).join(', '),
         },
         buyer: {
@@ -460,7 +469,7 @@ export class InvoicesService {
         ? 'This booking was cancelled inside the late-cancellation window. The fee above was kept under the cancellation policy and the rest of your payment was refunded.'
         : view.type === 'tasker_deposit'
         ? 'This deposit is held as a refundable security deposit for your Latache Tasker account.'
-        : `Payment received in full${view.paymentMethod === 'cash' ? ' in cash by the Tasker on completion' : ''}. This invoice covers the service and any platform fees for booking #${view.bookingId ?? '-'}.`;
+        : `Payment received in full${view.paymentMethod === 'cash' ? ' in cash by the Tasker on completion' : ''}. This invoice covers the service and any platform fees for booking ${bookingRef(view.bookingId ?? '-')}.`;
     const discount = view.discountAmount > 0 ? `<tr><td>Discount</td><td class="n">- ${fmt(view.discountAmount)}</td></tr>` : '';
     const voided = view.status === 'void';
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invoice ${e(view.number)}</title>
@@ -487,7 +496,7 @@ table.items{width:100%;border-collapse:collapse;margin-top:28px}.items th{backgr
 <div class="muted">${[seller.address, seller.email, seller.phone, seller.website].filter(Boolean).map(e).join('<br>')}</div></div>
 <div class="title"><h1>INVOICE</h1><div class="muted">Facture</div><div class="meta">
 <div><span class="muted">Invoice no.</span><b>${e(view.number)}</b></div><div><span class="muted">Issue date</span><b>${e(formatDate(view.issuedAt))}</b></div>
-${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>#${e(view.bookingId)}</b></div>` : ''}<div><span class="muted">Payment</span><b>${e(PAYMENT_LABELS[view.paymentMethod ?? ''] ?? view.paymentMethod ?? '-')}</b></div></div>
+${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>${bookingRef(e(view.bookingId))}</b></div>` : ''}<div><span class="muted">Payment</span><b>${e(PAYMENT_LABELS[view.paymentMethod ?? ''] ?? view.paymentMethod ?? '-')}</b></div></div>
 <span class="pill${voided ? ' void' : ''}">${voided ? 'VOID' : 'PAID'}</span></div></div>
 <hr><div class="cols"><div><h4>Billed to</h4><div class="name">${e(buyer.name ?? 'Customer')}</div>${field('Email', buyer.email)}${field('Phone', buyer.phone)}${field('Address', buyer.address)}</div><div>${right}</div></div>
 <table class="items"><thead><tr><th>Description</th><th class="c">Qty</th><th class="n">Unit price</th><th class="n">Amount</th></tr></thead><tbody>${rows}</tbody></table>
@@ -567,13 +576,15 @@ ${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>#${e(view.boo
   private async seller(): Promise<Record<string, unknown>> {
     const settings = await this.settings.view('general');
     const general = (settings.general ?? {}) as Record<string, unknown>;
+    const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
     return {
-      name: general.platformName ?? 'Latache',
-      legalName: general.legalName ?? null,
-      address: general.legalAddress ?? null,
-      email: general.supportEmail ?? null,
-      phone: general.supportPhone ?? null,
-      website: general.platformUrl ?? null,
+      name: text(general.platformName) ?? 'Latache',
+      legalName: text(general.legalName) ?? DEFAULT_INVOICE_SELLER.legalName,
+      address: text(general.legalAddress) ?? DEFAULT_INVOICE_SELLER.address,
+      companyNumber: DEFAULT_INVOICE_SELLER.companyNumber,
+      email: text(general.supportEmail) ?? DEFAULT_INVOICE_SELLER.email,
+      phone: text(general.supportPhone),
+      website: presentableWebsite(general.platformUrl, DEFAULT_INVOICE_SELLER.website),
       iceNumber: general.iceNumber ?? null,
       rcNumber: general.rcNumber ?? null,
       ifNumber: general.ifNumber ?? null,

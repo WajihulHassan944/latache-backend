@@ -166,11 +166,11 @@ export class TaskerProfileService {
         create: {
           userId: taskerId,
           serviceId: service.id,
-          hourlyRate: canonicalRate.toFixed(2),
+          hourlyRate: canonicalRate.toFixed(6),
           yearsOfExperience: dto.yearsOfExperience ?? null,
         },
         update: {
-          hourlyRate: canonicalRate.toFixed(2),
+          hourlyRate: canonicalRate.toFixed(6),
           ...(dto.yearsOfExperience !== undefined
             ? { yearsOfExperience: dto.yearsOfExperience }
             : {}),
@@ -216,7 +216,7 @@ export class TaskerProfileService {
       const updated = await transaction.userService.update({
         where: { userId_serviceId: { userId: taskerId, serviceId } },
         data: {
-          hourlyRate: canonicalRate.toFixed(2),
+          hourlyRate: canonicalRate.toFixed(6),
           ...(dto.yearsOfExperience !== undefined
             ? { yearsOfExperience: dto.yearsOfExperience }
             : {}),

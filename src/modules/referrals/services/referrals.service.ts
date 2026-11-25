@@ -38,6 +38,7 @@ import {
   type ReferralProgram,
 } from '../referrals.constants';
 import { calculateReferralDiscount } from '../referrals.utils';
+import { bookingRef } from '../../../common/utils/booking-ref.util';
 
 const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 const moneyString = (value: number): string => roundMoney(value).toFixed(2);
@@ -945,7 +946,7 @@ export class ReferralsService {
         amount: reward.amount,
         balanceDelta: reward.amount,
         currency: reward.currency,
-        description: `Referral reward for booking #${reward.bookingId}`,
+        description: `Referral reward for booking ${bookingRef(reward.bookingId)}`,
         providerReference: `referral:${reward.id}`,
         idempotencyKey,
       },
@@ -990,7 +991,7 @@ export class ReferralsService {
         availableDelta: reward.amount,
         pendingDelta: '0.00',
         currency: reward.currency,
-        description: `Referral reward for booking #${reward.bookingId}`,
+        description: `Referral reward for booking ${bookingRef(reward.bookingId)}`,
         externalReference: `referral:${reward.id}`,
         idempotencyKey,
       },
@@ -1099,7 +1100,7 @@ export class ReferralsService {
         amount: moneyString(amount),
         balanceDelta: moneyString(-amount),
         currency: reward.currency,
-        description: `Referral reward reversal for booking #${reward.bookingId}`,
+        description: `Referral reward reversal for booking ${bookingRef(reward.bookingId)}`,
         providerReference: `referral-reversal:${reward.id}`,
         idempotencyKey: key,
       },
@@ -1134,7 +1135,7 @@ export class ReferralsService {
         availableDelta: moneyString(-amount),
         pendingDelta: '0.00',
         currency: reward.currency,
-        description: `Referral reward reversal for booking #${reward.bookingId}`,
+        description: `Referral reward reversal for booking ${bookingRef(reward.bookingId)}`,
         externalReference: `referral-reversal:${reward.id}`,
         idempotencyKey: key,
       },

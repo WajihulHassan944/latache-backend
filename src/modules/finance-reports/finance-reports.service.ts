@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
+import { PLATFORM_CURRENCY_PRESETS } from '../platform-settings/platform-currency.presets';
 
 export const FINANCE_EXPORT_DATASETS = [
   'transactions',
@@ -36,7 +38,16 @@ export function toCsv(headers: string[], rows: Array<Array<unknown>>): string {
  */
 @Injectable()
 export class FinanceReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly platformSettings: PlatformSettingsService,
+  ) {}
+
+  /** Rate to the canonical USD unit for an ISO code (static presets); unknown codes count as 1. */
+  private rateFromUsd(code: string): number {
+    const preset = Object.values(PLATFORM_CURRENCY_PRESETS).find((entry) => entry.code === code.toUpperCase());
+    return preset?.rateFromUsd ?? 1;
+  }
 
   private range(from?: string, to?: string): { gte?: Date; lte?: Date } | undefined {
     if (!from && !to) return undefined;
@@ -115,14 +126,22 @@ export class FinanceReportsService {
       }),
     ]);
 
+    // One platform currency in every report: records written in an older currency
+    // (the USD-era bookings) are converted at the platform's static rate and folded
+    // into the same bucket, so the admin sees a single total instead of two blocks.
+    const target = (await this.platformSettings.currencyContext()).code;
+    const COUNT_KEYS = new Set(['completedBookings', 'lateCancellations', 'taskersWithCashDebt', 'taskerPayoutRequestsInQueue', 'customerWithdrawalRequestsInQueue', 'taskerDepositsAwaitingPayment', 'invoicesIssued']);
+    const toTarget = (currency: string, value: number): number =>
+      currency.toUpperCase() === target ? value : (value / this.rateFromUsd(currency)) * this.rateFromUsd(target);
     const byCurrency = new Map<string, Record<string, number>>();
-    const bucket = (currency: string) => {
-      if (!byCurrency.has(currency)) byCurrency.set(currency, {});
-      return byCurrency.get(currency) as Record<string, number>;
+    const bucket = () => {
+      if (!byCurrency.has(target)) byCurrency.set(target, {});
+      return byCurrency.get(target) as Record<string, number>;
     };
     const add = (currency: string, key: string, value: number) => {
-      const b = bucket(currency);
-      b[key] = r2((b[key] ?? 0) + value);
+      const b = bucket();
+      const amount = COUNT_KEYS.has(key) ? value : toTarget(currency, value);
+      b[key] = r2((b[key] ?? 0) + amount);
     };
     for (const row of completed) {
       add(row.paymentCurrency, 'completedBookings', row._count._all);
@@ -173,13 +192,17 @@ export class FinanceReportsService {
     return {
       period: { from: from ?? null, to: to ?? null },
       currencies: [...byCurrency.entries()].map(([currency, values]) => ({ currency, ...values })),
-      moneyMovements: transactions.map((row) => ({
-        kind: row.kind,
-        provider: row.provider,
-        currency: row.currency,
-        count: row._count._all,
-        amount: r2(num(row._sum.amount)),
-      })),
+      moneyMovements: [
+        ...transactions
+          .reduce((map, row) => {
+            const key = `${row.kind}:${row.provider}`;
+            const entry = map.get(key) ?? { kind: row.kind, provider: row.provider, currency: target, count: 0, amount: 0 };
+            entry.count += row._count._all;
+            entry.amount = r2(entry.amount + toTarget(row.currency, num(row._sum.amount)));
+            return map.set(key, entry);
+          }, new Map<string, { kind: string; provider: string; currency: string; count: number; amount: number }>())
+          .values(),
+      ],
       definitions: {
         platformRevenue: 'Platform fees on completed bookings + late-cancellation fees kept.',
         owedToTaskersAvailable: 'Tasker wallet balances that can be withdrawn now (a liability).',

@@ -1,5 +1,6 @@
 import { escapeHtml } from '../../common/utils/html.util';
 import { type EmailLocale, isRtlEmailLocale, latacheEmailLayout, normalizeEmailLocale } from './email-layout';
+import { bookingRef } from '../../common/utils/booking-ref.util';
 
 type InvoiceEmailCopy = {
   subject: (number: string) => string;
@@ -100,7 +101,7 @@ export const invoiceEmailTemplate = (params: {
       <p style="margin:0 0 16px;color:#563226;font-size:16px;line-height:25px;text-align:${align}">${escapeHtml(intro)}</p>
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:18px 0;border:1px solid #efd7ad;border-radius:16px;background:#fff5e4;font-size:14px;border-collapse:separate;overflow:hidden">
         ${row(copy.invoiceLabel, params.number)}
-        ${params.bookingId ? row(copy.bookingLabel, `#${params.bookingId}`) : ''}
+        ${params.bookingId ? row(copy.bookingLabel, `${bookingRef(params.bookingId)}`) : ''}
         <tr><td style="padding:12px 14px;color:#60230c;font-weight:bold">${escapeHtml(copy.totalLabel)}</td><td dir="ltr" style="padding:12px 14px;color:#60230c;font-weight:bold;font-size:18px;text-align:${isRtlEmailLocale(locale) ? 'left' : 'right'}">${escapeHtml(params.total)}</td></tr>
       </table>
       <p style="margin:0;color:#a66229;font-size:13px;line-height:20px;text-align:center">${escapeHtml(copy.footer)}</p>`,
@@ -108,7 +109,7 @@ export const invoiceEmailTemplate = (params: {
   return {
     subject: copy.subject(params.number),
     html,
-    text: [copy.title, copy.greeting(params.name), intro, `${copy.invoiceLabel}: ${params.number}`, params.bookingId ? `${copy.bookingLabel}: #${params.bookingId}` : null, `${copy.totalLabel}: ${params.total}`, '', copy.footer]
+    text: [copy.title, copy.greeting(params.name), intro, `${copy.invoiceLabel}: ${params.number}`, params.bookingId ? `${copy.bookingLabel}: ${bookingRef(params.bookingId)}` : null, `${copy.totalLabel}: ${params.total}`, '', copy.footer]
       .filter((line) => line !== null)
       .join('\n'),
   };

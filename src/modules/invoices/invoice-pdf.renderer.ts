@@ -1,3 +1,4 @@
+import { bookingRef } from '../../common/utils/booking-ref.util';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import PDFDocument from 'pdfkit';
@@ -186,7 +187,7 @@ export function renderInvoicePdf(invoice: InvoiceDocument): Promise<Buffer> {
       info: {
         Title: `Invoice ${invoice.number}`,
         Author: pdfText(invoice.seller.legalName ?? invoice.seller.name ?? 'Latache'),
-        Subject: invoice.bookingId ? `Booking #${invoice.bookingId}` : 'Invoice',
+        Subject: invoice.bookingId ? `Booking ${bookingRef(invoice.bookingId)}` : 'Invoice',
       },
     });
     enableArabicText(doc);
@@ -223,7 +224,7 @@ export function renderInvoicePdf(invoice: InvoiceDocument): Promise<Buffer> {
     const meta: Array<[string, string]> = [
       ['Invoice no.', invoice.number],
       ['Issue date', formatDate(invoice.issuedAt)],
-      ...(invoice.bookingId ? ([['Booking ref.', `#${invoice.bookingId}`]] as Array<[string, string]>) : []),
+      ...(invoice.bookingId ? ([['Booking ref.', bookingRef(invoice.bookingId)]] as Array<[string, string]>) : []),
       ['Payment', PAYMENT_LABELS[invoice.paymentMethod ?? ''] ?? (invoice.paymentMethod ?? '-')],
     ];
     const cardH = 20 + meta.length * 16 + 30;
@@ -278,13 +279,13 @@ export function renderInvoicePdf(invoice: InvoiceDocument): Promise<Buffer> {
         : [
             String(details.service ?? 'Service'),
             ['Performed by', details.tasker],
+            ['Service date', details.serviceDate ? formatDate(String(details.serviceDate)) : details.date ? formatDate(String(details.date)) : null],
             [
-              'Date & time',
-              details.date
-                ? `${formatDate(String(details.date))}${details.startTime ? `, ${String(details.startTime)} - ${String(details.endTime)}` : ''}`
-                : null,
+              'Booked slot',
+              details.date && details.startTime ? `${formatDate(String(details.date))}, ${String(details.startTime)} - ${String(details.endTime)}` : null,
             ],
-            ['Time worked', details.hoursWorked !== undefined && details.hoursWorked !== null ? `${Number(details.hoursWorked).toFixed(2)} h` : null],
+            ['Billed time', details.billedHours ? `${Number(details.billedHours).toFixed(2)} h (minimum billable time applies)` : null],
+            ['Time on site', details.hoursWorked !== undefined && details.hoursWorked !== null ? `${Number(details.hoursWorked).toFixed(2)} h` : null],
             ['Location', details.location],
           ];
     const serviceTitle = invoice.type === 'tasker_deposit' ? 'DETAILS' : 'SERVICE DETAILS';
@@ -334,7 +335,7 @@ export function renderInvoicePdf(invoice: InvoiceDocument): Promise<Buffer> {
     };
     const taxLine = invoice.lines.filter((line) => line.code === 'tax').reduce((sum, line) => sum + line.amount, 0);
     totalRow('Subtotal', money(invoice.total - taxLine));
-    if (taxLine > 0) totalRow('Tax', money(taxLine));
+    totalRow('Tax / TVA', money(taxLine));
     y += 3;
     doc.roundedRect(totalsX, y, totalsW, 32, 8).fill(T.brown);
     doc.fillColor(T.gold).font('Helvetica-Bold').fontSize(8).text('TOTAL PAID', totalsX + 14, y + 12, { characterSpacing: 1.5 });
@@ -348,7 +349,7 @@ export function renderInvoicePdf(invoice: InvoiceDocument): Promise<Buffer> {
         ? 'This booking was cancelled inside the late-cancellation window. The fee above was kept under the cancellation policy and the rest of your payment was refunded.'
         : invoice.type === 'tasker_deposit'
         ? 'This deposit is held as a refundable security deposit for your Latache Tasker account and is returned according to the Tasker terms.'
-        : `Payment received in full${invoice.paymentMethod === 'cash' ? ' in cash by the Tasker on completion' : ''}. This invoice covers the service and any platform fees for booking #${invoice.bookingId ?? '-'}.`;
+        : `Payment received in full${invoice.paymentMethod === 'cash' ? ' in cash by the Tasker on completion' : ''}. The service was performed by an independent professional (${String(details.tasker ?? 'the Tasker')}); the platform service fee is invoiced by ${String(seller.legalName ?? 'Latache')}. Booking ${bookingRef(invoice.bookingId)}.`;
     doc.fillColor(T.copper).font('Helvetica-Bold').fontSize(7.5).text('NOTES', m, sectionTop, { characterSpacing: 1.2 });
     doc
       .fillColor(T.muted)
@@ -401,6 +402,7 @@ export function drawBrandFooter(doc: PDFKit.PDFDocument, seller: Record<string, 
   }
   doc.restore();
   const legal = [
+    seller.companyNumber ? String(seller.companyNumber) : null,
     seller.iceNumber ? `ICE ${String(seller.iceNumber)}` : null,
     seller.rcNumber ? `RC ${String(seller.rcNumber)}` : null,
     seller.ifNumber ? `IF ${String(seller.ifNumber)}` : null,

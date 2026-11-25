@@ -809,7 +809,7 @@ model UserService {
   id                Int      @id @default(autoincrement())
   userId            Int
   serviceId         Int
-  hourlyRate        Decimal  @default(0) @db.Decimal(10, 2)
+  hourlyRate        Decimal  @default(0) @db.Decimal(14, 6)
   yearsOfExperience Int?
   createdAt         DateTime @default(now()) @db.Timestamptz(6)
   updatedAt         DateTime @default(now()) @updatedAt @db.Timestamptz(6)

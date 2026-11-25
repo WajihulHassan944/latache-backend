@@ -16,6 +16,7 @@ import {
   pdfText,
 } from './invoice-pdf.renderer';
 import { InvoicesService } from './invoices.service';
+import { bookingRef } from '../../common/utils/booking-ref.util';
 
 const num = (value: Prisma.Decimal | number | null | undefined): number => (value === null || value === undefined ? 0 : Number(value));
 const r2 = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -165,7 +166,7 @@ export class TaskerStatementsService {
       ['summary', 'wallet_opening', s.walletOpening.toFixed(2)],
       ['summary', 'wallet_closing', s.walletClosing.toFixed(2)],
       ['summary', 'owed_to_platform_closing', s.owedToPlatformClosing.toFixed(2)],
-      ...statement.earnings.map((e) => ['earning', e.date, `#${e.bookingId}`, e.service, e.customer, e.paymentSource, e.gross.toFixed(2), e.commission.toFixed(2), e.tip.toFixed(2), e.net.toFixed(2), e.status]),
+      ...statement.earnings.map((e) => ['earning', e.date, `${bookingRef(e.bookingId)}`, e.service, e.customer, e.paymentSource, e.gross.toFixed(2), e.commission.toFixed(2), e.tip.toFixed(2), e.net.toFixed(2), e.status]),
       ...statement.payouts.map((p) => ['payout', p.requestedAt, p.id, p.destination, p.status, p.amount.toFixed(2), p.reference ?? '', p.processedAt ?? '']),
       ...statement.walletMovements.map((m) => ['wallet', m.date, m.kind, m.description, m.availableDelta.toFixed(2), m.pendingDelta.toFixed(2)]),
     ];
@@ -264,7 +265,7 @@ export class TaskerStatementsService {
       table(
         'JOBS & EARNINGS',
         [['DATE', 62, 'left'], ['BOOKING', 52, 'left'], ['SERVICE', 92, 'left'], ['CUSTOMER', 92, 'left'], ['GROSS', 64, 'right'], ['COMMISSION', 66, 'right'], ['NET', 69, 'right']],
-        statement.earnings.map((e) => [formatDate(e.date), `#${e.bookingId}`, e.service, e.customer, money(e.gross), money(-e.commission), money(e.net)]),
+        statement.earnings.map((e) => [formatDate(e.date), `${bookingRef(e.bookingId)}`, e.service, e.customer, money(e.gross), money(-e.commission), money(e.net)]),
         'No completed jobs this month.',
       );
       table(

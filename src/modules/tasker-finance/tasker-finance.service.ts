@@ -29,6 +29,7 @@ import type {
   EarningActionInput,
   EarningListQuery,
 } from './tasker-finance.types';
+import { bookingRef } from '../../common/utils/booking-ref.util';
 
 const money = (value: Prisma.Decimal | number | string | null | undefined): number =>
   Math.round((Number(value ?? 0) + Number.EPSILON) * 100) / 100;
@@ -137,7 +138,7 @@ export class TaskerFinanceService {
           availableDelta: '0.00',
           pendingDelta: decimal(taskerNetAmount),
           currency: booking.paymentCurrency,
-          description: `Pending earning for booking #${booking.id}`,
+          description: `Pending earning for booking ${bookingRef(booking.id)}`,
           externalReference: input.providerSettlementReference,
           idempotencyKey: `booking:${booking.id}:pending-earning`,
         },
@@ -280,7 +281,7 @@ export class TaskerFinanceService {
             amount: decimal(payable),
             payableDelta: decimal(payable),
             currency: booking.paymentCurrency,
-            description: `Platform payable created from cash booking #${booking.id}`,
+            description: `Platform payable created from cash booking ${bookingRef(booking.id)}`,
             externalReference: `cash:${booking.id}`,
             idempotencyKey: `cash-booking:${booking.id}:payable-created`,
           },
@@ -573,7 +574,7 @@ export class TaskerFinanceService {
             availableDelta: decimal(reimbursementAmount),
             pendingDelta: decimal(0),
             currency: locked.currency,
-            description: `Platform commission reimbursement after confirmed cash refund for booking #${bookingId}`,
+            description: `Platform commission reimbursement after confirmed cash refund for booking ${bookingRef(bookingId)}`,
             externalReference,
             idempotencyKey: reimbursementKey,
           },
@@ -590,7 +591,7 @@ export class TaskerFinanceService {
         amount: decimal(reversal),
         payableDelta: decimal(-outstandingReversal),
         currency: locked.currency,
-        description: `Cash dispute refund receivable reversal for booking #${bookingId}`,
+        description: `Cash dispute refund receivable reversal for booking ${bookingRef(bookingId)}`,
         externalReference,
         idempotencyKey,
       },
@@ -698,7 +699,7 @@ export class TaskerFinanceService {
         availableDelta: decimal(-availableClawback),
         pendingDelta: decimal(-pendingReversal),
         currency: booking.paymentCurrency,
-        description: `Refund adjustment for booking #${booking.id}`,
+        description: `Refund adjustment for booking ${bookingRef(booking.id)}`,
         externalReference: refundPayment.id,
         idempotencyKey: ledgerKey,
       },
@@ -937,7 +938,7 @@ export class TaskerFinanceService {
           description:
             debtOffset > 0
               ? `Earning released; ${earning.currency} ${debtOffset.toFixed(2)} offset against cash platform payable`
-              : `Earning released for booking #${earning.bookingId}`,
+              : `Earning released for booking ${bookingRef(earning.bookingId)}`,
           externalReference: earning.providerSettlementReference,
           idempotencyKey: `earning:${earning.id}:release`,
         },
@@ -1536,7 +1537,7 @@ export class TaskerFinanceService {
         availableDelta: decimal(amount),
         pendingDelta: decimal(0),
         currency: earning.currency,
-        description: `${plan.name} plan ${plan.revenueSharePercent}% revenue share for booking #${earning.bookingId}`,
+        description: `${plan.name} plan ${plan.revenueSharePercent}% revenue share for booking ${bookingRef(earning.bookingId)}`,
         externalReference: subscription.id,
         idempotencyKey,
       },
@@ -1547,7 +1548,7 @@ export class TaskerFinanceService {
         category: 'wallet',
         type: 'tasker_plan_revenue_share',
         title: `${plan.name} revenue share added`,
-        body: `${earning.currency} ${amount.toFixed(2)} (${plan.revenueSharePercent}% of booking #${earning.bookingId}) was added to your wallet.`,
+        body: `${earning.currency} ${amount.toFixed(2)} (${plan.revenueSharePercent}% of booking ${bookingRef(earning.bookingId)}) was added to your wallet.`,
         entityType: 'booking',
         entityId: String(earning.bookingId),
         metadata: { subscriptionId: subscription.id, planId: plan.id, amount },
