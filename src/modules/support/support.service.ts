@@ -1679,6 +1679,96 @@ export class SupportService {
     return ticket;
   }
 
+  /**
+   * Queue upkeep (background sweep): auto-assigns tickets nobody picked up to the least-loaded support
+   * admin, and bumps tickets that waited too long for a first reply to high priority (once) so they age to the top.
+   */
+  async runQueueMaintenance(
+    autoAssignAfterMinutes = 15,
+    agingAfterHours = 24,
+  ): Promise<{ assigned: number; aged: number }> {
+    const now = Date.now();
+    const admins = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        accountStatus: 'active',
+        OR: [{ role: UserRole.SuperAdmin }, { role: UserRole.Admin, permissions: { has: 'support.manage' } }],
+      },
+      select: { id: true },
+      take: 100,
+    });
+    let assigned = 0;
+    if (admins.length > 0) {
+      const load = new Map<number, number>();
+      const grouped = await this.prisma.supportTicket.groupBy({
+        by: ['assignedAdminId'],
+        where: { assignedAdminId: { in: admins.map((a) => a.id) }, status: { in: ['open', 'in_progress', 'waiting_on_user'] } },
+        _count: { _all: true },
+      });
+      for (const row of grouped) if (row.assignedAdminId !== null) load.set(row.assignedAdminId, row._count._all);
+      const stale = await this.prisma.supportTicket.findMany({
+        where: {
+          assignedAdminId: null,
+          status: 'open',
+          createdAt: { lte: new Date(now - autoAssignAfterMinutes * 60_000) },
+        },
+        select: { id: true, subject: true, userId: true },
+        orderBy: { createdAt: 'asc' },
+        take: 50,
+      });
+      for (const ticket of stale) {
+        const target = [...admins].sort((a, b) => (load.get(a.id) ?? 0) - (load.get(b.id) ?? 0) || a.id - b.id)[0];
+        if (!target) break;
+        const claimed = await this.prisma.supportTicket.updateMany({
+          where: { id: ticket.id, assignedAdminId: null, status: 'open' },
+          data: { assignedAdminId: target.id, status: 'in_progress' },
+        });
+        if (claimed.count === 0) continue;
+        load.set(target.id, (load.get(target.id) ?? 0) + 1);
+        assigned += 1;
+        await this.audit.record({
+          actorId: target.id,
+          targetUserId: ticket.userId,
+          action: 'support_ticket_auto_assigned',
+          entityType: 'support_ticket',
+          entityId: ticket.id,
+          metadata: { assignedAdminId: target.id },
+        });
+        await this.notifications
+          .create(target.id, {
+            category: 'system',
+            type: 'support_ticket_assigned',
+            title: `${this.ticketNumber(ticket.id)} assigned to you`,
+            body: ticket.subject,
+            entityType: 'support_ticket',
+            entityId: String(ticket.id),
+          })
+          .catch(() => undefined);
+      }
+    }
+    const overdue = await this.prisma.supportTicket.findMany({
+      where: {
+        status: { in: ['open', 'in_progress'] },
+        firstResponseAt: null,
+        priority: { in: ['low', 'normal'] },
+        createdAt: { lte: new Date(now - agingAfterHours * 3_600_000) },
+      },
+      select: { id: true, subject: true },
+      take: 50,
+    });
+    let aged = 0;
+    for (const ticket of overdue) {
+      await this.prisma.supportTicket.update({ where: { id: ticket.id }, data: { priority: 'high' } });
+      aged += 1;
+      await this.notifySupportTeam(
+        ticket.id,
+        `${this.ticketNumber(ticket.id)} is overdue`,
+        `No reply sent after ${agingAfterHours}h: ${ticket.subject}`,
+      ).catch(() => undefined);
+    }
+    return { assigned, aged };
+  }
+
   private async assertSupportAdmin(adminId: number): Promise<void> {
     const admin = await this.prisma.user.findFirst({
       where: {

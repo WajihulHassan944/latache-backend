@@ -20,6 +20,7 @@ import { TaskerPlansService } from '../../modules/tasker-plans/tasker-plans.serv
 import { PaymentsService } from '../../modules/payments/payments.service';
 import { AdminCustomersService } from '../../modules/admin-dashboard/services/admin-customers.service';
 import { InvoicesService } from '../../modules/invoices/invoices.service';
+import { SupportService } from '../../modules/support/support.service';
 
 const JOB_NAMES = {
   ReleaseEarnings: 'finance.release-mature',
@@ -44,6 +45,7 @@ const JOB_NAMES = {
   ReactivateDueSuspensions: 'customers.reactivate-due-suspensions',
   CleanupAuthSessions: 'auth.cleanup-sessions',
   IssuePendingInvoices: 'invoices.issue-pending',
+  SupportQueueMaintenance: 'support.queue-maintenance',
 } as const;
 
 export interface QueueHealth {
@@ -89,6 +91,7 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly adminCustomers: AdminCustomersService,
     private readonly prisma: PrismaService,
     private readonly invoices: InvoicesService,
+    private readonly support: SupportService,
   ) {
     this.enabled = this.config.get<boolean>('jobs.enabled', false);
     this.workerEnabled = this.config.get<boolean>('jobs.workerEnabled', false);
@@ -270,6 +273,11 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { name: JOB_NAMES.ExpireAwaitingPaymentBookings, data: {} },
       ),
       queue.upsertJobScheduler(
+        'support-queue-maintenance-v1',
+        { every: this.config.get<number>('support.queueSweepIntervalMs', 300_000) },
+        { name: JOB_NAMES.SupportQueueMaintenance, data: {} },
+      ),
+      queue.upsertJobScheduler(
         'issue-pending-invoices-v1',
         { every: this.config.get<number>('invoices.sweepIntervalMs', 300_000) },
         { name: JOB_NAMES.IssuePendingInvoices, data: {} },
@@ -366,6 +374,11 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         return this.payments.processPendingAcceptanceRefunds();
       case JOB_NAMES.ExpireAwaitingPaymentBookings:
         return this.bookings.expireDueAwaitingPaymentBookings();
+      case JOB_NAMES.SupportQueueMaintenance:
+        return this.support.runQueueMaintenance(
+          this.config.get<number>('support.autoAssignAfterMinutes', 15),
+          this.config.get<number>('support.agingAfterHours', 24),
+        );
       case JOB_NAMES.IssuePendingInvoices:
         return { issued: await this.invoices.issuePending(), emailed: await this.invoices.emailPending() };
       case JOB_NAMES.ExpireNotStartedBookings:
