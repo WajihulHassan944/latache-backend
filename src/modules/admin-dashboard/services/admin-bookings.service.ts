@@ -805,6 +805,7 @@ export class AdminBookingsService {
       estimatedDurationMinutes: true,
       serviceAmount: true,
       platformFeeAmount: true,
+      paymentEstimate: true,
       commissionRatePercent: true,
       taxAmount: true,
       taxRatePercent: true,
@@ -852,6 +853,9 @@ export class AdminBookingsService {
         Number(booking.tipAmount) +
         Number(booking.donationAmount),
     );
+    // The customer sees the quoted total (service + service fee): use the same stored estimate when nothing was charged.
+    const quoted = Number((booking.paymentEstimate as { total?: number } | null)?.total ?? 0);
+    const displayEstimate = quoted > 0 ? money(quoted) : estimatedTotal;
     return {
       id: String(booking.id),
       bookingId: bookingDisplayId(booking.id),
@@ -881,7 +885,7 @@ export class AdminBookingsService {
       payment: { status: booking.paymentStatus },
       amount: {
         amount:
-          booking.totalChargedAmount === null ? estimatedTotal : money(booking.totalChargedAmount),
+          booking.totalChargedAmount === null ? displayEstimate : money(booking.totalChargedAmount),
         currency: booking.paymentCurrency,
         settled: booking.totalChargedAmount !== null,
       },

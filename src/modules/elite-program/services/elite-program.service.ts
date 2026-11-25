@@ -2145,7 +2145,11 @@ export class EliteProgramService {
       }),
       client.booking.groupBy({
         by: ['status'],
-        where: { taskerId, status: { in: ['completed', 'cancelled'] } },
+        // Only cancellations the Tasker caused count against the rate (not customer cancellations or expired requests).
+        where: {
+          taskerId,
+          OR: [{ status: 'completed' }, { status: 'cancelled', cancelledByRole: 'tasker' }],
+        },
         _count: { _all: true },
       }),
       client.taskerWalletLedgerEntry.groupBy({
