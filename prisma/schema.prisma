@@ -515,6 +515,12 @@ model SeoSettings {
   includePublicTaskers    Boolean  @default(false)
   servicePathTemplate     String   @default("/services/{slug}") @db.VarChar(255)
   taskerPathTemplate      String   @default("/taskers/{id}") @db.VarChar(255)
+  googleSiteVerification  String?  @db.VarChar(255)
+  bingSiteVerification    String?  @db.VarChar(255)
+  googleAnalyticsId       String?  @db.VarChar(64)
+  metaPixelId             String?  @db.VarChar(64)
+  llmsSummary             String?  @db.VarChar(4000)
+  indexNowEnabled         Boolean  @default(true)
   updatedById             Int?
   createdAt               DateTime @default(now()) @db.Timestamptz(6)
   updatedAt               DateTime @default(now()) @updatedAt @db.Timestamptz(6)
@@ -588,12 +594,46 @@ model SeoRedirect {
   preserveQuery Boolean  @default(true)
   isActive      Boolean  @default(true)
   reason        String?  @db.VarChar(500)
+  hits          Int      @default(0)
+  lastHitAt     DateTime? @db.Timestamptz(6)
   updatedById   Int?
   createdAt     DateTime @default(now()) @db.Timestamptz(6)
   updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   @@index([isActive, fromPath], map: "seo_redirects_active_from_idx")
   @@map("SeoRedirects")
+}
+
+/// A public URL that returned 404, reported by the frontend so admins can add redirects.
+model SeoNotFoundHit {
+  id           String   @id @default(cuid()) @db.VarChar(40)
+  path         String   @unique(map: "seo_not_found_path_key") @db.VarChar(500)
+  hits         Int      @default(1)
+  lastReferrer String?  @db.VarChar(1000)
+  lastSeenAt   DateTime @default(now()) @db.Timestamptz(6)
+  resolved     Boolean  @default(false)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([resolved, hits], map: "seo_not_found_resolved_hits_idx")
+  @@map("SeoNotFoundHits")
+}
+
+/// Off-page SEO: tracked inbound links.
+model SeoBacklink {
+  id            String    @id @default(cuid()) @db.VarChar(40)
+  sourceUrl     String    @db.VarChar(1000)
+  targetPath    String    @default("/") @db.VarChar(500)
+  anchorText    String?   @db.VarChar(255)
+  status        String    @default("pending") @db.VarChar(16)
+  isDofollow    Boolean   @default(true)
+  notes         String?   @db.VarChar(1000)
+  lastCheckedAt DateTime? @db.Timestamptz(6)
+  updatedById   Int?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([status, createdAt], map: "seo_backlinks_status_created_idx")
+  @@map("SeoBacklinks")
 }
 
 model SeoSitemapEntry {

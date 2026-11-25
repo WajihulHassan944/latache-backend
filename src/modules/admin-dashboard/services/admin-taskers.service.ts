@@ -451,6 +451,13 @@ export class AdminTaskersService {
 
   async moderate(actor: User, taskerId: number, dto: AdminUserModerationDto) {
     const tasker = await this.requireTasker(taskerId);
+    if (
+      dto.action === 'ban' &&
+      actor.role !== UserRole.SuperAdmin &&
+      !actor.permissions.includes('taskers.ban')
+    ) {
+      throw new ForbiddenException('Missing required permission: taskers.ban');
+    }
     if (dto.action !== 'reactivate' && !dto.reason?.trim()) {
       throw new BadRequestException('A reason is required when suspending or banning a tasker');
     }

@@ -24,6 +24,12 @@ export class SeoSettingsDto {
   @IsOptional() @IsBoolean() includePublicTaskers?: boolean;
   @IsOptional() @IsString() @Length(1, 255) servicePathTemplate?: string;
   @IsOptional() @IsString() @Length(1, 255) taskerPathTemplate?: string;
+  @IsOptional() @IsString() @Length(0, 255) googleSiteVerification?: string;
+  @IsOptional() @IsString() @Length(0, 255) bingSiteVerification?: string;
+  @IsOptional() @IsString() @Matches(/^(?:G-[A-Z0-9]+|UA-\d+-\d+|)$/) googleAnalyticsId?: string;
+  @IsOptional() @IsString() @Matches(/^(?:\d{5,20}|)$/) metaPixelId?: string;
+  @IsOptional() @IsString() @Length(0, 4000) llmsSummary?: string;
+  @IsOptional() @IsBoolean() indexNowEnabled?: boolean;
 }
 
 export class UpsertSeoPageDto {
@@ -94,4 +100,31 @@ export class UpdateSeoKeywordDto {
 export class SearchConsoleSummaryQueryDto {
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) startDate?: string;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) endDate?: string;
+}
+
+export class SeoReport404Dto {
+  @IsString() @Matches(PATH) @Length(1, 500) path!: string;
+  @IsOptional() @IsString() @Length(1, 1000) referrer?: string;
+}
+
+export class SeoRedirectResolveQueryDto {
+  @IsString() @Matches(PATH) @Length(1, 500) path!: string;
+}
+
+export class SeoBacklinkDto {
+  @IsString() @Matches(HTTP_URL) @Length(1, 1000) sourceUrl!: string;
+  @IsOptional() @IsString() @Matches(PATH) @Length(1, 500) targetPath?: string;
+  @IsOptional() @IsString() @Length(1, 255) anchorText?: string;
+  @IsOptional() @IsString() @IsIn(['pending', 'live', 'lost', 'rejected']) status?: string;
+  @IsOptional() @IsBoolean() isDofollow?: boolean;
+  @IsOptional() @IsString() @Length(1, 1000) notes?: string;
+}
+
+export class UpdateSeoBacklinkDto {
+  @IsOptional() @IsString() @Matches(HTTP_URL) @Length(1, 1000) sourceUrl?: string;
+  @IsOptional() @IsString() @Matches(PATH) @Length(1, 500) targetPath?: string;
+  @IsOptional() @IsString() @Length(1, 255) anchorText?: string;
+  @IsOptional() @IsString() @IsIn(['pending', 'live', 'lost', 'rejected']) status?: string;
+  @IsOptional() @IsBoolean() isDofollow?: boolean;
+  @IsOptional() @IsString() @Length(1, 1000) notes?: string;
 }

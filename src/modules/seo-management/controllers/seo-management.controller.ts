@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Header, Param, Patch, Post, Query, Body, Res, UseGuards } from '@nestjs/common';
+import { Controller, HttpCode, NotFoundException, Delete, Get, Header, Param, Patch, Post, Query, Body, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiExcludeController, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
@@ -10,12 +10,19 @@ import { AdminAuthGuard } from '../../auth/guards/admin-auth.guard';
 import { SeoManagementService } from '../services/seo-management.service';
 import { SearchConsoleService } from '../services/search-console.service';
 import { GoogleAnalyticsService } from '../services/google-analytics.service';
+import { SeoExtrasService } from '../services/seo-extras.service';
+import { SeoBacklinkDto, SeoRedirectResolveQueryDto, SeoReport404Dto, UpdateSeoBacklinkDto } from '../dto/seo.dto';
 import { CreateSeoKeywordDto, SearchConsoleSummaryQueryDto, SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntryDto, SeoSettingsDto, UpdateSeoKeywordDto, UpsertSeoPageDto } from '../dto/seo.dto';
 
 @ApiTags('20 SEO')
 @Controller('seo')
 export class SeoPublicController {
-  constructor(private readonly seo: SeoManagementService) {}
+  constructor(private readonly seo: SeoManagementService, private readonly extras: SeoExtrasService) {}
+  @Get('redirects') @Throttle({ default: { limit: 30, ttl: 60_000 } }) @ApiOperation({ summary: 'List active redirects so the frontend can apply them at the edge' }) redirects() { return this.extras.listPublicRedirects(); }
+  @Get('redirect') @Throttle({ default: { limit: 120, ttl: 60_000 } }) @ApiOperation({ summary: 'Resolve one redirect and count the hit' }) redirect(@Query() query: SeoRedirectResolveQueryDto) { return this.extras.resolveRedirect(query.path); }
+  @Post('404') @HttpCode(200) @Throttle({ default: { limit: 30, ttl: 60_000 } }) @ApiOperation({ summary: 'Report a public URL that returned 404' }) report404(@Body() dto: SeoReport404Dto) { return this.extras.report404(dto.path, dto.referrer); }
+  @Get('llms.txt') @Throttle({ default: { limit: 20, ttl: 60_000 } }) @Header('Content-Type', 'text/markdown; charset=utf-8') @ApiOperation({ summary: 'llms.txt summary of the site for AI assistants' }) llms() { return this.extras.llmsTxt(); }
+  @Get('indexnow-key') @Throttle({ default: { limit: 20, ttl: 60_000 } }) @Header('Content-Type', 'text/plain; charset=utf-8') @ApiOperation({ summary: 'IndexNow key file content (404 when not configured)' }) indexNowKey() { const key = this.extras.indexNowKey(); if (!key) throw new NotFoundException(); return key; }
   @Get('meta') @Throttle({ default: { limit: 60, ttl: 60_000 } }) @ApiOperation({ summary: 'Resolve localized SEO metadata for a public route' }) meta(@Query() query: SeoResolveQueryDto) { return this.seo.publicMeta(query); }
   @Get('sitemap.xml') @Throttle({ default: { limit: 20, ttl: 60_000 } }) @Header('Content-Type', 'application/xml; charset=utf-8') @ApiOperation({ summary: 'Generate the authoritative XML sitemap' }) sitemap() { return this.seo.sitemap(); }
   @Get('robots.txt') @Throttle({ default: { limit: 20, ttl: 60_000 } }) @Header('Content-Type', 'text/plain; charset=utf-8') @ApiOperation({ summary: 'Generate robots.txt from managed SEO rules' }) robots() { return this.seo.robots(); }
@@ -30,12 +37,13 @@ export class AdminSeoController {
     private readonly seo: SeoManagementService,
     private readonly searchConsole: SearchConsoleService,
     private readonly analytics: GoogleAnalyticsService,
+    private readonly extras: SeoExtrasService,
   ) {}
   @Get('settings') @Permissions('seo.read') getSettings() { return this.seo.adminSettings(); }
   @Patch('settings') @Permissions('seo.manage') updateSettings(@CurrentUser() actor: User, @Body() dto: SeoSettingsDto) { return this.seo.updateSettings(actor, dto); }
   @Get('pages') @Permissions('seo.read') listPages(@Query() query: SeoPageListQueryDto) { return this.seo.listPages(query); }
   @Get('pages/:id') @Permissions('seo.read') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) getPage(@Param('id') id: string) { return this.seo.getPage(id); }
-  @Post('pages') @Permissions('seo.manage') upsertPage(@CurrentUser() actor: User, @Body() dto: UpsertSeoPageDto) { return this.seo.upsertPage(actor, dto); }
+  @Post('pages') @Permissions('seo.manage') async upsertPage(@CurrentUser() actor: User, @Body() dto: UpsertSeoPageDto) { const row = await this.seo.upsertPage(actor, dto); void this.extras.pingIndexNow([row.path]); return row; }
   @Delete('pages/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) deletePage(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deletePage(actor, id); }
   @Get('pages/:id/keywords') @Permissions('seo.read') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) @ApiOperation({ summary: 'List target keywords for a page, with live usedInContent status' }) listKeywords(@Param('id') id: string) { return this.seo.listKeywords(id); }
   @Post('pages/:id/keywords') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO page ID.' }) @ApiOperation({ summary: 'Add a target keyword to a page' }) addKeyword(@CurrentUser() actor: User, @Param('id') id: string, @Body() dto: CreateSeoKeywordDto) { return this.seo.addKeyword(actor, id, dto); }
@@ -44,6 +52,14 @@ export class AdminSeoController {
   @Get('redirects') @Permissions('seo.read') listRedirects() { return this.seo.listRedirects(); }
   @Post('redirects') @Permissions('seo.manage') upsertRedirect(@CurrentUser() actor: User, @Body() dto: SeoRedirectDto) { return this.seo.upsertRedirect(actor, dto); }
   @Delete('redirects/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO redirect ID.' }) deleteRedirect(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deleteRedirect(actor, id); }
+  @Get('404s') @Permissions('seo.read') @ApiOperation({ summary: 'Public URLs that returned 404, most-hit first' }) list404s(@Query('includeResolved') includeResolved?: string) { return this.extras.list404s(includeResolved === 'true'); }
+  @Patch('404s/:id/resolve') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String }) resolve404(@CurrentUser() actor: User, @Param('id') id: string) { return this.extras.resolve404(actor, id); }
+  @Get('backlinks') @Permissions('seo.read') listBacklinks() { return this.extras.listBacklinks(); }
+  @Get('backlinks/stats') @Permissions('seo.read') backlinkStats() { return this.extras.backlinkStats(); }
+  @Post('backlinks') @Permissions('seo.manage') createBacklink(@CurrentUser() actor: User, @Body() dto: SeoBacklinkDto) { return this.extras.createBacklink(actor, dto); }
+  @Patch('backlinks/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String }) updateBacklink(@CurrentUser() actor: User, @Param('id') id: string, @Body() dto: UpdateSeoBacklinkDto) { return this.extras.updateBacklink(actor, id, dto); }
+  @Delete('backlinks/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String }) deleteBacklink(@CurrentUser() actor: User, @Param('id') id: string) { return this.extras.deleteBacklink(actor, id); }
+  @Post('indexnow/ping') @Permissions('seo.manage') @ApiOperation({ summary: 'Manually ping IndexNow for a set of paths' }) async pingIndexNow(@Body() body: { paths?: string[] }) { await this.extras.pingIndexNow((body.paths ?? []).filter((p) => typeof p === 'string' && p.startsWith('/')).slice(0, 100)); return { queued: true }; }
   @Get('sitemap-entries') @Permissions('seo.read') listSitemapEntries() { return this.seo.listSitemapEntries(); }
   @Post('sitemap-entries') @Permissions('seo.manage') upsertSitemapEntry(@CurrentUser() actor: User, @Body() dto: SeoSitemapEntryDto) { return this.seo.upsertSitemapEntry(actor, dto); }
   @Delete('sitemap-entries/:id') @Permissions('seo.manage') @ApiParam({ name: 'id', required: true, type: String, description: 'SEO sitemap entry ID.' }) deleteSitemapEntry(@CurrentUser() actor: User, @Param('id') id: string) { return this.seo.deleteSitemapEntry(actor, id); }

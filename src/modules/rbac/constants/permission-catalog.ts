@@ -75,6 +75,12 @@ export const PERMISSION_CATALOG = [
         description: 'Update customer account lifecycle and profile data.',
       },
       {
+        key: 'customers.ban',
+        label: 'Ban customers',
+        description:
+          'Ban (deactivate) a customer account. Revokes their sessions immediately; only a super administrator can reverse a ban. Also requires customers.manage. Suspending and reactivating only need customers.manage.',
+      },
+      {
         key: 'customers.delete',
         label: 'Permanently delete customers',
         description:
@@ -107,6 +113,12 @@ export const PERMISSION_CATALOG = [
         key: 'taskers.manage',
         label: 'Manage taskers',
         description: 'Approve, reject, suspend, or update tasker accounts.',
+      },
+      {
+        key: 'taskers.ban',
+        label: 'Ban taskers',
+        description:
+          'Ban (deactivate) a Tasker account. Revokes their sessions immediately; only a super administrator can reverse a ban. Also requires taskers.manage. Suspending and reactivating only need taskers.manage.',
       },
       {
         key: 'taskers.delete',
@@ -417,8 +429,10 @@ export const SYSTEM_RBAC_ROLES: readonly SystemRbacRoleDefinition[] = [
     permissions: [
       'customers.read',
       'customers.manage',
+      'customers.ban',
       'taskers.read',
       'taskers.manage',
+      'taskers.ban',
       'elite.read',
       'elite.manage',
       'bookings.read',

@@ -912,6 +912,13 @@ export class AdminCustomersService {
 
   async moderate(actor: User, customerId: number, dto: AdminUserModerationDto) {
     const customer = await this.requireCustomer(customerId);
+    if (
+      dto.action === 'ban' &&
+      actor.role !== UserRole.SuperAdmin &&
+      !actor.permissions.includes('customers.ban')
+    ) {
+      throw new ForbiddenException('Missing required permission: customers.ban');
+    }
     if (dto.action !== 'reactivate' && !dto.reason?.trim()) {
       throw new BadRequestException('A reason is required when suspending or banning a customer');
     }

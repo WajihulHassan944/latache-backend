@@ -62,6 +62,7 @@ export default () => {
     },
     seo: {
       publicBaseUrl: process.env.SEO_PUBLIC_BASE_URL?.trim() || appBaseUrl,
+      indexNowKey: process.env.INDEXNOW_KEY?.trim() || undefined,
     },
     frontend: {
       baseUrl: process.env.FRONTEND_BASE_URL?.trim() || 'http://localhost:3000',

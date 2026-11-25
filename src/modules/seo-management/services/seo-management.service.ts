@@ -7,6 +7,7 @@ import { AdminAuditService } from '../../admin-audit/admin-audit.service';
 import { LocaleService } from '../../localization/locale.service';
 import { AppCacheService, CacheNamespace } from '../../../infrastructure/redis/app-cache.service';
 import { normalizePagination } from '../../../common/utils/pagination.util';
+import { scoreSeoPage } from './seo-extras.service';
 import { CreateSeoKeywordDto, SeoPageListQueryDto, SeoRedirectDto, SeoResolveQueryDto, SeoSitemapEntryDto, SeoSettingsDto, UpdateSeoKeywordDto, UpsertSeoPageDto } from '../dto/seo.dto';
 
 const stripHtml = (html: string): string => html.replace(/<[^>]*>/g, ' ').toLowerCase();
@@ -96,6 +97,7 @@ export class SeoManagementService {
       twitter: { card: configured?.twitterCard ?? settings.twitterCard, title: configured?.twitterTitle ?? title, description: configured?.twitterDescription ?? description, image: configured?.twitterImageUrl ?? configured?.ogImageUrl ?? settings.defaultOgImageUrl, handle: settings.twitterHandle },
       keywords: configured?.keywords ?? [], structuredData: structured ?? {}, organization: settings.organizationSchema ?? {}, alternates,
       source: configured ? 'seo_page' : content ? 'content_page' : 'global_defaults',
+      siteTags: { googleSiteVerification: settings.googleSiteVerification || null, bingSiteVerification: settings.bingSiteVerification || null, googleAnalyticsId: settings.googleAnalyticsId || null, metaPixelId: settings.metaPixelId || null },
     };
   }
 
@@ -118,16 +120,20 @@ export class SeoManagementService {
       if (urls.has(normalized)) return;
       urls.set(normalized, { lastmod: data.lastmod?.toISOString(), priority: data.priority == null ? undefined : String(data.priority), changefreq: data.changefreq ?? undefined });
     };
-    const [pages, entries, services, taskers] = await Promise.all([
+    const [seoPages, pages, entries, services, taskers] = await Promise.all([
+      this.prisma.seoPage.findMany({ where: { isActive: true }, select: { path: true, locale: true, robotsIndex: true, priority: true, changeFrequency: true, updatedAt: true } }),
       this.prisma.contentPage.findMany({ where: { isPublished: true, status: 'published' }, select: { slug: true, updatedAt: true } }),
       this.prisma.seoSitemapEntry.findMany({ where: { isActive: true }, orderBy: { path: 'asc' } }),
       settings.includeServices ? this.prisma.service.findMany({ where: { isActive: true, slug: { not: null } }, select: { slug: true, updatedAt: true } }) : Promise.resolve([]),
       settings.includePublicTaskers ? this.prisma.user.findMany({ where: { isProfilePublic: true, isVerified: true, deletedAt: null, accountStatus: 'active', roles: { has: 'tasker' } }, select: { id: true, updatedAt: true } }) : Promise.resolve([]),
     ]);
+    const noindexPaths = new Set(seoPages.filter((p) => !p.robotsIndex).map((p) => p.path));
+    for (const seoPage of seoPages) if (seoPage.robotsIndex && seoPage.locale === this.locales.defaultLocale) add(seoPage.path, { lastmod: seoPage.updatedAt, priority: seoPage.priority, changefreq: seoPage.changeFrequency });
     for (const page of pages) add(page.slug === 'home' ? '/' : `/${page.slug}`, { lastmod: page.updatedAt, priority: page.slug === 'home' ? 1 : 0.7, changefreq: 'weekly' });
     for (const entry of entries) add(entry.path, { lastmod: entry.lastModifiedAt, priority: entry.priority, changefreq: entry.changeFrequency });
     for (const service of services) if (service.slug) add(settings.servicePathTemplate.replace('{slug}', encodeURIComponent(service.slug)), { lastmod: service.updatedAt, priority: 0.8, changefreq: 'weekly' });
     for (const tasker of taskers) add(settings.taskerPathTemplate.replace('{id}', String(tasker.id)), { lastmod: tasker.updatedAt, priority: 0.6, changefreq: 'weekly' });
+    for (const path of noindexPaths) urls.delete(path);
     const base = this.publicBaseUrl(settings);
     const locales = this.locales.supportedLocales;
     const xml = [...urls.entries()].flatMap(([path, data]) => locales.map((locale) => {
@@ -153,9 +159,9 @@ export class SeoManagementService {
     const search = query.search?.trim();
     const where: Prisma.SeoPageWhereInput = { ...(query.locale ? { locale: normalizeLocale(query.locale) } : {}), ...(search ? { OR: [{ path: { contains: search, mode: 'insensitive' } }, { title: { contains: search, mode: 'insensitive' } }] } : {}) };
     const [totalItems, items] = await Promise.all([this.prisma.seoPage.count({ where }), this.prisma.seoPage.findMany({ where, orderBy: [{ path: 'asc' }, { locale: 'asc' }], skip: offset, take: limit })]);
-    return { items, page, limit, totalItems, totalPages: Math.ceil(totalItems / limit) };
+    return { items: items.map((item) => ({ ...item, ...scoreSeoPage(item) })), page, limit, totalItems, totalPages: Math.ceil(totalItems / limit) };
   }
-  async getPage(id: string) { const row = await this.prisma.seoPage.findUnique({ where: { id } }); if (!row) throw new NotFoundException('SEO page not found'); return row; }
+  async getPage(id: string) { const row = await this.prisma.seoPage.findUnique({ where: { id } }); if (!row) throw new NotFoundException('SEO page not found'); return { ...row, ...scoreSeoPage(row) }; }
   async upsertPage(actor: User, dto: UpsertSeoPageDto) {
     const path = normalizePath(dto.path); const locale = normalizeLocale(dto.locale); this.locales.requireSupported(locale);
     const data = { ...dto, path, locale, structuredData: json(dto.structuredData) ?? {}, alternates: json(dto.alternates) ?? {}, updatedById: actor.id, priority: dto.priority };
@@ -269,6 +275,12 @@ export class SeoManagementService {
       includePublicTaskers: dto.includePublicTaskers,
       servicePathTemplate: dto.servicePathTemplate,
       taskerPathTemplate: dto.taskerPathTemplate,
+      googleSiteVerification: dto.googleSiteVerification,
+      bingSiteVerification: dto.bingSiteVerification,
+      googleAnalyticsId: dto.googleAnalyticsId,
+      metaPixelId: dto.metaPixelId,
+      llmsSummary: dto.llmsSummary,
+      indexNowEnabled: dto.indexNowEnabled,
     };
   }
   private serializeSettings(row: Awaited<ReturnType<SeoManagementService['settingsRow']>>) { return { ...row, organizationSchema: row.organizationSchema, defaultStructuredData: row.defaultStructuredData, robotsRules: row.robotsRules }; }
