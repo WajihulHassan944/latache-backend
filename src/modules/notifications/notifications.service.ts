@@ -183,7 +183,7 @@ export class NotificationsService {
     notification: { entityType: string | null; entityId: string | null },
     locale: string | undefined,
   ): Promise<{ details?: Array<{ label: string; value: string }>; actionUrl?: string }> {
-    if (notification.entityType !== 'booking' || !notification.entityId || !/^d+$/.test(notification.entityId)) return {};
+    if (notification.entityType !== 'booking' || !notification.entityId || !/^\d+$/.test(notification.entityId)) return {};
     try {
       const booking = await this.prisma.booking.findUnique({
         where: { id: Number(notification.entityId) },

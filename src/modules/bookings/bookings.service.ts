@@ -608,7 +608,7 @@ export class BookingsService {
           category: 'tasks',
           type: 'booking_cancelled_by_customer',
           title: 'Booking cancelled',
-          body: 'The customer cancelled this booking.',
+          body: `The customer cancelled booking ${bookingRef(bookingId)} (${booking.bookingDate.toISOString().slice(0, 10)} at ${booking.startTime}). Reason: ${dto.reason}`,
           entityType: 'booking',
           entityId: String(bookingId),
         },
@@ -622,7 +622,9 @@ export class BookingsService {
           category: 'tasks',
           type: 'booking_cancel_confirmed',
           title: 'Booking cancelled',
-          body: `You cancelled booking ${bookingRef(bookingId)}. Any refund due is being processed and you will get a separate message when it is sent.`,
+          body: booking.capturedAt
+            ? `You cancelled booking ${bookingRef(bookingId)}. Your refund is being processed and you will get a separate message when it is sent.`
+            : `You cancelled booking ${bookingRef(bookingId)}. No payment had been taken, so you have not been charged.`,
           entityType: 'booking',
           entityId: String(bookingId),
           audienceRole: UserRole.Customer,

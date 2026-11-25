@@ -411,7 +411,9 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         const result = await this.prisma.refreshToken.deleteMany({
           where: { OR: [{ expiresAt: { lt: cutoff } }, { revokedAt: { lt: cutoff } }] },
         });
-        return { deleted: result.count };
+        // Failed jobs older than a week are history, not a live problem: stop counting them on System Health.
+        const failedRemoved = await this.adminCleanFailed(7 * 86_400_000);
+        return { deleted: result.count, failedJobsRemoved: failedRemoved };
       }
       case JOB_NAMES.ReactivateDueSuspensions:
         return this.adminCustomers.reactivateDueSuspensions();

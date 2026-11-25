@@ -839,9 +839,14 @@ export class AdminBookingsService {
       booking.serviceAmount === null
         ? money(Number(booking.hourlyRate) * (booking.estimatedDurationMinutes / 60))
         : money(booking.serviceAmount);
+    // Unsettled bookings have no stored fee yet: estimate it from the booking commission rate, like the customer sees.
+    const estimatedFee =
+      Number(booking.platformFeeAmount) > 0
+        ? Number(booking.platformFeeAmount)
+        : money((estimatedServiceAmount * Number(booking.commissionRatePercent ?? 0)) / 100);
     const estimatedTotal = money(
       estimatedServiceAmount +
-        Number(booking.platformFeeAmount) +
+        estimatedFee +
         (booking.taxInclusive ? 0 : Number(booking.taxAmount ?? 0)) +
         Number(booking.serviceSurchargeAmount ?? 0) +
         Number(booking.tipAmount) +
