@@ -194,6 +194,21 @@ export class ReferralsService {
         },
         transaction,
       );
+      await this.notifications.create(
+        referred.id,
+        {
+          category: 'system',
+          type: 'referral_applied',
+          title: 'Referral code applied',
+          body:
+            program === REFERRAL_PROGRAM.Customer
+              ? `Your ${policy.referredClientDiscountPercent}% referral discount will be applied to your first online booking when it is finalised after the work.`
+              : `Your ${policy.taskerReferralBonus} ${policy.currency} welcome bonus is paid once your first qualifying booking settles.`,
+          entityType: 'referral',
+          entityId: referral.id,
+        },
+        transaction,
+      );
       await this.enqueueReferralUpdate(transaction, referral, [referrer.id, referred.id]);
       return this.serializeReferral(referral);
     });

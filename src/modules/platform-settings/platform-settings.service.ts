@@ -828,6 +828,8 @@ export class PlatformSettingsService {
     sourceCurrencyCode: string,
     target: PlatformCurrencyContext,
   ): number {
+    // Same currency: no round trip through USD (it loses cents: 597.82 -> 66.42 -> 597.78).
+    if (sourceCurrencyCode.toUpperCase() === String(target.code).toUpperCase()) return money(Number(value));
     return this.convertUsdAmount(
       this.convertCurrencyAmountToUsd(value, sourceCurrencyCode),
       target,
