@@ -24,8 +24,11 @@ export class BroadcastsService {
   ) {}
 
   private audienceWhere(audience: Audience): Prisma.UserWhereInput {
-    const roles = audience === 'customers' ? ['customer'] : audience === 'taskers' ? ['tasker'] : ['customer', 'tasker'];
-    return { isAdmin: false, deletedAt: null, accountStatus: 'active', roles: { hasSome: roles } };
+    // "Taskers" means approved, active Taskers - the same people the admin dashboard counts as active Taskers.
+    const customers: Prisma.UserWhereInput = { roles: { has: 'customer' } };
+    const taskers: Prisma.UserWhereInput = { roles: { has: 'tasker' }, taskerProfile: { is: { status: 'active' } } };
+    const roleFilter: Prisma.UserWhereInput = audience === 'customers' ? customers : audience === 'taskers' ? taskers : { OR: [customers, taskers] };
+    return { isAdmin: false, deletedAt: null, accountStatus: 'active', ...roleFilter };
   }
 
   audienceCount(audience: Audience): Promise<number> {

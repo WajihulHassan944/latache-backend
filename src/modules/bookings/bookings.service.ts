@@ -614,6 +614,7 @@ export class BookingsService {
         },
         transaction,
       );
+      await this.notifications.settleBookingActionNotifications(bookingId, transaction);
       // Confirmation to the customer who cancelled (also emailed), so they have a record.
       await this.notifications.create(
         customerId,

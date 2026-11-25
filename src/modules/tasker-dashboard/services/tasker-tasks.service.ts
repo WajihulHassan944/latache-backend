@@ -311,6 +311,7 @@ export class TaskerTasksService {
         },
         transaction,
       );
+      await this.notifications.settleBookingActionNotifications(bookingId, transaction);
       await this.notifications.create(
         booking.taskerId,
         {
@@ -358,6 +359,19 @@ export class TaskerTasksService {
       const booking = await this.lockOwnedBooking(taskerId, bookingId, transaction);
       if (booking.status !== TASKER_BOOKING_STATUS.Confirmed) {
         throw new ConflictException('Navigation can start only for a confirmed task');
+      }
+      // A job a week away cannot be "started": heading out opens a window before the booked time.
+      const windowHours = Number(process.env.BOOKING_START_WINDOW_HOURS ?? 24);
+      if (windowHours > 0) {
+        const bookedStart = new Date(`${booking.bookingDate.toISOString().slice(0, 10)}T${booking.startTime}:00+01:00`);
+        const opensAt = new Date(bookedStart.getTime() - windowHours * 3_600_000);
+        if (!Number.isNaN(bookedStart.getTime()) && Date.now() < opensAt.getTime()) {
+          throw new ConflictException({
+            code: 'TASK_START_TOO_EARLY',
+            message: `This task starts on ${booking.bookingDate.toISOString().slice(0, 10)} at ${booking.startTime}. You can start heading there up to ${windowHours} hours before.`,
+            opensAt: opensAt.toISOString(),
+          });
+        }
       }
       await transaction.booking.update({
         where: { id: bookingId },

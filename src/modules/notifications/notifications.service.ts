@@ -236,6 +236,34 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * A booking that was cancelled/expired has nothing left to act on: mark its
+   * earlier "respond to this" notifications (new request, reschedule proposal,
+   * payment required, ...) as read so nobody sees a stale action prompt.
+   */
+  async settleBookingActionNotifications(bookingId: number, transaction?: Prisma.TransactionClient): Promise<void> {
+    const client = transaction ?? this.prisma;
+    await client.taskNotification.updateMany({
+      where: {
+        entityType: 'booking',
+        entityId: String(bookingId),
+        readAt: null,
+        type: {
+          in: [
+            'booking_requested',
+            'reschedule_proposal_created',
+            'booking_rescheduled',
+            'booking_payment_required',
+            'custom_time_request_created',
+            'booking_reminder_24h',
+            'booking_reminder_1h',
+          ],
+        },
+      },
+      data: { readAt: new Date() },
+    });
+  }
+
   async processEmailDeliveries(): Promise<number> {
     const staleSendingBefore = new Date(Date.now() - 10 * 60 * 1000);
     const rows = await this.prisma.emailNotificationDelivery.findMany({

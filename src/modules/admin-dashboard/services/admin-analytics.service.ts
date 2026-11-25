@@ -330,7 +330,8 @@ export class AdminAnalyticsService {
           },
         }),
         this.prisma.user.aggregate({
-          where: { roles: { has: UserRole.Tasker }, deletedAt: null, taskerProfile: { is: { status: 'active' } } },
+          // Only Taskers that have actually been rated: unrated (0.0) Taskers are not a rating of zero.
+          where: { roles: { has: UserRole.Tasker }, deletedAt: null, rating: { gt: 0 }, taskerProfile: { is: { status: 'active' } } },
           _avg: { rating: true },
         }),
         this.prisma.booking.groupBy({
@@ -487,7 +488,8 @@ export class AdminAnalyticsService {
           _count: { _all: true },
         }),
         this.prisma.user.aggregate({
-          where: { roles: { has: UserRole.Tasker }, deletedAt: null, taskerProfile: { is: { status: 'active' } } },
+          // Only Taskers that have actually been rated: unrated (0.0) Taskers are not a rating of zero.
+          where: { roles: { has: UserRole.Tasker }, deletedAt: null, rating: { gt: 0 }, taskerProfile: { is: { status: 'active' } } },
           _avg: { rating: true },
         }),
         this.prisma.taskComplaint.count({
