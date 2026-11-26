@@ -443,6 +443,8 @@ export class ConversationsService {
             senderId: String(message.senderId),
             body: message.body ?? '',
             attachments: attachments as unknown as Prisma.InputJsonArray,
+            kind: 'user',
+            event: null,
             readAt: null,
             createdAt: message.createdAt.toISOString(),
           },
@@ -803,6 +805,8 @@ export class ConversationsService {
       clientMessageId: string | null;
       body: string | null;
       attachments: unknown;
+      kind?: string;
+      event?: unknown;
       readAt: Date | null;
       createdAt: Date;
     },
@@ -817,6 +821,8 @@ export class ConversationsService {
       isMine: row.senderId === viewerId,
       body: row.body ?? '',
       attachments: this.attachmentViews(row.attachments),
+      kind: row.kind === 'system' ? 'system' : 'user',
+      event: row.kind === 'system' && row.event && typeof row.event === 'object' ? (row.event as Record<string, unknown>) : null,
       readAt: row.readAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
     };

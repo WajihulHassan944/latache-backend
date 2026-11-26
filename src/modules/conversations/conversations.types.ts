@@ -25,6 +25,9 @@ export interface ConversationMessageView {
   isMine: boolean;
   body: string;
   attachments: ConversationAttachmentReference[];
+  /** "system" messages are automatic booking-activity cards; `event` carries the card payload. */
+  kind: 'user' | 'system';
+  event: Record<string, unknown> | null;
   readAt: string | null;
   createdAt: string;
 }

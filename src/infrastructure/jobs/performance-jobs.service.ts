@@ -254,7 +254,7 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
       ),
       queue.upsertJobScheduler(
         'dispatch-notification-emails-v1',
-        { every: this.config.get<number>('notificationEmails.pollMs', 15_000) },
+        { every: this.config.get<number>('notificationEmails.pollMs', 5_000) },
         { name: JOB_NAMES.DispatchNotificationEmails, data: {} },
       ),
       queue.upsertJobScheduler(
@@ -279,7 +279,7 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
       ),
       queue.upsertJobScheduler(
         'issue-pending-invoices-v1',
-        { every: this.config.get<number>('invoices.sweepIntervalMs', 300_000) },
+        { every: this.config.get<number>('invoices.sweepIntervalMs', 10_000) },
         { name: JOB_NAMES.IssuePendingInvoices, data: {} },
       ),
       queue.upsertJobScheduler(

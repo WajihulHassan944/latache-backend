@@ -34,6 +34,8 @@ type MessageRow = {
   senderId: number;
   body: string | null;
   attachments: unknown;
+  kind?: string;
+  event?: unknown;
   readAt: Date | null;
   createdAt: Date;
 };
@@ -235,6 +237,8 @@ export class AdminConversationsService {
       senderRole: row.senderId === conversation.customerId ? 'customer' : row.senderId === conversation.taskerId ? 'tasker' : 'unknown',
       body: row.body ?? '',
       attachments: Array.isArray(row.attachments) ? row.attachments : [],
+      kind: row.kind === 'system' ? 'system' : 'user',
+      event: row.kind === 'system' && row.event && typeof row.event === 'object' ? (row.event as Record<string, unknown>) : null,
       readAt: row.readAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
     };

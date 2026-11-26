@@ -1701,6 +1701,10 @@ model TaskMessage {
   clientMessageId String?   @db.VarChar(80)
   body            String?   @db.Text
   attachments     Json?     @db.JsonB
+  /// "user" for a typed message, "system" for an automatic booking-activity card (see BookingEventCardsService).
+  kind            String    @default("user") @db.VarChar(16)
+  /// Structured card payload for kind="system" messages.
+  event           Json?     @db.JsonB
   readAt          DateTime? @db.Timestamptz(6)
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
 
@@ -1713,6 +1717,7 @@ model TaskMessage {
   @@index([conversationId, createdAt, id], map: "task_messages_conversation_cursor_idx")
   @@index([conversationId, readAt, senderId, createdAt], map: "task_messages_conversation_unread_idx")
   @@index([senderId, createdAt], map: "task_messages_sender_created_idx")
+  @@index([bookingId, kind], map: "task_messages_booking_kind_idx")
   @@map("TaskMessages")
 }
 

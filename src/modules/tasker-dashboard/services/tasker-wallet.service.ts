@@ -249,16 +249,59 @@ export class TaskerWalletService {
       orderBy: { createdAt: 'desc' },
       take,
     });
+    // Cash jobs never write wallet ledger entries (the Tasker is paid on site), so they were missing from
+    // this history. Show each completed cash job as an informational, zero-balance-impact row.
+    const cashJobs = await this.prisma.booking.findMany({
+      where: { taskerId, status: 'completed', paymentStatus: 'cash_confirmed' },
+      select: {
+        id: true,
+        serviceAmount: true,
+        tipAmount: true,
+        paymentCurrency: true,
+        updatedAt: true,
+        customer: { select: { id: true, firstName: true, lastName: true, profilePicture: true } },
+        service: { select: { id: true, name: true, slug: true, icon: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take,
+    });
     const nameMap = await this.responseLocalization.resolveServiceNames(
-      items.flatMap((entry) => (entry.booking ? [entry.booking.service.id] : [])),
+      [...items.flatMap((entry) => (entry.booking ? [entry.booking.service.id] : [])), ...cashJobs.map((job) => job.service.id)],
       locale,
     );
-    return items.map((entry) =>
+    const views = items.map((entry) =>
       this.serializeTransaction(
         entry,
         entry.booking ? (nameMap.get(entry.booking.service.id) ?? entry.booking.service.name) : null,
       ),
     );
+    const cashViews: WalletTransactionView[] = cashJobs.map((job) => ({
+      id: `cash-${job.id}`,
+      kind: 'cash_earning',
+      status: 'settled',
+      amount: { amount: Number(job.serviceAmount ?? 0) + Number(job.tipAmount ?? 0), currency: job.paymentCurrency },
+      availableDelta: 0,
+      pendingDelta: 0,
+      description: 'Cash payment collected on site',
+      bookingId: String(job.id),
+      withdrawalId: null,
+      earningId: null,
+      booking: {
+        customer: {
+          id: String(job.customer.id),
+          name: `${job.customer.firstName ?? ''} ${job.customer.lastName ?? ''}`.trim(),
+          avatar: job.customer.profilePicture ?? '',
+        },
+        service: {
+          id: String(job.service.id),
+          slug: job.service.slug ?? '',
+          name: nameMap.get(job.service.id) ?? job.service.name ?? '',
+          icon: job.service.icon ?? '',
+        },
+      },
+      createdAt: job.updatedAt.toISOString(),
+    }));
+    return [...views, ...cashViews].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, take);
   }
 
   payoutCapabilities(): PayoutCapabilityView[] {

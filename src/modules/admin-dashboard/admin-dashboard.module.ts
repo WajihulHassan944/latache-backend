@@ -11,6 +11,8 @@ import { AdminTaskersController } from './controllers/admin-taskers.controller';
 import { AdminBookingsController } from './controllers/admin-bookings.controller';
 import { AdminDisputesController } from './controllers/admin-disputes.controller';
 import { AdminReviewsController } from './controllers/admin-reviews.controller';
+import { AdminProfile360Controller } from './controllers/admin-profile-360.controller';
+import { AdminProfile360Service } from './services/admin-profile-360.service';
 import { AdminAnalyticsService } from './services/admin-analytics.service';
 import { AdminCustomersService } from './services/admin-customers.service';
 import { AdminTaskersService } from './services/admin-taskers.service';
@@ -43,6 +45,7 @@ import { PlatformSettingsModule } from '../platform-settings/platform-settings.m
     AdminBookingsController,
     AdminDisputesController,
     AdminReviewsController,
+    AdminProfile360Controller,
   ],
   providers: [
     AdminAnalyticsService,
@@ -51,6 +54,7 @@ import { PlatformSettingsModule } from '../platform-settings/platform-settings.m
     AdminBookingsService,
     AdminDisputesService,
     AdminReviewsService,
+    AdminProfile360Service,
     AdminAnalyticsCacheInterceptor,
   ],
   exports: [AdminCustomersService],

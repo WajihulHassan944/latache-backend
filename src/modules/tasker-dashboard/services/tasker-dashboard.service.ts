@@ -48,6 +48,7 @@ export class TaskerDashboardService {
       totalEarnings,
       cashEarnings,
       yearEntries,
+      cashYearEntries,
     ] = await Promise.all([
       this.wallet.summary(taskerId),
       this.tasks.completionMetrics(taskerId),
@@ -77,6 +78,16 @@ export class TaskerDashboardService {
         },
         select: { amount: true, createdAt: true },
       }),
+      // Cash jobs never create wallet ledger entries, so without this the chart showed 0 for months that were all cash.
+      this.prisma.booking.findMany({
+        where: {
+          taskerId,
+          status: 'completed',
+          paymentStatus: 'cash_confirmed',
+          updatedAt: { gte: yearStart, lt: yearEnd },
+        },
+        select: { serviceAmount: true, tipAmount: true, updatedAt: true },
+      }),
     ]);
 
     const monthly = Array.from({ length: 12 }, (_, index) => ({
@@ -89,6 +100,13 @@ export class TaskerDashboardService {
       const month = monthly[monthIndex];
       if (month) {
         month.amount = Number((month.amount + Number(entry.amount)).toFixed(2));
+      }
+    }
+
+    for (const entry of cashYearEntries) {
+      const month = monthly[entry.updatedAt.getUTCMonth()];
+      if (month) {
+        month.amount = Number((month.amount + Number(entry.serviceAmount ?? 0) + Number(entry.tipAmount ?? 0)).toFixed(2));
       }
     }
 

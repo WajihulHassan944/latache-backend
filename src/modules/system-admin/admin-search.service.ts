@@ -42,7 +42,7 @@ export class AdminSearchService {
               const isTasker = u.roles.includes('tasker');
               const kind: 'tasker' | 'customer' = isTasker ? 'tasker' : 'customer';
               if (!gate.can(kind === 'tasker' ? 'taskers.read' : 'customers.read')) return [];
-              return [{ type: kind, id: String(u.id), title: person(u), subtitle: u.email, href: kind === 'tasker' ? '/admin/tasker-management' : '/admin/customer-management' }];
+              return [{ type: kind, id: String(u.id), title: person(u), subtitle: u.email, href: `/admin/profile/${kind}/${u.id}` }];
             }),
           ),
       );

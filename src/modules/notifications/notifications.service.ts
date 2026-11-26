@@ -11,6 +11,7 @@ import { NotificationTemplateService } from './notification-template.service';
 import { PUSH_ONLY_NOTIFICATION_TYPES } from '../fcm/fcm.constants';
 import { FcmService } from '../fcm/fcm.service';
 import { MailService } from '../mail/mail.service';
+import { BookingEventCardsService } from './booking-event-cards.service';
 
 /**
  * Notification `type`s that are also worth an email — booking/task lifecycle and
@@ -94,6 +95,7 @@ export class NotificationsService {
     private readonly templates: NotificationTemplateService,
     private readonly fcm: FcmService,
     private readonly mail: MailService,
+    private readonly cards: BookingEventCardsService,
   ) {}
 
   async create(
@@ -151,6 +153,14 @@ export class NotificationsService {
         client,
       );
     }
+    await this.cards.postForNotification(client, {
+      type: input.type,
+      templateKey,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      title: input.title,
+      body: input.body,
+    });
     await this.fcm.enqueueNotification(
       userId,
       notification.id,

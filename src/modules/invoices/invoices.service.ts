@@ -5,6 +5,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { MailService } from '../mail/mail.service';
+import { BookingEventCardsService } from '../notifications/booking-event-cards.service';
 import { bookingRef } from '../../common/utils/booking-ref.util';
 import { DEFAULT_INVOICE_SELLER, presentableWebsite } from './invoice-defaults';
 import { PAYMENT_STATUS } from '../payments/payments.constants';
@@ -40,6 +41,7 @@ export class InvoicesService {
     private readonly prisma: PrismaService,
     private readonly settings: PlatformSettingsService,
     private readonly mail: MailService,
+    private readonly cards: BookingEventCardsService,
   ) {}
 
   /**
@@ -607,7 +609,7 @@ ${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>${bookingRef(
     const { numberPrefix = 'INV', ...invoiceData } = data;
     const number = `${numberPrefix}-${data.issuedAt.getUTCFullYear()}-${String(value).padStart(6, '0')}`;
     try {
-      return await client.invoice.create({
+      const created = await client.invoice.create({
         data: {
           ...invoiceData,
           number,
@@ -622,6 +624,10 @@ ${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>${bookingRef(
           seller: seller as Prisma.InputJsonValue,
         },
       });
+      if (created.type === INVOICE_TYPE.Booking && created.bookingId) {
+        await this.cards.postInvoiceIssued(client, created.bookingId, { id: created.id, number: created.number, total: created.total, currency: created.currency });
+      }
+      return created;
     } catch (error) {
       // Lost a race with the sweep or a concurrent read: return the winner.
       if (hasPrismaErrorCode(error, 'P2002') && !transaction) {
