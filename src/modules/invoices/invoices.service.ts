@@ -702,7 +702,10 @@ ${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>${bookingRef(
   ): Promise<InvoiceRow> {
     const client = transaction ?? this.prisma;
     const seller = await this.seller();
-    const [sequence] = await client.$queryRaw<Array<{ value: bigint }>>`SELECT nextval('invoice_number_seq') AS value`;
+    // Receipts are numbered separately: sharing the invoice sequence would leave gaps in the consecutive INV numbers.
+    const [sequence] = data.numberPrefix === 'RCT'
+      ? await client.$queryRaw<Array<{ value: bigint }>>`SELECT nextval('receipt_number_seq') AS value`
+      : await client.$queryRaw<Array<{ value: bigint }>>`SELECT nextval('invoice_number_seq') AS value`;
     const value = sequence?.value ?? BigInt(Date.now());
     const { numberPrefix = 'INV', ...invoiceData } = data;
     const number = `${numberPrefix}-${data.issuedAt.getUTCFullYear()}-${String(value).padStart(6, '0')}`;
