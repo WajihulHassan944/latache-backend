@@ -14,6 +14,7 @@ import { PAYMENT_LABELS, formatDate, formatMoney, renderInvoicePdf } from './inv
 export const INVOICE_TYPE = { Booking: 'booking', TaskerDeposit: 'tasker_deposit', CreditNote: 'credit_note', PaymentReceipt: 'payment_receipt' } as const;
 
 /** Statuses in which an online-prepaid booking already holds the customer's money and deserves a receipt. */
+const RECEIPT_WINDOW_MS = 2 * 60 * 60 * 1000;
 const RECEIPT_BOOKING_STATUSES = ['confirmed', 'en_route', 'arrived', 'in_progress', 'awaiting_customer_approval', 'completed'];
 
 /** A booking gets its invoice once the job is completed and the money is settled. */
@@ -434,7 +435,8 @@ export class InvoicesService {
     const receiptsDue = await this.prisma.booking.findMany({
       where: {
         ...filter,
-        capturedAt: { not: null },
+        // Only recent payments: a receipt is for "you just paid", never a backfill into old conversations.
+        capturedAt: { gte: new Date(Date.now() - RECEIPT_WINDOW_MS) },
         paymentSource: { not: 'cash' },
         status: { in: RECEIPT_BOOKING_STATUSES },
         invoices: { none: { type: INVOICE_TYPE.PaymentReceipt } },
