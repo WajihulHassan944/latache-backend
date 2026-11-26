@@ -4,7 +4,7 @@ import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { AllowPendingProfile, Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -63,6 +63,8 @@ export class AdminListDepositsQueryDto {
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.Tasker)
+// A Tasker pays this BEFORE approval (approval is blocked on it), so a not-yet-approved profile must get through.
+@AllowPendingProfile()
 @Controller('tasker-dashboard/deposit')
 export class TaskerDepositController {
   constructor(private readonly deposits: TaskerDepositsService) {}

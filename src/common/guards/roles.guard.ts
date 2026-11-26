@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { AuthenticatedRequest } from '../types/authenticated-request';
-import { ROLES_KEY } from '../decorators/roles.decorator';
+import { ALLOW_PENDING_PROFILE_KEY, ROLES_KEY } from '../decorators/roles.decorator';
 import type { UserRole } from '../enums/user-role.enum';
 import { AuthRoleService } from '../../modules/auth/services/auth-role.service';
 
@@ -28,7 +28,11 @@ export class RolesGuard implements CanActivate {
     // A route dedicated to one marketplace role is operational, not merely an
     // onboarding/status surface. Pending/rejected/suspended/deactivated profiles
     // may authenticate, but cannot consume role-specific marketplace APIs.
-    if (requiredRoles.length === 1) {
+    const allowPending = this.reflector.getAllAndOverride<boolean>(ALLOW_PENDING_PROFILE_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (requiredRoles.length === 1 && !allowPending) {
       await this.roleAccess.assertOperational(request.user, activeRole);
     }
     return true;
