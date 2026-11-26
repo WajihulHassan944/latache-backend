@@ -19,6 +19,7 @@ import { CustomTimeRequestsService } from '../../modules/bookings/custom-time-re
 import { TaskerPlansService } from '../../modules/tasker-plans/tasker-plans.service';
 import { PaymentsService } from '../../modules/payments/payments.service';
 import { AdminCustomersService } from '../../modules/admin-dashboard/services/admin-customers.service';
+import { AccountingPostingService } from '../../modules/accounting/accounting-posting.service';
 import { InvoicesService } from '../../modules/invoices/invoices.service';
 import { SupportService } from '../../modules/support/support.service';
 
@@ -45,6 +46,7 @@ const JOB_NAMES = {
   ReactivateDueSuspensions: 'customers.reactivate-due-suspensions',
   CleanupAuthSessions: 'auth.cleanup-sessions',
   IssuePendingInvoices: 'invoices.issue-pending',
+  PostAccountingJournal: 'accounting.post-journal',
   SupportQueueMaintenance: 'support.queue-maintenance',
 } as const;
 
@@ -90,7 +92,8 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly payments: PaymentsService,
     private readonly adminCustomers: AdminCustomersService,
     private readonly prisma: PrismaService,
-    private readonly invoices: InvoicesService,
+  private readonly invoices: InvoicesService,
+    private readonly accounting: AccountingPostingService,
     private readonly support: SupportService,
   ) {
     this.enabled = this.config.get<boolean>('jobs.enabled', false);
@@ -283,6 +286,11 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
         { name: JOB_NAMES.IssuePendingInvoices, data: {} },
       ),
       queue.upsertJobScheduler(
+        'post-accounting-journal-v1',
+        { every: 5 * 60_000 },
+        { name: JOB_NAMES.PostAccountingJournal, data: {} },
+      ),
+      queue.upsertJobScheduler(
         'expire-not-started-bookings-v1',
         { every: this.config.get<number>('bookingExpiration.notStartedSweepIntervalMs', 300_000) },
         { name: JOB_NAMES.ExpireNotStartedBookings, data: {} },
@@ -379,6 +387,8 @@ export class PerformanceJobsService implements OnModuleInit, OnModuleDestroy {
           this.config.get<number>('support.autoAssignAfterMinutes', 15),
           this.config.get<number>('support.agingAfterHours', 24),
         );
+      case JOB_NAMES.PostAccountingJournal:
+        return this.accounting.sync(true);
       case JOB_NAMES.IssuePendingInvoices:
         return { issued: await this.invoices.issuePending(), emailed: await this.invoices.emailPending() };
       case JOB_NAMES.ExpireNotStartedBookings:

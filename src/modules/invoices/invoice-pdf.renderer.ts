@@ -361,7 +361,7 @@ export function renderInvoicePdf(invoice: InvoiceDocument): Promise<Buffer> {
       .fillColor(T.muted)
       .font('Helvetica')
       .fontSize(8.5)
-      .text(pdfText(seller.footerNote ? `${notes} ${String(seller.footerNote)}` : notes), m, doc.y + 4, { width: notesW });
+      .text(pdfText([notes, seller.vatNote, seller.footerNote].filter(Boolean).join(' ')), m, doc.y + 4, { width: notesW });
     doc.fillColor(T.heading).font('Times-Italic').fontSize(10.5).text('Thank you for choosing Latache.', m, doc.y + 8, { width: notesW });
 
     drawBrandFooter(doc, seller, `Electronically generated invoice ${invoice.number}. Valid without signature.`);
@@ -413,6 +413,7 @@ export function drawBrandFooter(doc: PDFKit.PDFDocument, seller: Record<string, 
     seller.rcNumber ? `RC ${String(seller.rcNumber)}` : null,
     seller.ifNumber ? `IF ${String(seller.ifNumber)}` : null,
     seller.patenteNumber ? `Patente ${String(seller.patenteNumber)}` : null,
+    seller.vatNumber ? `VAT ${String(seller.vatNumber)}` : null,
   ].filter(Boolean);
   const line = { width: CONTENT_WIDTH, align: 'center' as const, lineBreak: false };
   doc.fillColor(T.brown).font('Helvetica-Bold').fontSize(7.5).text(pdfText([seller.legalName ?? seller.name ?? 'Latache', ...legal].join('   |   ')), m, footTop + 24, line);

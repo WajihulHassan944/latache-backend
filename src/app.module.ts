@@ -23,6 +23,7 @@ import { BroadcastsModule } from './modules/broadcasts/broadcasts.module';
 import { CareersModule } from './modules/careers/careers.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { SystemAdminModule } from './modules/system-admin/system-admin.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
 import { FinanceReportsModule } from './modules/finance-reports/finance-reports.module';
 import { PaymentGatewaysModule } from './modules/payment-gateways/payment-gateways.module';
 import { TaskerDepositsModule } from './modules/tasker-deposits/tasker-deposits.module';
@@ -101,6 +102,7 @@ import { AddressesModule } from './modules/addresses/addresses.module';
     BroadcastsModule,
     SystemAdminModule,
     FinanceReportsModule,
+    AccountingModule,
     TaskerDepositsModule,
     PaymentGatewaysModule,
     ReviewsModule,

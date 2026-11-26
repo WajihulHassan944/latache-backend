@@ -587,18 +587,18 @@ model SeoKeyword {
 }
 
 model SeoRedirect {
-  id            String   @id @default(cuid()) @db.VarChar(40)
-  fromPath      String   @unique(map: "seo_redirects_from_path_key") @db.VarChar(500)
-  toPath        String   @db.VarChar(1000)
-  statusCode    Int      @default(301)
-  preserveQuery Boolean  @default(true)
-  isActive      Boolean  @default(true)
-  reason        String?  @db.VarChar(500)
-  hits          Int      @default(0)
+  id            String    @id @default(cuid()) @db.VarChar(40)
+  fromPath      String    @unique(map: "seo_redirects_from_path_key") @db.VarChar(500)
+  toPath        String    @db.VarChar(1000)
+  statusCode    Int       @default(301)
+  preserveQuery Boolean   @default(true)
+  isActive      Boolean   @default(true)
+  reason        String?   @db.VarChar(500)
+  hits          Int       @default(0)
   lastHitAt     DateTime? @db.Timestamptz(6)
   updatedById   Int?
-  createdAt     DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   @@index([isActive, fromPath], map: "seo_redirects_active_from_idx")
   @@map("SeoRedirects")
@@ -2571,4 +2571,105 @@ model Broadcast {
 
   @@index([createdAt], map: "broadcast_created_idx")
   @@index([status], map: "broadcast_status_idx")
+}
+
+/// Company chart of accounts (double-entry books).
+model LedgerAccount {
+  id          String   @id @default(cuid()) @db.VarChar(40)
+  code        String   @unique(map: "LedgerAccounts_code_key") @db.VarChar(12)
+  name        String   @db.VarChar(120)
+  /// asset | liability | equity | revenue | expense
+  type        String   @db.VarChar(16)
+  description String?  @db.VarChar(500)
+  /// Built-in accounts used by automatic posting; cannot be removed.
+  isSystem    Boolean  @default(false)
+  /// Mirrors an operational sub-ledger (wallets, cash commission); closed to manual entries.
+  isControl   Boolean  @default(false)
+  /// Money account that can pay expenses.
+  isCash      Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  lines        JournalLine[]
+  expenses     AccountingExpense[] @relation("ExpenseCategory")
+  paidExpenses AccountingExpense[] @relation("ExpensePaidFrom")
+
+  @@map("LedgerAccounts")
+}
+
+/// Immutable journal header. Corrections are made with reversing entries.
+model JournalEntry {
+  id           String   @id @default(cuid()) @db.VarChar(40)
+  number       Int      @unique(map: "JournalEntries_number_key") @default(autoincrement())
+  entryDate    DateTime @db.Date
+  memo         String   @db.VarChar(500)
+  /// auto | manual | opening | expense | reversal
+  source       String   @db.VarChar(16)
+  sourceType   String?  @db.VarChar(48)
+  /// Unique per posted source record, so a record is never booked twice.
+  sourceKey    String?  @unique(map: "JournalEntries_sourceKey_key") @db.VarChar(200)
+  /// Plain reference (no FK): the books outlive deleted operational records.
+  bookingId    Int?
+  reference    String?  @db.VarChar(255)
+  reversalOfId String?  @unique(map: "JournalEntries_reversalOfId_key") @db.VarChar(40)
+  createdById  Int?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  lines JournalLine[]
+
+  @@index([entryDate, number], map: "journal_entries_date_number_idx")
+  @@index([bookingId], map: "journal_entries_booking_idx")
+  @@map("JournalEntries")
+}
+
+model JournalLine {
+  id               String   @id @default(cuid()) @db.VarChar(40)
+  entryId          String   @db.VarChar(40)
+  accountId        String   @db.VarChar(40)
+  position         Int      @default(0)
+  debit            Decimal  @default(0) @db.Decimal(14, 2)
+  credit           Decimal  @default(0) @db.Decimal(14, 2)
+  memo             String?  @db.VarChar(500)
+  bookingId        Int?
+  /// Set when the source record was in another currency than the books.
+  originalAmount   Decimal? @db.Decimal(14, 2)
+  originalCurrency String?  @db.VarChar(3)
+
+  entry   JournalEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "JournalLines_entryId_fkey")
+  account LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "JournalLines_accountId_fkey")
+
+  @@index([entryId], map: "journal_lines_entry_idx")
+  @@index([accountId], map: "journal_lines_account_idx")
+  @@index([accountId, bookingId], map: "journal_lines_account_booking_idx")
+  @@map("JournalLines")
+}
+
+/// Company operating expense (rent, hosting, salaries...).
+model AccountingExpense {
+  id          String    @id @default(cuid()) @db.VarChar(40)
+  expenseDate DateTime  @db.Date
+  accountId   String    @db.VarChar(40)
+  vendor      String    @db.VarChar(160)
+  description String    @db.VarChar(500)
+  netAmount   Decimal   @db.Decimal(14, 2)
+  vatAmount   Decimal   @default(0) @db.Decimal(14, 2)
+  totalAmount Decimal   @db.Decimal(14, 2)
+  currency    String    @db.VarChar(3)
+  /// unpaid | paid | void
+  status      String    @db.VarChar(16)
+  paidFromId  String?   @db.VarChar(40)
+  paidDate    DateTime? @db.Date
+  reference   String?   @db.VarChar(255)
+  voidReason  String?   @db.VarChar(500)
+  createdById Int?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  account  LedgerAccount  @relation("ExpenseCategory", fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "AccountingExpenses_accountId_fkey")
+  paidFrom LedgerAccount? @relation("ExpensePaidFrom", fields: [paidFromId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "AccountingExpenses_paidFromId_fkey")
+
+  @@index([expenseDate], map: "accounting_expenses_date_idx")
+  @@index([status, expenseDate], map: "accounting_expenses_status_date_idx")
+  @@map("AccountingExpenses")
 }

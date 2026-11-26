@@ -14,6 +14,7 @@ import { FcmModule } from '../../modules/fcm/fcm.module';
 import { GuestModule } from '../../modules/guest/guest.module';
 import { AdminDashboardModule } from '../../modules/admin-dashboard/admin-dashboard.module';
 import { SupportModule } from '../../modules/support/support.module';
+import { AccountingModule } from '../../modules/accounting/accounting.module';
 import { InvoicesModule } from '../../modules/invoices/invoices.module';
 
 @Global()
@@ -33,6 +34,7 @@ import { InvoicesModule } from '../../modules/invoices/invoices.module';
     GuestModule,
     AdminDashboardModule,
     InvoicesModule,
+    AccountingModule,
     SupportModule,
   ],
   providers: [PerformanceJobsService],

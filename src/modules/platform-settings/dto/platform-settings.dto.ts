@@ -125,6 +125,10 @@ export class GeneralSettingsDto {
   @IsOptional() @IsString() @Length(0, 32) ifNumber?: string;
   @ApiPropertyOptional({ example: '34567890', description: 'Taxe professionnelle (Patente).' })
   @IsOptional() @IsString() @Length(0, 32) patenteNumber?: string;
+  @ApiPropertyOptional({ example: 'FR12345678901', description: 'VAT / TVA registration number printed on invoices.' })
+  @IsOptional() @IsString() @Length(0, 40) vatNumber?: string;
+  @ApiPropertyOptional({ example: 'VAT not applicable.', description: 'VAT rate or exemption wording printed on invoices.' })
+  @IsOptional() @IsString() @Length(0, 300) vatNote?: string;
   @ApiPropertyOptional({ example: 'Payment received with thanks.', description: 'Free text printed at the bottom of invoices.' })
   @IsOptional() @IsString() @Length(0, 500) invoiceFooterNote?: string;
   @ApiPropertyOptional({

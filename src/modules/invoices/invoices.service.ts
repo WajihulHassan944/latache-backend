@@ -611,6 +611,7 @@ export class InvoicesService {
       seller.rcNumber ? `RC ${seller.rcNumber}` : '',
       seller.ifNumber ? `IF ${seller.ifNumber}` : '',
       seller.patenteNumber ? `Patente ${seller.patenteNumber}` : '',
+      seller.vatNumber ? `VAT ${seller.vatNumber}` : '',
     ].filter(Boolean);
     const sub = (label: string, amount: number) => (amount > 0 ? `<tr><td>${label}</td><td class="n">${fmt(amount)}</td></tr>` : '');
     const tip = view.lines.filter((l) => l.code === 'tip' || l.code === 'donation').reduce((t, l) => t + l.amount, 0);
@@ -665,7 +666,7 @@ ${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>${bookingRef(
 <table class="totals">${sub(view.type === 'tasker_deposit' ? 'Deposit' : 'Service subtotal', view.subtotal)}${sub('Platform fee', view.platformFee)}${sub('Tax', view.taxAmount)}${sub('Tip &amp; donation', tip)}${discount}</table>
 <div class="grand"><span>Total paid</span><span>${fmt(view.total)}</span></div>
 <table class="totals"><tr><td class="b" style="color:#60230C">Balance due</td><td class="n b">${fmt(0)}</td></tr></table>
-<div class="notes"><h4>Notes</h4>${e(notes)} ${e(seller.footerNote ?? '')}</div>
+<div class="notes"><h4>Notes</h4>${e(notes)} ${e(seller.vatNote ?? '')} ${e(seller.footerNote ?? '')}</div>
 <div class="foot">${[seller.legalName ?? seller.name, ...legal].filter(Boolean).map(e).join(' &nbsp;|&nbsp; ')}<br>Electronically generated invoice ${e(view.number)}. Valid without signature.</div>
 </div></body></html>`;
   }
@@ -761,6 +762,8 @@ ${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>${bookingRef(
       ifNumber: general.ifNumber ?? null,
       patenteNumber: general.patenteNumber ?? null,
       footerNote: general.invoiceFooterNote ?? null,
+      vatNumber: general.vatNumber ?? null,
+      vatNote: general.vatNote ?? null,
     };
   }
 
