@@ -203,8 +203,9 @@ export function renderInvoicePdf(invoice: InvoiceDocument): Promise<Buffer> {
     const money = (value: number) => formatMoney(value, invoice.currency);
     const voided = invoice.status === 'void';
     const isCredit = invoice.type === 'credit_note';
+    const isReceipt = invoice.type === 'payment_receipt';
 
-    drawBrandHeader(doc, { title: isCredit ? 'Credit note' : 'Invoice', subtitle: isCredit ? 'AVOIR' : 'FACTURE', rightTop: invoice.number, rightBottom: `Issued ${formatDate(invoice.issuedAt)}` });
+    drawBrandHeader(doc, { title: isCredit ? 'Credit note' : isReceipt ? 'Payment receipt' : 'Invoice', subtitle: isCredit ? 'AVOIR' : isReceipt ? 'REÇU' : 'FACTURE', rightTop: invoice.number, rightBottom: `Issued ${formatDate(invoice.issuedAt)}` });
 
     // ---- Seller (logo + identity) | invoice meta card ----
     let y = HEADER_HEIGHT + 8;
@@ -346,7 +347,9 @@ export function renderInvoicePdf(invoice: InvoiceDocument): Promise<Buffer> {
 
     const notesW = CONTENT_WIDTH - totalsW - 24;
     const notes =
-      isCredit
+      isReceipt
+        ? 'This is a receipt for the amount prepaid when the booking was confirmed. The final invoice is issued after the job for the time actually worked; any unused prepaid time is refunded to your original payment method.'
+        : isCredit
         ? `This credit note reverses part or all of invoice ${String(details.originalInvoiceNumber ?? '')} for booking ${bookingRef(invoice.bookingId)}. The amount is returned to your original payment method or wallet.`
         : details.kind === 'late_cancellation'
         ? 'This booking was cancelled inside the late-cancellation window. The fee above was kept under the cancellation policy and the rest of your payment was refunded.'

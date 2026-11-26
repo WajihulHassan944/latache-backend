@@ -18,7 +18,10 @@ export type EventCardEvent =
   | 'review'
   | 'dispute'
   | 'dispute_resolved'
-  | 'invoice';
+  | 'invoice'
+  | 'receipt'
+  | 'arrival_proof'
+  | 'completion_proof';
 
 export interface EventCardAction {
   kind: 'invoice' | 'review' | 'booking';
@@ -37,6 +40,10 @@ export interface EventCardPayload {
   bookingRef: string;
   rows: Array<{ label: string; value: string }>;
   action?: EventCardAction;
+  /** Used instead of the app's built-in title for this event (e.g. "Unused prepaid time refunded"). */
+  titleOverride?: string;
+  /** Photos shared with the card (arrival / completion proof). */
+  images?: Array<{ url: string; alt: string }>;
 }
 
 /**
@@ -61,6 +68,8 @@ const TYPE_TO_EVENT: Record<string, { event: EventCardEvent; tone: EventCardTone
   task_completion_verified: { event: 'completed', tone: 'success' },
   task_completion_auto_approved: { event: 'completed', tone: 'success' },
   review_received: { event: 'review', tone: 'success' },
+  front_door_proof_submitted: { event: 'arrival_proof', tone: 'info' },
+  work_completion_proof_submitted: { event: 'completion_proof', tone: 'info' },
   booking_dispute_opened: { event: 'dispute', tone: 'danger' },
   booking_dispute_resolved: { event: 'dispute_resolved', tone: 'success' },
 };
@@ -74,10 +83,24 @@ const ONCE_PER_BOOKING = new Set<EventCardEvent>([
   'started',
   'completed',
   'invoice',
+  'receipt',
+  'arrival_proof',
+  'completion_proof',
 ]);
 
 /** Other events can legitimately repeat, so only collapse the duplicate fired for the second participant. */
 const DUPLICATE_WINDOW_MS = 15_000;
+
+const METHOD_LABELS: Record<string, string> = { stripe: 'Card', cmi: 'Card (CMI)', wallet: 'Wallet', cash: 'Cash' };
+const methodLabel = (source: string | null | undefined): string => (source ? (METHOD_LABELS[source] ?? String(source).replace(/_/g, ' ')) : '');
+/** First positive number among the candidates (booking amounts stay 0 until the job is settled; the estimate covers the prepayment). */
+const firstPositive = (...values: unknown[]): number => {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+};
 
 const money = (currency: string | null | undefined, value: unknown): string => {
   const n = Number(value);
@@ -110,6 +133,20 @@ export class BookingEventCardsService {
     if (input.entityType !== 'booking' || !input.entityId || !/^\d+$/.test(input.entityId)) return;
     const spec = TYPE_TO_EVENT[input.templateKey ?? ''] ?? TYPE_TO_EVENT[input.type];
     if (!spec) return;
+    if (spec.event === 'refund') {
+      // The refund amount lives in the notification text ("... MAD 621.00 was returned ..."); the booking's own
+      // amounts are the FINAL totals, which are not what was refunded.
+      const match = /\b([A-Z]{3})\s([\d,]+(?:\.\d{1,2})?)/.exec(input.body);
+      await this.post(client, Number(input.entityId), spec.event, {
+        tone: spec.tone,
+        title: input.title,
+        titleOverride: input.title,
+        summary: input.body,
+        paymentRows: false,
+        extraRows: match ? [{ label: 'Refunded', value: `${match[1]} ${match[2]}` }] : [],
+      });
+      return;
+    }
     await this.post(client, Number(input.entityId), spec.event, { tone: spec.tone, title: input.title, summary: input.body });
   }
 
@@ -118,13 +155,19 @@ export class BookingEventCardsService {
     client: Prisma.TransactionClient | PrismaService,
     bookingId: number,
     invoice: { id: string; number: string; total: unknown; currency: string },
+    kind: 'invoice' | 'receipt' = 'invoice',
   ): Promise<void> {
-    await this.post(client as Prisma.TransactionClient, bookingId, 'invoice', {
+    const receipt = kind === 'receipt';
+    await this.post(client as Prisma.TransactionClient, bookingId, kind, {
       tone: 'success',
-      title: 'Invoice ready',
-      summary: `Invoice ${invoice.number} was issued for this booking.`,
+      title: receipt ? 'Payment receipt ready' : 'Invoice ready',
+      titleOverride: receipt ? 'Payment receipt ready' : undefined,
+      summary: receipt
+        ? `Receipt ${invoice.number} for your payment. The final invoice follows once the job is done.`
+        : `Invoice ${invoice.number} was issued for this booking.`,
+      paymentRows: false,
       extraRows: [
-        { label: 'Invoice', value: invoice.number },
+        { label: receipt ? 'Receipt' : 'Invoice', value: invoice.number },
         { label: 'Total', value: money(invoice.currency, invoice.total) },
       ],
       action: { kind: 'invoice', label: 'Download PDF', invoiceId: invoice.id },
@@ -138,7 +181,10 @@ export class BookingEventCardsService {
     opts: {
       tone: EventCardTone;
       title: string;
+      titleOverride?: string;
       summary?: string;
+      /** false for events whose amounts are not the booking's (refunds, receipts, invoices). Default true. */
+      paymentRows?: boolean;
       extraRows?: Array<{ label: string; value: string }>;
       action?: EventCardAction;
     },
@@ -169,34 +215,65 @@ export class BookingEventCardsService {
           platformFeeAmount: true,
           totalChargedAmount: true,
           paymentSource: true,
+          paymentEstimate: true,
+          capturedAmount: true,
           service: { select: { name: true } },
         },
       });
       if (!booking) return;
 
-      const rows: Array<{ label: string; value: string }> = [
-        { label: 'Service', value: booking.service?.name ?? '-' },
-        {
-          label: 'When',
-          value: `${booking.bookingDate.toISOString().slice(0, 10)} ${booking.startTime}${booking.endTime ? ` - ${booking.endTime}` : ''}`,
-        },
-      ];
-      if (event === 'payment' || event === 'cash_selected' || event === 'cash_received' || event === 'refund') {
-        if (booking.paymentSource) rows.push({ label: 'Method', value: String(booking.paymentSource).replace(/_/g, ' ') });
-        rows.push({ label: 'Service amount', value: money(booking.paymentCurrency, booking.serviceAmount) });
-        rows.push({ label: 'Platform fee', value: money(booking.paymentCurrency, booking.platformFeeAmount) });
-        if (booking.totalChargedAmount !== null) rows.push({ label: 'Total', value: money(booking.paymentCurrency, booking.totalChargedAmount) });
+      const isProof = event === 'arrival_proof' || event === 'completion_proof';
+      const rows: Array<{ label: string; value: string }> = isProof
+        ? []
+        : [
+            { label: 'Service', value: booking.service?.name ?? '-' },
+            {
+              label: 'When',
+              value: `${booking.bookingDate.toISOString().slice(0, 10)} ${booking.startTime}${booking.endTime ? ` - ${booking.endTime}` : ''}`,
+            },
+          ];
+      const showPayment = opts.paymentRows !== false && (event === 'payment' || event === 'cash_selected' || event === 'cash_received');
+      if (showPayment) {
+        const estimate = (booking.paymentEstimate ?? null) as { serviceAmount?: number; platformFeeAmount?: number; total?: number } | null;
+        // At acceptance the booking's own amounts are still 0, so the payment card reads the prepaid estimate.
+        const prepaid = event === 'payment';
+        const serviceAmount = prepaid
+          ? firstPositive(estimate?.serviceAmount, booking.serviceAmount)
+          : firstPositive(booking.serviceAmount, estimate?.serviceAmount);
+        const feeAmount = prepaid
+          ? firstPositive(estimate?.platformFeeAmount, booking.platformFeeAmount)
+          : firstPositive(booking.platformFeeAmount, estimate?.platformFeeAmount);
+        const totalAmount = prepaid
+          ? firstPositive(booking.capturedAmount, estimate?.total, booking.totalChargedAmount)
+          : firstPositive(booking.totalChargedAmount, booking.capturedAmount, estimate?.total);
+        const method = methodLabel(booking.paymentSource);
+        if (method) rows.push({ label: 'Method', value: method });
+        rows.push({ label: 'Service amount', value: money(booking.paymentCurrency, serviceAmount) });
+        rows.push({ label: 'Platform fee', value: money(booking.paymentCurrency, feeAmount) });
+        if (totalAmount > 0) rows.push({ label: 'Total', value: money(booking.paymentCurrency, totalAmount) });
       }
       rows.push(...(opts.extraRows ?? []));
 
       const action: EventCardAction | undefined =
         opts.action ?? (event === 'completed' ? { kind: 'review', label: 'Rate your tasker' } : undefined);
 
+      let images: Array<{ url: string; alt: string }> | undefined;
+      if (isProof) {
+        const proofs = await client.bookingWorkProof.findMany({
+          where: { bookingId, kind: event === 'arrival_proof' ? 'front_door' : 'completion' },
+          select: { secureUrl: true },
+        });
+        images = proofs.map((proof) => ({ url: proof.secureUrl, alt: event === 'arrival_proof' ? 'Arrival photo shared by the tasker' : 'Completed work photo shared by the tasker' }));
+        if (images.length === 0) return; // nothing to show yet
+      }
+
       const payload: EventCardPayload = {
         v: 1,
         event,
         tone: opts.tone,
         title: opts.title,
+        ...(opts.titleOverride ? { titleOverride: opts.titleOverride } : {}),
+        ...(images ? { images } : {}),
         ...(opts.summary ? { summary: opts.summary } : {}),
         bookingId,
         bookingRef: bookingRef(bookingId),

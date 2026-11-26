@@ -11,7 +11,10 @@ import { DEFAULT_INVOICE_SELLER, presentableWebsite } from './invoice-defaults';
 import { PAYMENT_STATUS } from '../payments/payments.constants';
 import { PAYMENT_LABELS, formatDate, formatMoney, renderInvoicePdf } from './invoice-pdf.renderer';
 
-export const INVOICE_TYPE = { Booking: 'booking', TaskerDeposit: 'tasker_deposit', CreditNote: 'credit_note' } as const;
+export const INVOICE_TYPE = { Booking: 'booking', TaskerDeposit: 'tasker_deposit', CreditNote: 'credit_note', PaymentReceipt: 'payment_receipt' } as const;
+
+/** Statuses in which an online-prepaid booking already holds the customer's money and deserves a receipt. */
+const RECEIPT_BOOKING_STATUSES = ['confirmed', 'en_route', 'arrived', 'in_progress', 'awaiting_customer_approval', 'completed'];
 
 /** A booking gets its invoice once the job is completed and the money is settled. */
 const INVOICEABLE_PAYMENT_STATUSES = [
@@ -199,6 +202,78 @@ export class InvoicesService {
   }
 
   /**
+   * Receipt for the prepayment, issued as soon as an online (card/wallet) payment is captured so the customer and the
+   * Tasker can both download a payment document straight away. The real invoice still follows after the job, for the
+   * time actually worked (any unused prepaid time is refunded). Idempotent: one receipt per booking.
+   */
+  async issuePaymentReceipt(bookingId: number): Promise<InvoiceRow | null> {
+    const existing = await this.prisma.invoice.findUnique({
+      where: { type_bookingId: { type: INVOICE_TYPE.PaymentReceipt, bookingId } },
+    });
+    if (existing) return existing;
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        service: { select: { name: true } },
+        serviceOption: { select: { name: true } },
+        customer: { select: { id: true, firstName: true, lastName: true, email: true, phoneCountryCode: true, phoneNumber: true } },
+        tasker: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    if (!booking || booking.capturedAt === null || booking.capturedAmount === null) return null;
+    if (booking.paymentSource === 'cash' || !RECEIPT_BOOKING_STATUSES.includes(booking.status)) return null;
+
+    const estimate = (booking.paymentEstimate ?? {}) as { serviceAmount?: number; platformFeeAmount?: number; serviceSurchargeAmount?: number; taxAmount?: number; taxInclusive?: boolean; tipAmount?: number; donationAmount?: number };
+    const serviceLabel = [booking.service.name, booking.serviceOption?.name].filter(Boolean).join(' - ') || 'Service';
+    const serviceAmount = num(estimate.serviceAmount);
+    const platformFee = num(estimate.platformFeeAmount);
+    const lines: InvoiceLine[] = [this.line('service', `${serviceLabel} service (prepaid)`, serviceAmount)];
+    if (platformFee > 0) lines.push(this.line('platform_fee', 'Platform service fee', platformFee));
+    if (num(estimate.serviceSurchargeAmount) > 0) lines.push(this.line('service_surcharge', 'Service surcharge', num(estimate.serviceSurchargeAmount)));
+    if (num(estimate.taxAmount) > 0 && !estimate.taxInclusive) lines.push(this.line('tax', 'Tax', num(estimate.taxAmount)));
+    if (num(estimate.tipAmount) > 0) lines.push(this.line('tip', 'Tip for your Tasker', num(estimate.tipAmount)));
+    if (num(estimate.donationAmount) > 0) lines.push(this.line('donation', 'Donation', num(estimate.donationAmount)));
+    const captured = num(booking.capturedAmount);
+
+    const row = await this.create(
+      {
+        type: INVOICE_TYPE.PaymentReceipt,
+        numberPrefix: 'RCT',
+        billedToId: booking.customerId,
+        bookingId,
+        currency: booking.paymentCurrency,
+        subtotal: serviceAmount,
+        platformFee,
+        taxAmount: num(estimate.taxAmount),
+        discountAmount: 0,
+        total: captured,
+        paymentMethod: booking.paymentSource,
+        lines,
+        details: {
+          kind: 'payment_receipt',
+          service: serviceLabel,
+          tasker: this.fullName(booking.tasker),
+          date: booking.bookingDate.toISOString().slice(0, 10),
+          serviceDate: booking.bookingDate.toISOString().slice(0, 10),
+          startTime: booking.startTime,
+          endTime: booking.endTime,
+          location: [booking.venueAddress, booking.apartmentSuite, booking.locationCity].filter(Boolean).join(', '),
+        },
+        buyer: {
+          id: booking.customer.id,
+          name: this.fullName(booking.customer),
+          email: booking.customer.email,
+          phone: booking.customer.phoneNumber ? `${booking.customer.phoneCountryCode ?? ''} ${booking.customer.phoneNumber}`.trim() : null,
+        },
+        issuedAt: booking.capturedAt,
+      },
+      { type: INVOICE_TYPE.PaymentReceipt, bookingId },
+    );
+    // The payment confirmation email already went out; the receipt is available in the app and in the chat.
+    return this.prisma.invoice.update({ where: { id: row.id }, data: { emailedAt: new Date() } });
+  }
+
+  /**
    * Credit note for money refunded on an invoiced booking (dispute refunds). One per booking, for the
    * total refunded so far; idempotent. Not emailed automatically - it is available in the invoice list.
    */
@@ -354,6 +429,25 @@ export class InvoicesService {
         if (await this.issueCreditNote(row.id)) issued += 1;
       } catch (error) {
         this.logger.error(`Credit note for booking ${row.id} failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    const receiptsDue = await this.prisma.booking.findMany({
+      where: {
+        ...filter,
+        capturedAt: { not: null },
+        paymentSource: { not: 'cash' },
+        status: { in: RECEIPT_BOOKING_STATUSES },
+        invoices: { none: { type: INVOICE_TYPE.PaymentReceipt } },
+      },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+      take: limit,
+    });
+    for (const row of receiptsDue) {
+      try {
+        if (await this.issuePaymentReceipt(row.id)) issued += 1;
+      } catch (error) {
+        this.logger.error(`Receipt for booking ${row.id} failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     for (const row of due) {
@@ -529,7 +623,9 @@ export class InvoicesService {
             details.hoursWorked !== null && details.hoursWorked !== undefined ? `${Number(details.hoursWorked).toFixed(2)} h` : '',
           )}${field('Location', details.location)}`;
     const notes =
-      details.kind === 'late_cancellation'
+      view.type === 'payment_receipt'
+        ? 'This is a receipt for the amount prepaid when the booking was confirmed. The final invoice is issued after the job for the time actually worked; any unused prepaid time is refunded to your original payment method.'
+        : details.kind === 'late_cancellation'
         ? 'This booking was cancelled inside the late-cancellation window. The fee above was kept under the cancellation policy and the rest of your payment was refunded.'
         : view.type === 'tasker_deposit'
         ? 'This deposit is held as a refundable security deposit for your Latache Tasker account.'
@@ -624,8 +720,8 @@ ${view.bookingId ? `<div><span class="muted">Booking ref.</span><b>${bookingRef(
           seller: seller as Prisma.InputJsonValue,
         },
       });
-      if (created.type === INVOICE_TYPE.Booking && created.bookingId) {
-        await this.cards.postInvoiceIssued(client, created.bookingId, { id: created.id, number: created.number, total: created.total, currency: created.currency });
+      if ((created.type === INVOICE_TYPE.Booking || created.type === INVOICE_TYPE.PaymentReceipt) && created.bookingId) {
+        await this.cards.postInvoiceIssued(client, created.bookingId, { id: created.id, number: created.number, total: created.total, currency: created.currency }, created.type === INVOICE_TYPE.PaymentReceipt ? 'receipt' : 'invoice');
       }
       return created;
     } catch (error) {

@@ -52,7 +52,7 @@ export class AdminProfile360Service {
 
     const ownBookings = role === 'tasker' ? { taskerId: userId } : { customerId: userId };
 
-    const [bookings, bookingCount, reviews, reviewAgg, disputeCount, ledgerEarnings, cashEarnings, customerSpend, completedCount, cancelledByTasker, audit] =
+    const [bookings, bookingCount, reviews, reviewAgg, disputeCount, ledgerEarnings, cashEarnings, customerSpend, completedCount, cancelledByTasker, audit, walletRow, walletEntries, cashJobs] =
       await Promise.all([
         this.prisma.booking.findMany({
           where: ownBookings,
@@ -105,6 +105,19 @@ export class AdminProfile360Service {
           ? this.prisma.booking.count({ where: { taskerId: userId, status: 'cancelled', cancelledByRole: 'tasker' } })
           : Promise.resolve(0),
         this.prisma.adminAuditLog.findMany({ where: { targetUserId: userId }, orderBy: { createdAt: 'desc' }, take: 100 }),
+        role === 'tasker' ? this.prisma.taskerWallet.findUnique({ where: { taskerId: userId } }) : Promise.resolve(null),
+        role === 'tasker'
+          ? this.prisma.taskerWalletLedgerEntry.findMany({ where: { taskerId: userId }, orderBy: { createdAt: 'desc' }, take: 150 })
+          : Promise.resolve([]),
+        // Cash jobs never touch the wallet ledger (the Tasker is paid on site) but they are earnings too.
+        role === 'tasker'
+          ? this.prisma.booking.findMany({
+              where: { taskerId: userId, status: 'completed', paymentStatus: 'cash_confirmed' },
+              orderBy: { updatedAt: 'desc' },
+              take: 100,
+              select: { id: true, serviceAmount: true, tipAmount: true, paymentCurrency: true, updatedAt: true },
+            })
+          : Promise.resolve([]),
       ]);
 
     const currency = bookings.find((b) => b.paymentCurrency)?.paymentCurrency ?? 'MAD';
@@ -239,6 +252,38 @@ export class AdminProfile360Service {
           method: b.paymentSource ?? 'card',
           status: /refund/.test(b.paymentStatus ?? '') ? 'refunded' : /fail/.test(b.paymentStatus ?? '') ? 'failed' : 'paid',
         })),
+      // Tasker only: what the Tasker sees under "Transaction History" (earnings pending/released, withdrawals, ...).
+      wallet:
+        role === 'tasker'
+          ? {
+              currency: walletRow?.currency ?? currency,
+              available: num(walletRow?.availableBalance),
+              pending: num(walletRow?.pendingBalance),
+              totalEarned: totalAmount,
+              entries: [
+                ...walletEntries.map((entry) => ({
+                  id: entry.id,
+                  bookingId: entry.bookingId === null ? null : String(entry.bookingId),
+                  kind: entry.kind,
+                  status: entry.status,
+                  amount: num(entry.amount),
+                  currency: entry.currency,
+                  description: entry.description,
+                  createdAt: entry.createdAt.toISOString(),
+                })),
+                ...cashJobs.map((job) => ({
+                  id: `cash-${job.id}`,
+                  bookingId: String(job.id),
+                  kind: 'cash_earning',
+                  status: 'cash',
+                  amount: num(job.serviceAmount) + num(job.tipAmount),
+                  currency: job.paymentCurrency ?? currency,
+                  description: 'Cash payment collected on site',
+                  createdAt: job.updatedAt.toISOString(),
+                })),
+              ].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+            }
+          : null,
       conversations,
       chatsRestricted: !canReadChats,
       reviews: reviews.map((r) => ({
