@@ -1,4 +1,6 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { StripeService } from '../payments/stripe.service';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { normalizePagination } from '../../common/utils/pagination.util';
 import { PrismaService } from '../../database/prisma.service';
@@ -15,12 +17,16 @@ type DepositRow = Prisma.TaskerDepositGetPayload<object>;
 
 @Injectable()
 export class TaskerDepositsService {
+  private readonly logger = new Logger(TaskerDepositsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: PlatformSettingsService,
     private readonly invoices: InvoicesService,
     private readonly notifications: NotificationsService,
     private readonly audit: AdminAuditService,
+    private readonly stripe: StripeService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -31,6 +37,7 @@ export class TaskerDepositsService {
     const policy = await this.settings.taskerFinancePolicy();
     const required = policy.signupDepositEnabled && policy.signupDepositAmount > 0;
     let deposit = await this.prisma.taskerDeposit.findUnique({ where: { taskerId } });
+    if (deposit) deposit = await this.reconcileStripe(deposit);
     if (!deposit && required) {
       deposit = await this.prisma.taskerDeposit.upsert({
         where: { taskerId },
@@ -57,9 +64,87 @@ export class TaskerDepositsService {
       required,
       satisfied,
       deposit: deposit ? this.view(deposit) : null,
-      payWith: required && !satisfied ? ['cmi'] : [],
-      checkoutEndpoint: required && !satisfied ? '/api/payments/cmi/checkout' : null,
+      payWith: required && !satisfied ? (this.stripe.isEnabled() ? ['stripe', 'cmi'] : ['cmi']) : [],
+      checkoutEndpoint: required && !satisfied ? (this.stripe.isEnabled() ? '/api/tasker-dashboard/deposit/stripe-checkout' : '/api/payments/cmi/checkout') : null,
     };
+  }
+
+  /** Stripe-hosted card page for the deposit. The card is entered on Stripe; nothing card-related touches Latache. */
+  async startStripeCheckout(user: User, locale: string): Promise<{ url: string }> {
+    const client = this.stripe.client();
+    const deposit = await this.requirePayable(user.id);
+
+    // Re-use a still-open session for the same amount instead of stacking up several payable pages.
+    if (deposit.providerReference?.startsWith('cs_')) {
+      const open = await client.checkout.sessions.retrieve(deposit.providerReference);
+      if (open.status === 'open' && open.url && open.amount_total === Math.round(Number(deposit.amount) * 100)) {
+        return { url: open.url };
+      }
+      if (open.status === 'open') await client.checkout.sessions.expire(open.id).catch(() => undefined);
+    }
+
+    const base = this.config.get<string>('frontend.baseUrl', 'http://localhost:3000').replace(/\/$/, '');
+    const returnPage = `${base}/${locale}/tasker/onboarding/deposit`;
+    const metadata = { purpose: 'tasker_deposit', taskerId: String(user.id), depositId: deposit.id };
+    const session = await client.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: deposit.currency.toLowerCase(),
+            unit_amount: Math.round(Number(deposit.amount) * 100),
+            product_data: { name: 'Latache Tasker signup security deposit' },
+          },
+        },
+      ],
+      ...(user.email ? { customer_email: user.email } : {}),
+      client_reference_id: String(user.id),
+      metadata,
+      success_url: `${returnPage}?payment=success`,
+      cancel_url: `${returnPage}?payment=cancelled`,
+    });
+    if (!session.url) throw new ConflictException('Stripe did not return a payment page; please try again');
+    await this.prisma.taskerDeposit.update({ where: { taskerId: user.id }, data: { providerReference: session.id } });
+    return { url: session.url };
+  }
+
+  /**
+   * Marks a pending deposit paid once its Stripe Checkout session is paid. Asks Stripe directly, so it works
+   * without a webhook: it runs whenever the deposit is read (return from checkout, dashboard, admin approval).
+   * A Stripe outage must never break those reads.
+   */
+  private async reconcileStripe(deposit: DepositRow): Promise<DepositRow> {
+    if (deposit.status !== DEPOSIT_STATUS.Pending || !deposit.providerReference?.startsWith('cs_') || !this.stripe.isEnabled()) {
+      return deposit;
+    }
+    try {
+      const session = await this.stripe.client().checkout.sessions.retrieve(deposit.providerReference);
+      if (
+        session.payment_status !== 'paid' ||
+        session.metadata?.purpose !== 'tasker_deposit' ||
+        session.metadata?.depositId !== deposit.id ||
+        session.amount_total === null ||
+        !session.currency
+      ) {
+        return deposit;
+      }
+      const amount = session.amount_total / 100;
+      const currency = session.currency.toUpperCase();
+      const intent = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+      return await this.prisma.$transaction(async (transaction) => {
+        // The money is taken: record exactly what was paid, even if an admin changed the configured amount meanwhile.
+        await transaction.taskerDeposit.updateMany({
+          where: { id: deposit.id, status: DEPOSIT_STATUS.Pending },
+          data: { amount: amount.toFixed(2), currency },
+        });
+        return this.markPaid(deposit.taskerId, { amount, currency, method: 'stripe', reference: intent ?? session.id }, transaction);
+      });
+    } catch (error) {
+      this.logger.warn(`Stripe deposit check for tasker ${deposit.taskerId} failed: ${error instanceof Error ? error.message : String(error)}`);
+      return (await this.prisma.taskerDeposit.findUnique({ where: { taskerId: deposit.taskerId } })) ?? deposit;
+    }
   }
 
   /** Admin approval gate. Null when fine, else a blocking reason key. */
@@ -86,6 +171,8 @@ export class TaskerDepositsService {
     input: { amount: number; currency: string; method: string; reference: string },
     transaction: Prisma.TransactionClient,
   ): Promise<DepositRow> {
+    // Row lock: two concurrent settlements must not both issue the receipt invoice and notification.
+    await transaction.$queryRaw`SELECT 1 FROM "TaskerDeposits" WHERE "taskerId" = ${taskerId} FOR UPDATE`;
     const deposit = await transaction.taskerDeposit.findUnique({ where: { taskerId } });
     if (!deposit) throw new NotFoundException('Deposit not found');
     if (deposit.status === DEPOSIT_STATUS.Paid) return deposit;

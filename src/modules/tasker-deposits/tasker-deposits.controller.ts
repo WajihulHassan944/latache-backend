@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { Throttle } from '@nestjs/throttler';
 import { AllowPendingProfile, Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -29,6 +30,13 @@ export class AdminDepositActionDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
+}
+
+export class DepositCheckoutDto {
+  @ApiPropertyOptional({ enum: ['en', 'ar', 'ary', 'fr', 'es'], description: 'Language of the page Stripe returns to' })
+  @IsOptional()
+  @IsIn(['en', 'ar', 'ary', 'fr', 'es'])
+  locale?: string;
 }
 
 export class AdminListDepositsQueryDto {
@@ -73,10 +81,17 @@ export class TaskerDepositController {
   @ApiOperation({
     summary: 'My signup deposit status',
     description:
-      'required=false when the platform has no deposit policy. When required and not satisfied, pay it via POST /api/payments/cmi/checkout { purpose: "tasker_deposit" } (or an admin records a bank transfer). Admin approval of the application is blocked until it is paid or waived.',
+      'required=false when the platform has no deposit policy. When required and not satisfied, pay it by card via POST stripe-checkout (or CMI when enabled), or an admin records a bank transfer. Reading this also settles a paid Stripe session. Admin approval of the application is blocked until it is paid or waived.',
   })
   get(@CurrentUser() user: User) {
     return this.deposits.taskerView(user.id);
+  }
+
+  @Post('stripe-checkout')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Pay my signup deposit by card (returns the Stripe-hosted payment page URL)' })
+  stripeCheckout(@CurrentUser() user: User, @Body() dto: DepositCheckoutDto) {
+    return this.deposits.startStripeCheckout(user, dto.locale ?? 'en');
   }
 }
 
