@@ -31,6 +31,7 @@ describe('accounting posting rules', () => {
     ['plan_bonus', 80, 0, ACC.PlanIncentives],
     ['referral_reward', 80, 0, ACC.ReferralRewards],
     ['platform_payable_settlement', -80, 0, ACC.SettlementClearing],
+    ['admin_adjustment', -80, 0, ACC.WalletCorrections],
     ['something_new', 80, 0, ACC.Unmatched],
   ])('balances a Tasker %s entry', (kind, available, pending, counter) => {
     const draft = taskerWalletDraft({ ...base, kind, availableDelta: available, pendingDelta: pending, externalReference: null });

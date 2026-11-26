@@ -40,6 +40,7 @@ export function customerWalletDraft(row: {
   else if (row.kind === 'booking_debit' || row.kind === 'refund') counter = ACC.BookingFunds;
   else if (row.kind.startsWith('withdrawal_')) counter = ACC.CustomerWithdrawals;
   else if (row.kind.startsWith('referral_')) counter = ACC.ReferralRewards;
+  else if (row.kind === 'admin_adjustment') counter = ACC.WalletCorrections;
   return {
     sourceType: 'customer_wallet',
     sourceKey: `cwl:${row.id}`,
@@ -84,6 +85,7 @@ export function taskerWalletDraft(row: {
     plan_revenue_share: ACC.PlanIncentives,
     platform_payable_settlement: ACC.SettlementClearing,
     platform_payable_overpayment: ACC.SettlementClearing,
+    admin_adjustment: ACC.WalletCorrections,
   };
   let counter =
     byKind[row.kind] ??
